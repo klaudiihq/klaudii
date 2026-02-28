@@ -217,15 +217,23 @@ Klaudii is currently trapped on `localhost:9876`. A cloud rendezvous service bre
 - [ ] Remote workspace provisioning — start sessions on whichever machine has capacity
 - [ ] Machine health monitoring — CPU, memory, disk across all registered machines
 
+### Platform portability
+
+Klaudii today is macOS-specific (launchd, swiftc menu bar app, Homebrew). It needs to run everywhere Claude Code runs.
+
+- [ ] **Linux support** — systemd unit instead of launchd, skip menu bar app, apt/dnf fallbacks for tmux/ttyd
+- [ ] **VPS mode** — headless install for remote servers (no menu bar, no desktop assumptions), bind to 0.0.0.0 with auth enabled by default
+- [ ] **Single-workspace mode** — stripped-down Klaudii for constrained environments: one project, no git worktree management, no GitHub integration, just session lifecycle + terminal + monitoring. Ideal for Codespaces, Gitpod, or any environment where you're already in a repo
+- [ ] **GitHub Codespaces** — devcontainer.json with Klaudii pre-configured, forwarded port, single-workspace mode auto-pointed at the Codespace repo
+- [ ] **Docker image** — `docker run klaudii` with Claude CLI baked in, mount your repos as volumes, expose dashboard port. Works for local Docker Desktop or cloud container services
+- [ ] **Cloud Run / serverless containers** — stateless Klaudii container that connects to a persistent disk or GCS for state, registers with the rendezvous relay on startup. Spin up on demand, scale to zero when idle
+- [ ] **Docker Compose stack** — Klaudii + N Claude worker containers + shared volume, for running the orchestration pipeline entirely in containers
+- [ ] **Devcontainer feature** — installable as a VS Code devcontainer feature so any Codespace can add Klaudii with one line in devcontainer.json
+
 ### Cloud instances
 - [ ] Spin up cloud VMs (EC2, GCE) for heavy workloads, auto-register with relay
 - [ ] Auto-terminate instances when work is done
 - [ ] Cost tracking — show how much cloud compute each task used
-
-### Containerization
-- [ ] Run Claude sessions in Docker containers for isolation
-- [ ] Pre-built container images with common development environments
-- [ ] Container-per-workspace with volume mounts for the repo
 
 ---
 
