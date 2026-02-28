@@ -512,6 +512,7 @@ async function openNewSessionModal() {
   document.getElementById("branch-form").classList.add("hidden");
   document.getElementById("repo-search").value = "";
   document.getElementById("branch-input").value = "";
+  showRepoSearchView();
   document.getElementById("new-session-modal").classList.remove("hidden");
 
   document.getElementById("repo-list").innerHTML = '<div style="padding:1rem;color:#666">Loading repos...</div>';
@@ -521,6 +522,19 @@ async function openNewSessionModal() {
   } catch (err) {
     document.getElementById("repo-list").innerHTML = `<div style="padding:1rem;color:#f87171">Failed to load repos: ${esc(err.message)}</div>`;
   }
+}
+
+function showCreateRepoForm() {
+  document.getElementById("repo-search-view").classList.add("hidden");
+  document.getElementById("create-repo-view").classList.remove("hidden");
+  document.getElementById("new-repo-name").value = "";
+  document.getElementById("new-repo-remote").value = "";
+  document.getElementById("new-repo-name").focus();
+}
+
+function showRepoSearchView() {
+  document.getElementById("create-repo-view").classList.add("hidden");
+  document.getElementById("repo-search-view").classList.remove("hidden");
 }
 
 function closeNewSessionModal() {
@@ -604,6 +618,39 @@ async function createNewSession() {
   } finally {
     btn.disabled = false;
     btn.textContent = "Start Session";
+  }
+}
+
+async function createNewRepo() {
+  const name = document.getElementById("new-repo-name").value.trim();
+  if (!name) {
+    alert("Please enter a repo name");
+    return;
+  }
+
+  const remoteUrl = document.getElementById("new-repo-remote").value.trim();
+
+  const btn = document.getElementById("create-repo-btn");
+  btn.disabled = true;
+  btn.textContent = "Creating...";
+
+  try {
+    const result = await api("/api/repos/create", {
+      method: "POST",
+      body: { name, remoteUrl: remoteUrl || undefined },
+    });
+
+    if (result.error) {
+      alert("Error: " + result.error);
+    } else {
+      closeNewSessionModal();
+      refresh();
+    }
+  } catch (err) {
+    alert("Failed: " + err.message);
+  } finally {
+    btn.disabled = false;
+    btn.textContent = "Create Repo";
   }
 }
 

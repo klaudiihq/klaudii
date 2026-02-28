@@ -404,6 +404,41 @@ app.get("/api/repos/:name/worktrees", (req, res) => {
   res.json(worktrees);
 });
 
+// --- Create new repo ---
+
+app.post("/api/repos/create", (req, res) => {
+  const { name, remoteUrl } = req.body;
+  if (!name) {
+    return res.status(400).json({ error: "name required" });
+  }
+  if (!config.reposDir) {
+    return res.status(400).json({ error: "reposDir not configured" });
+  }
+  if (!/^[a-zA-Z0-9._-]+$/.test(name)) {
+    return res.status(400).json({ error: "Invalid repo name (letters, numbers, dots, hyphens, underscores only)" });
+  }
+
+  const repoDir = path.join(config.reposDir, name);
+  if (fs.existsSync(repoDir)) {
+    return res.status(409).json({ error: `Directory already exists: ${name}` });
+  }
+
+  try {
+    git.initRepo(repoDir, remoteUrl || null);
+
+    // Register as a project
+    try {
+      addProject(name, repoDir);
+    } catch {
+      // Already registered is fine
+    }
+
+    res.json({ ok: true, name, path: repoDir });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // --- New session (clone + worktree + start) ---
 
 app.post("/api/sessions/new", (req, res) => {
