@@ -504,6 +504,10 @@ sessionTracker.recoverUrls(() => {
   return running;
 });
 
+// Cloud connector (optional — only activates if cloud is configured in config.json)
+const connector = require("./connect/client");
+connector.init(app, config);
+
 const PORT = config.port || 9876;
 app.listen(PORT, "0.0.0.0", () => {
   console.log(`Klaudii manager running at http://0.0.0.0:${PORT}`);
