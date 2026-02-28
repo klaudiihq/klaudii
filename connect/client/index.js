@@ -32,8 +32,8 @@ async function handleApiRequest(msg) {
     // Make a local HTTP request to our own Express server
     const response = await localRequest(method, path, body);
 
-    // Encrypt the response
-    const encrypted = clientCrypto.encryptPayload(JSON.stringify(response));
+    // Encrypt just the response body (browser's api() expects the raw JSON body)
+    const encrypted = clientCrypto.encryptPayload(JSON.stringify(response.body ?? response));
 
     // Send back through relay
     wsClient.send({
@@ -44,24 +44,13 @@ async function handleApiRequest(msg) {
   } catch (err) {
     console.error("[cloud] API request error:", err.message);
 
-    // Send an encrypted error response
-    try {
-      const encrypted = clientCrypto.encryptPayload(
-        JSON.stringify({ status: 500, body: { error: "Internal server error" } })
-      );
-      wsClient.send({
-        type: "api_response",
-        requestId: msg.requestId,
-        encrypted,
-      });
-    } catch {
-      // If encryption fails too, send an unencrypted error indicator
-      wsClient.send({
-        type: "api_response",
-        requestId: msg.requestId,
-        error: "decryption_failed",
-      });
-    }
+    // If it looks like a GCM auth failure, the browser has the wrong key — tell it to re-pair
+    const isWrongKey = /unable to authenticate|unsupported state/i.test(err.message);
+    wsClient.send({
+      type: "api_response",
+      requestId: msg.requestId,
+      error: isWrongKey ? "wrong_key" : "server_error",
+    });
   }
 }
 
