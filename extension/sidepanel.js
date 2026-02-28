@@ -5,12 +5,14 @@ let lastSessions = [];
 let lastProcs = [];
 let activeTabUrl = null;
 let sortMode = localStorage.getItem("sortMode") || "activity";
+let openMode = "inplace";
 
 // --- Init ---
 
 async function init() {
-  const config = await chrome.storage.sync.get(["klaudiiUrl"]);
+  const config = await chrome.storage.sync.get(["klaudiiUrl", "openMode"]);
   klaudiiUrl = (config.klaudiiUrl || DEFAULT_KLAUDII_URL).replace(/\/+$/, "");
+  openMode = config.openMode || "inplace";
 
   document.getElementById("btn-dashboard").addEventListener("click", openDashboard);
   document.getElementById("btn-refresh").addEventListener("click", refresh);
@@ -275,7 +277,7 @@ document.addEventListener("click", async (e) => {
   switch (action) {
     case "open":
       chrome.runtime.sendMessage({
-        action: "navigateAndRename",
+        action: openMode === "tabs" ? "switchTab" : "navigateAndRename",
         url: btn.dataset.url,
         title: btn.dataset.title,
       });
