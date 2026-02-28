@@ -288,14 +288,14 @@ h1 {
 .git-link {
   display: inline-flex;
   align-items: center;
-  color: #444;
+  color: #888;
   text-decoration: none;
   flex-shrink: 0;
   transition: color 0.15s;
-  margin-left: 4px;
+  margin-right: 4px;
 }
 
-.git-link:hover { color: #999; }
+.git-link:hover { color: #aaa; }
 
 /* Git status bar */
 .git-bar {
