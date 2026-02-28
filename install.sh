@@ -4,53 +4,160 @@ set -e
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 PLIST_NAME="com.bryantinsley.klaudii.plist"
 LAUNCH_AGENTS_DIR="$HOME/Library/LaunchAgents"
+SKIP_MENUBAR=false
+
+for arg in "$@"; do
+  case "$arg" in
+    --skip-menu-bar-icon) SKIP_MENUBAR=true ;;
+  esac
+done
 
 echo "=== Klaudii Session Manager — Install ==="
 echo ""
 
-# 1. Check/install brew dependencies
-echo "Checking dependencies..."
+# --- Prerequisites ---
 
-if ! command -v tmux &>/dev/null; then
-  echo "  Installing tmux..."
-  brew install tmux
+echo "Checking prerequisites..."
+MISSING=()
+
+# Node.js
+if command -v node &>/dev/null; then
+  echo "  node: $(node --version)"
 else
-  echo "  tmux: OK"
+  MISSING+=("node")
+  echo "  node: NOT FOUND"
 fi
 
-if ! command -v ttyd &>/dev/null; then
-  echo "  Installing ttyd..."
-  brew install ttyd
+# Homebrew (needed to install tmux/ttyd)
+if command -v brew &>/dev/null; then
+  echo "  brew: OK"
 else
-  echo "  ttyd: OK"
-fi
-
-if ! command -v node &>/dev/null; then
-  echo "  ERROR: node not found. Install Node.js first."
+  echo "  brew: NOT FOUND"
+  echo ""
+  echo "Homebrew is required to install dependencies."
+  echo "Install it from https://brew.sh"
   exit 1
-else
-  echo "  node: OK ($(node --version))"
 fi
 
-# 2. Install npm dependencies
+# tmux
+if command -v tmux &>/dev/null; then
+  echo "  tmux: OK"
+else
+  echo "  tmux: not found, installing..."
+  brew install tmux
+fi
+
+# ttyd
+if command -v ttyd &>/dev/null; then
+  echo "  ttyd: OK"
+else
+  echo "  ttyd: not found, installing..."
+  brew install ttyd
+fi
+
+# Xcode Command Line Tools (needed for swiftc / menu bar app)
+if ! $SKIP_MENUBAR; then
+  if xcode-select -p &>/dev/null; then
+    echo "  xcode CLI tools: OK"
+  else
+    echo ""
+    echo "  Xcode Command Line Tools are not installed."
+    echo "  These are needed to compile the menu bar icon."
+    echo ""
+    echo "  Options:"
+    echo "    1) Install them:  xcode-select --install"
+    echo "    2) Skip the icon: ./install.sh --skip-menu-bar-icon"
+    echo ""
+    exit 1
+  fi
+fi
+
+# Claude CLI
+if command -v claude &>/dev/null; then
+  echo "  claude: OK"
+else
+  echo "  claude: NOT FOUND"
+  MISSING+=("claude")
+fi
+
+if [ ${#MISSING[@]} -gt 0 ]; then
+  echo ""
+  echo "Missing required tools: ${MISSING[*]}"
+  [ " ${MISSING[*]} " =~ " node " ] && echo "  Install Node.js: https://nodejs.org or brew install node"
+  [ " ${MISSING[*]} " =~ " claude " ] && echo "  Install Claude Code: npm install -g @anthropic-ai/claude-code"
+  exit 1
+fi
+
+# --- npm install ---
+
 echo ""
 echo "Installing npm dependencies..."
 cd "$SCRIPT_DIR"
 npm install
 
-# 3. Compile Swift menu bar app
-echo ""
-echo "Compiling menu bar app..."
-swiftc -o "$SCRIPT_DIR/menubar/KlaudiiMenu" "$SCRIPT_DIR/menubar/KlaudiiMenu.swift" \
-  -framework Cocoa 2>/dev/null && echo "  Built: menubar/KlaudiiMenu" || echo "  WARN: Swift compilation failed (menu bar app won't work)"
+# --- config.json ---
 
-# 4. Set up launchd agent
+if [ ! -f "$SCRIPT_DIR/config.json" ]; then
+  echo ""
+  echo "Creating config.json..."
+
+  # Try to find a reasonable repos directory
+  REPOS_DIR=""
+  for candidate in "$HOME/repos" "$HOME/Projects" "$HOME/src" "$HOME/code"; do
+    if [ -d "$candidate" ]; then
+      REPOS_DIR="$candidate"
+      break
+    fi
+  done
+
+  if [ -z "$REPOS_DIR" ]; then
+    REPOS_DIR="$HOME/repos"
+    echo "  No repos directory found, defaulting to $REPOS_DIR"
+    echo "  Edit config.json to set your reposDir."
+  else
+    echo "  Detected repos directory: $REPOS_DIR"
+  fi
+
+  cat > "$SCRIPT_DIR/config.json" <<CONF
+{
+  "port": 9876,
+  "ttydBasePort": 9877,
+  "reposDir": "$REPOS_DIR",
+  "projects": []
+}
+CONF
+  echo "  Created: config.json"
+else
+  echo ""
+  echo "config.json already exists, keeping it."
+fi
+
+# --- Menu bar app ---
+
+if ! $SKIP_MENUBAR; then
+  echo ""
+  echo "Compiling menu bar app..."
+  if swiftc -o "$SCRIPT_DIR/menubar/KlaudiiMenu" "$SCRIPT_DIR/menubar/KlaudiiMenu.swift" \
+    -framework Cocoa 2>/dev/null; then
+    echo "  Built: menubar/KlaudiiMenu"
+  else
+    echo "  WARN: Swift compilation failed (menu bar icon won't work)"
+  fi
+else
+  echo ""
+  echo "Skipping menu bar app (--skip-menu-bar-icon)"
+fi
+
+# --- launchd agent ---
+
 echo ""
 echo "Setting up launchd agent..."
 mkdir -p "$LAUNCH_AGENTS_DIR"
 
+NODE_PATH="$(which node)"
+
 # Unload existing if present (check both old and new names)
-for old_plist in "com.bryantinsley.claudes.plist" "com.bryantinsley.klaudii.plist"; do
+for old_plist in "com.bryantinsley.claudes.plist" "$PLIST_NAME"; do
   if [ -f "$LAUNCH_AGENTS_DIR/$old_plist" ]; then
     echo "  Unloading $old_plist..."
     launchctl unload "$LAUNCH_AGENTS_DIR/$old_plist" 2>/dev/null || true
@@ -58,18 +165,63 @@ for old_plist in "com.bryantinsley.claudes.plist" "com.bryantinsley.klaudii.plis
   fi
 done
 
-cp "$SCRIPT_DIR/$PLIST_NAME" "$LAUNCH_AGENTS_DIR/"
-launchctl load "$LAUNCH_AGENTS_DIR/$PLIST_NAME"
-echo "  Loaded: $LAUNCH_AGENTS_DIR/$PLIST_NAME"
+cat > "$LAUNCH_AGENTS_DIR/$PLIST_NAME" <<PLIST
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>com.bryantinsley.klaudii</string>
 
-# 5. Done
+  <key>ProgramArguments</key>
+  <array>
+    <string>$NODE_PATH</string>
+    <string>$SCRIPT_DIR/server.js</string>
+  </array>
+
+  <key>WorkingDirectory</key>
+  <string>$SCRIPT_DIR</string>
+
+  <key>RunAtLoad</key>
+  <true/>
+
+  <key>KeepAlive</key>
+  <true/>
+
+  <key>StandardOutPath</key>
+  <string>/tmp/klaudii.log</string>
+
+  <key>StandardErrorPath</key>
+  <string>/tmp/klaudii-error.log</string>
+
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>PATH</key>
+    <string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin</string>
+  </dict>
+</dict>
+</plist>
+PLIST
+
+launchctl load "$LAUNCH_AGENTS_DIR/$PLIST_NAME"
+echo "  Installed and loaded: $LAUNCH_AGENTS_DIR/$PLIST_NAME"
+
+# --- Done ---
+
 echo ""
 echo "=== Install complete ==="
 echo ""
-echo "  Dashboard: http://localhost:9876"
-echo "  Logs:      /tmp/klaudii.log"
-echo "  Menu bar:  Run ./menubar/KlaudiiMenu to start"
+echo "  Dashboard:  http://localhost:9876"
+echo "  Logs:       /tmp/klaudii.log"
+echo "  Config:     $SCRIPT_DIR/config.json"
+if ! $SKIP_MENUBAR; then
+  echo "  Menu bar:   Run ./menubar/KlaudiiMenu to start"
+fi
 echo ""
 echo "The server will auto-start at login."
-echo "To add the menu bar app to Login Items, drag menubar/KlaudiiMenu"
-echo "into System Settings > General > Login Items."
+if ! $SKIP_MENUBAR; then
+  echo "To add the menu bar icon to Login Items, drag menubar/KlaudiiMenu"
+  echo "into System Settings > General > Login Items."
+fi
+echo ""
+echo "Add workspaces via the dashboard or edit config.json directly."
