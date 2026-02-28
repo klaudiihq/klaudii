@@ -6,6 +6,7 @@ let lastProcs = [];
 let activeTabUrl = null;
 let sortMode = localStorage.getItem("sortMode") || "activity";
 let openMode = "inplace";
+let openTabUrls = new Set(); // full URLs (no query string) of open claude.ai tabs
 
 // --- Init ---
 
@@ -95,9 +96,22 @@ function setConnected(ok) {
 
 function trackActiveTab() {
   updateActiveTabUrl();
+  updateOpenTabs();
   chrome.tabs.onActivated.addListener(() => updateActiveTabUrl());
   chrome.tabs.onUpdated.addListener((_tabId, changeInfo) => {
-    if (changeInfo.url || changeInfo.status === "complete") updateActiveTabUrl();
+    if (changeInfo.url || changeInfo.status === "complete") {
+      updateActiveTabUrl();
+      updateOpenTabs();
+    }
+  });
+  chrome.tabs.onRemoved.addListener(() => updateOpenTabs());
+}
+
+function updateOpenTabs() {
+  chrome.tabs.query({ url: "https://claude.ai/*" }, (tabs) => {
+    openTabUrls = new Set((tabs || []).map((t) => t.url?.split("?")[0]).filter(Boolean));
+    // Re-render cards so Switch/Open labels stay current
+    if (lastSessions.length) renderSessions(lastSessions, lastProcs);
   });
 }
 
@@ -205,9 +219,13 @@ function renderCard(s, proc) {
 
   let actions = "";
   if (isRunning) {
-    const openBtn = s.claudeUrl
-      ? `<button class="btn success" data-action="open" data-url="${esc(s.claudeUrl)}" data-title="${esc(displayTitle)}">Open</button>`
-      : "";
+    let openBtn = "";
+    if (s.claudeUrl) {
+      const sessionUrlPath = s.claudeUrl.split("?")[0];
+      const tabIsOpen = openMode === "tabs" &&
+        [...openTabUrls].some((u) => u.startsWith(sessionUrlPath));
+      openBtn = `<button class="btn ${tabIsOpen ? "" : "success"}" data-action="open" data-url="${esc(s.claudeUrl)}" data-title="${esc(displayTitle)}">${tabIsOpen ? "Switch" : "Open"}</button>`;
+    }
     actions = `
       ${openBtn}
       <button class="btn danger btn-sm" data-action="stop" data-project="${esc(s.project)}">Stop</button>

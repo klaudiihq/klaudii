@@ -89,9 +89,10 @@ async function navigateAndRename(url, title) {
 async function switchTab(url, title) {
   const urlPath = url.split("?")[0];
 
-  // Look for a tab already at this URL (ignoring query params)
+  // Look for a tab already at this URL — use startsWith because claude.ai often
+  // appends /chat/... segments to the base project URL after navigation
   const candidates = await chrome.tabs.query({ url: "https://claude.ai/*" });
-  const existing = candidates.find((t) => t.url && t.url.split("?")[0] === urlPath);
+  const existing = candidates.find((t) => t.url && t.url.startsWith(urlPath));
 
   let targetTab;
   if (existing) {
