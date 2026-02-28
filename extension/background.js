@@ -28,13 +28,13 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   }
   // Navigate the active tab and rename the claude.ai conversation
   if (message.action === "navigateAndRename") {
-    navigateAndRename(message.url, message.title).then(sendResponse);
+    navigateAndRename(message.url, message.title, message.needsInput).then(sendResponse);
     return true;
   }
 
   // Switch to an existing tab for this URL, or open a new one
   if (message.action === "switchTab") {
-    switchTab(message.url, message.title, message.windowId).then(sendResponse);
+    switchTab(message.url, message.title, message.windowId, message.needsInput).then(sendResponse);
     return true;
   }
 
@@ -70,7 +70,7 @@ async function navigateActiveTab(url) {
 }
 
 // Navigate the active tab to a claude.ai URL, then rename the conversation
-async function navigateAndRename(url, title) {
+async function navigateAndRename(url, title, needsInput) {
   const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
 
   // If tab is already at this URL (same path, ignore query params), skip navigation
@@ -94,15 +94,17 @@ async function navigateAndRename(url, title) {
   const sessionId = new URL(url).pathname.split("/").filter(Boolean).pop();
   if (!sessionId) return { tabId: targetTab.id };
 
-  try {
-    await chrome.scripting.executeScript({
-      target: { tabId: targetTab.id },
-      func: renameConversationInPage,
-      args: [sessionId, title],
-      world: "MAIN",
-    });
-  } catch (err) {
-    console.warn("Klaudii: rename script injection failed", err);
+  if (!needsInput) {
+    try {
+      await chrome.scripting.executeScript({
+        target: { tabId: targetTab.id },
+        func: renameConversationInPage,
+        args: [sessionId, title],
+        world: "MAIN",
+      });
+    } catch (err) {
+      console.warn("Klaudii: rename script injection failed", err);
+    }
   }
 
   return { tabId: targetTab.id };
@@ -110,7 +112,7 @@ async function navigateAndRename(url, title) {
 
 // Switch to an existing tab already at the URL, or open a new one.
 // Scoped to windowId so we stay in the same window as the side panel.
-async function switchTab(url, title, windowId) {
+async function switchTab(url, title, windowId, needsInput) {
   const urlPath = url.split("?")[0];
 
   // Look for a tab in this window already at this URL — use startsWith because
@@ -137,15 +139,17 @@ async function switchTab(url, title, windowId) {
   const sessionId = new URL(url).pathname.split("/").filter(Boolean).pop();
   if (!sessionId) return { tabId: targetTab.id };
 
-  try {
-    await chrome.scripting.executeScript({
-      target: { tabId: targetTab.id },
-      func: renameConversationInPage,
-      args: [sessionId, title],
-      world: "MAIN",
-    });
-  } catch (err) {
-    console.warn("Klaudii: rename script injection failed", err);
+  if (!needsInput) {
+    try {
+      await chrome.scripting.executeScript({
+        target: { tabId: targetTab.id },
+        func: renameConversationInPage,
+        args: [sessionId, title],
+        world: "MAIN",
+      });
+    } catch (err) {
+      console.warn("Klaudii: rename script injection failed", err);
+    }
   }
 
   return { tabId: targetTab.id };
