@@ -1,6 +1,7 @@
 const API = "";
 let refreshTimer = null;
 let currentTerminalSession = null;
+let sortMode = localStorage.getItem("klaudii-sort") || "activity";
 
 async function api(path, opts = {}) {
   const res = await fetch(API + path, {
@@ -11,14 +12,45 @@ async function api(path, opts = {}) {
   return res.json();
 }
 
+// --- Sorting ---
+
+function setSort(mode) {
+  sortMode = mode;
+  localStorage.setItem("klaudii-sort", mode);
+  updateSortButtons();
+  refresh();
+}
+
+function updateSortButtons() {
+  document.querySelectorAll(".sort-btn").forEach((b) => b.classList.remove("active"));
+  const active = document.getElementById(`sort-${sortMode}`);
+  if (active) active.classList.add("active");
+}
+
+function sortSessions(sessions) {
+  return [...sessions].sort((a, b) => {
+    // Running always floats to top
+    if (a.running !== b.running) return a.running ? -1 : 1;
+
+    if (sortMode === "alpha") {
+      return a.project.localeCompare(b.project);
+    }
+    // activity: most recent first
+    return (b.lastActivity || 0) - (a.lastActivity || 0);
+  });
+}
+
 // --- Rendering ---
 
 function renderSessions(sessions, procs) {
   const container = document.getElementById("sessions-list");
+  updateSortButtons();
   if (!sessions.length) {
     container.innerHTML = '<p style="color:#666">No workspaces configured.</p>';
     return;
   }
+
+  sessions = sortSessions(sessions);
 
   // Build a lookup of managed process stats by project name
   const procByProject = {};

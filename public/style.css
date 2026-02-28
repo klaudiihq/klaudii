@@ -37,6 +37,19 @@ h2 {
   gap: 0.5rem;
 }
 
+/* Sort controls */
+.sort-controls {
+  display: inline-flex;
+  gap: 0.25rem;
+  margin-left: 0.25rem;
+}
+
+.sort-btn.active {
+  background: #3a3d45;
+  color: #fff;
+  border-color: #555;
+}
+
 .badge {
   font-size: 0.75rem;
   padding: 0.2rem 0.6rem;

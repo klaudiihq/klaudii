@@ -14,7 +14,13 @@
 
   <main>
     <section id="sessions-section">
-      <h2>Workspaces <button class="btn primary btn-sm" onclick="openNewSessionModal()">+ New Session</button></h2>
+      <h2>Workspaces
+        <span class="sort-controls">
+          <button class="btn btn-sm sort-btn" id="sort-activity" onclick="setSort('activity')">Recent</button>
+          <button class="btn btn-sm sort-btn" id="sort-alpha" onclick="setSort('alpha')">A-Z</button>
+        </span>
+        <button class="btn primary btn-sm" onclick="openNewSessionModal()">+ New Session</button>
+      </h2>
       <div id="sessions-list" class="card-grid"></div>
     </section>
 

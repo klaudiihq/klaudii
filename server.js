@@ -94,6 +94,7 @@ app.get("/api/sessions", (_req, res) => {
     const gitStatus = git.getStatus(project.path);
 
     const tracked = sessionTracker.getSessions(project.name);
+    const lastActivity = tracked.length ? tracked[0].startedAt : 0;
 
     return {
       project: project.name,
@@ -104,6 +105,7 @@ app.get("/api/sessions", (_req, res) => {
       ttyd: ttydInstance || null,
       git: gitStatus,
       sessionCount: tracked.length,
+      lastActivity,
     };
   });
 
