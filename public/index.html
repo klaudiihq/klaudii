@@ -48,16 +48,35 @@
         <button class="btn btn-sm" onclick="closeNewSessionModal()">X</button>
       </div>
       <div class="modal-body">
-        <div class="form-group">
-          <label>Repository</label>
-          <input id="repo-search" type="text" placeholder="Search repos..." oninput="filterRepos()" />
-          <div id="repo-list" class="repo-list"></div>
+        <!-- Repo search view (default) -->
+        <div id="repo-search-view">
+          <div class="form-group">
+            <label>Repository</label>
+            <input id="repo-search" type="text" placeholder="Search repos..." oninput="filterRepos()" />
+            <div id="repo-list" class="repo-list"></div>
+            <button class="btn btn-sm btn-link" onclick="showCreateRepoForm()">+ Create new repo</button>
+          </div>
+          <div id="branch-form" class="form-group hidden">
+            <label>Branch name</label>
+            <input id="branch-input" type="text" placeholder="e.g. fix-auth-bug" />
+            <div class="form-hint">A new git worktree will be created with this branch.</div>
+            <button class="btn primary" onclick="createNewSession()" id="create-session-btn">Start Session</button>
+          </div>
         </div>
-        <div id="branch-form" class="form-group hidden">
-          <label>Branch name</label>
-          <input id="branch-input" type="text" placeholder="e.g. fix-auth-bug" />
-          <div class="form-hint">A new git worktree will be created with this branch.</div>
-          <button class="btn primary" onclick="createNewSession()" id="create-session-btn">Start Session</button>
+        <!-- Create new repo view -->
+        <div id="create-repo-view" class="hidden">
+          <div class="form-group">
+            <label>Repo name</label>
+            <input id="new-repo-name" type="text" placeholder="e.g. my-project" />
+          </div>
+          <div class="form-group">
+            <label>Remote origin URL <span class="form-hint-inline">(optional)</span></label>
+            <input id="new-repo-remote" type="text" placeholder="e.g. git@github.com:user/my-project.git" />
+          </div>
+          <div class="form-actions">
+            <button class="btn" onclick="showRepoSearchView()">Back</button>
+            <button class="btn primary" onclick="createNewRepo()" id="create-repo-btn">Create Repo</button>
+          </div>
         </div>
       </div>
     </div>

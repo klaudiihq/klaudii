@@ -540,6 +540,31 @@ h2 {
 .repo-badge.cloned { background: #1a3a2a; color: #4ade80; }
 .repo-badge.private { background: #3a2a1a; color: #fbbf24; }
 
+.btn-link {
+  background: none;
+  border: none;
+  color: #60a5fa;
+  cursor: pointer;
+  padding: 0.5rem 0 0;
+  font-size: 0.8rem;
+}
+
+.btn-link:hover { color: #93bbfc; }
+
+.form-hint-inline {
+  font-size: 0.7rem;
+  color: #666;
+  text-transform: none;
+  letter-spacing: 0;
+}
+
+.form-actions {
+  display: flex;
+  gap: 0.5rem;
+  justify-content: flex-end;
+  margin-top: 1rem;
+}
+
 .hidden { display: none; }
 
 /* Responsive */
