@@ -177,17 +177,48 @@ Build confidence that the work Claudes produce is actually correct.
 
 ---
 
-## Phase 6 — Multi-Machine & Scale
+## Phase 6 — Rendezvous & Remote Access
 
-Break out of a single laptop.
+Klaudii is currently trapped on `localhost:9876`. A cloud rendezvous service breaks it free — your phone, tablet, or any browser anywhere can reach your Klaudii instance without port forwarding, VPNs, or Tailscale. This also makes native mobile apps feasible.
 
-### Remote machines
-- [ ] SSH agent — manage Claude sessions on remote servers from the local dashboard
-- [ ] Multi-machine dashboard — see all sessions across all machines in one view
+### Rendezvous service
+- [ ] Lightweight cloud relay (Cloud Run, Fly.io, or a single VPS) that Klaudii servers register with
+- [ ] Klaudii server maintains a persistent WebSocket to the relay, heartbeating once per second
+- [ ] Relay assigns a stable URL per machine (e.g., `bryants-mbp.klaudii.dev`)
+- [ ] Clients connect to the relay URL — relay multiplexes WebSocket connections to the right Klaudii server
+- [ ] Server pushes state updates to relay every 10 seconds (only when clients are connected, relay signals demand)
+- [ ] End-to-end encryption between client and Klaudii server — relay is a dumb pipe
+- [ ] Graceful reconnection — server reconnects automatically after network interruptions
+- [ ] Relay shows "machine offline" to clients when heartbeat stops
+
+### Authentication
+- [ ] Token-based auth — Klaudii server generates a pairing token, scan QR code from phone to connect
+- [ ] OAuth option — sign in with GitHub, relay verifies identity
+- [ ] Per-device session tokens with revocation from the dashboard
+- [ ] Dashboard authentication required when accessed via relay (localhost remains open)
+
+### Mobile clients
+- [ ] Mobile-optimized web dashboard — works today but needs responsive polish for phone-sized screens
+- [ ] iOS app (SwiftUI) — native workspace cards, push notifications for session events, start/stop/restart
+- [ ] Watch complication — glanceable session count and status
+- [ ] iOS Shortcuts integration — "Hey Siri, start my filmschoolapp workspace"
+- [ ] Push notifications via APNs — session completed, session crashed, review needed
+
+### Protocol
+- [ ] Binary WebSocket protocol for efficiency (not JSON over WS)
+- [ ] Delta updates — only send what changed since last update, not full state
+- [ ] Request/response over the tunnel — client can send API calls through the relay to the server
+- [ ] Chunked terminal streaming — pipe tmux output through the relay for remote terminal access without ttyd port exposure
+
+### Multi-machine
+- [ ] Register multiple Klaudii servers with the same relay account
+- [ ] Unified dashboard — see all machines' workspaces in one view
+- [ ] Cross-machine workspace migration — move a session from laptop to desktop
 - [ ] Remote workspace provisioning — start sessions on whichever machine has capacity
+- [ ] Machine health monitoring — CPU, memory, disk across all registered machines
 
 ### Cloud instances
-- [ ] Spin up cloud VMs (EC2, GCE) for heavy workloads
+- [ ] Spin up cloud VMs (EC2, GCE) for heavy workloads, auto-register with relay
 - [ ] Auto-terminate instances when work is done
 - [ ] Cost tracking — show how much cloud compute each task used
 
@@ -195,12 +226,6 @@ Break out of a single laptop.
 - [ ] Run Claude sessions in Docker containers for isolation
 - [ ] Pre-built container images with common development environments
 - [ ] Container-per-workspace with volume mounts for the repo
-
-### Authentication & multi-user
-- [ ] Dashboard authentication (currently open on localhost)
-- [ ] Multi-user support — each user sees their own workspaces
-- [ ] Team workspaces — shared projects with role-based access
-- [ ] API keys for programmatic access
 
 ---
 
@@ -268,10 +293,12 @@ If I had to pick the order that delivers the most value fastest:
 3. **Live session output** — seeing what Claude is doing without opening terminal is transformative
 4. **Toast notifications + UI polish** — stop using `alert()`, make it feel professional
 5. **Git awareness on cards** — branch, dirty status, last commit
-6. **Task queue** — the first step toward orchestration
-7. **GitHub issue → workspace** — most natural way to seed work
-8. **Auto-run tests** — essential before trusting orchestrated work
-9. **Planning + execution pipeline** — the multiplier
-10. **Review Claude** — close the loop on quality
+6. **Rendezvous service** — unlocks mobile access and breaks out of localhost; everything after this is more useful because you can monitor from anywhere
+7. **Task queue** — the first step toward orchestration
+8. **GitHub issue → workspace** — most natural way to seed work
+9. **Auto-run tests** — essential before trusting orchestrated work
+10. **iOS app** — once the relay exists, a native app is the natural next step
+11. **Planning + execution pipeline** — the multiplier
+12. **Review Claude** — close the loop on quality
 
-Everything else builds on these. The orchestration pipeline (Phase 4) is the long-term vision — Klaudii as the operating system for AI-assisted development — but each phase before it makes the tool meaningfully better on its own.
+Everything else builds on these. The rendezvous service is a force multiplier for everything that comes after — once you can monitor and control from your phone, the orchestration pipeline becomes something you can supervise from the couch. The long-term vision is Klaudii as the operating system for AI-assisted development, but each phase makes the tool meaningfully better on its own.
