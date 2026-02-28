@@ -2,6 +2,7 @@ const API = "";
 let refreshTimer = null;
 let currentTerminalSession = null;
 let sortMode = localStorage.getItem("klaudii-sort") || "activity";
+let sortDir = localStorage.getItem("klaudii-sort-dir") || "desc";
 
 async function api(path, opts = {}) {
   const res = await fetch(API + path, {
@@ -21,25 +22,37 @@ function setSort(mode) {
   refresh();
 }
 
+function toggleSortDir() {
+  sortDir = sortDir === "desc" ? "asc" : "desc";
+  localStorage.setItem("klaudii-sort-dir", sortDir);
+  updateSortButtons();
+  refresh();
+}
+
 function updateSortButtons() {
   document.querySelectorAll(".sort-btn").forEach((b) => b.classList.remove("active"));
   const active = document.getElementById(`sort-${sortMode}`);
   if (active) active.classList.add("active");
+  const dirBtn = document.getElementById("sort-dir");
+  if (dirBtn) dirBtn.textContent = sortDir === "desc" ? "↓" : "↑";
 }
 
 function sortSessions(sessions) {
   const statusOrder = { running: 0, exited: 1, stopped: 2 };
+  const dir = sortDir === "asc" ? 1 : -1;
   return [...sessions].sort((a, b) => {
-    // Running/exited float to top, stopped at bottom
+    // Running/exited always float to top regardless of direction
     const sa = statusOrder[a.status] ?? 2;
     const sb = statusOrder[b.status] ?? 2;
     if (sa !== sb) return sa - sb;
 
     if (sortMode === "alpha") {
-      return a.project.localeCompare(b.project);
+      return dir * a.project.localeCompare(b.project);
     }
-    // activity: most recent first
-    return (b.lastActivity || 0) - (a.lastActivity || 0);
+    // activity: use lastActivity, fall back to tmux session creation time
+    const ta = a.lastActivity || (a.tmux && a.tmux.created) || 0;
+    const tb = b.lastActivity || (b.tmux && b.tmux.created) || 0;
+    return dir * (ta - tb);
   });
 }
 
