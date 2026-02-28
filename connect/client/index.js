@@ -141,12 +141,12 @@ function setupRoutes(app) {
   });
 
   // Get connection key display (for pairing additional browsers)
-  app.get("/api/cloud/connection-key", (_req, res) => {
+  app.get("/api/cloud/connection-key", async (_req, res) => {
     const key = pairing.getConnectionKeyDisplay();
     if (!key) {
       return res.status(404).json({ error: "Not paired" });
     }
-    const qr = pairing.getConnectionKeyQR();
+    const qr = await pairing.getConnectionKeyQR().catch(() => null);
     res.json({ connectionKey: key, qrSvg: qr });
   });
 

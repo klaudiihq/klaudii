@@ -1,5 +1,5 @@
 const { generateSigningKeypair, generateConnectionKey, connectionKeyToWords } = require("../shared/crypto");
-const { generateSVG } = require("../shared/qr");
+const QRCode = require("qrcode");
 const { loadConfig, saveConfig } = require("../../lib/projects");
 
 async function redeemPairingCode(relayBaseUrl, code, serverName) {
@@ -94,7 +94,8 @@ function getConnectionKeyQR() {
     .replace(/\/ws$/, "")
     .replace(/\/$/, "");
   const payload = `${relayBase}/pair.html?serverId=${config.cloud.serverId}&key=${config.cloud.connectionKey}`;
-  return generateSVG(payload, { moduleSize: 4, margin: 4, darkColor: "#000000", lightColor: "#ffffff" });
+  // Use qrcode package — battle-tested, correct QR generation
+  return QRCode.toString(payload, { type: "svg", margin: 2, color: { dark: "#000000", light: "#ffffff" } });
 }
 
 module.exports = { redeemPairingCode, getCloudStatus, unpair, getConnectionKeyDisplay, getConnectionKeyQR };
