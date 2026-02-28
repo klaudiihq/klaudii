@@ -403,6 +403,13 @@ app.post("/api/sessions/restart", async (req, res) => {
   }
 });
 
+// --- Token usage ---
+
+app.get("/api/usage", (req, res) => {
+  const hours = Math.min(parseInt(req.query.hours) || 24, 168);
+  res.json(claude.getTokenUsage(hours));
+});
+
 // --- GitHub & Repos ---
 
 app.get("/api/github/repos", (_req, res) => {
