@@ -3,4 +3,7 @@ mac/menubar/KlaudiiMenu
 *.log
 config.json
 sessions.json
+connect/server/relay.db
+connect/server/relay.db-shm
+connect/server/relay.db-wal
 .klaudii-tmux.sock

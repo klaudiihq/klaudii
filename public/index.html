@@ -11,6 +11,7 @@
     <h1>Klaudii</h1>
     <span id="status-badge" class="badge">checking...</span>
     <div id="auth-status" class="auth-box"></div>
+    <button class="btn btn-sm" id="cloud-btn" onclick="openCloudModal()" style="margin-left:auto">Cloud</button>
   </header>
 
   <main>
@@ -92,6 +93,17 @@
         <button class="btn btn-sm" onclick="closeGitStatus()">X</button>
       </div>
       <div class="modal-body" id="git-status-body"></div>
+    </div>
+  </div>
+
+  <!-- Cloud Connect Modal -->
+  <div id="cloud-modal" class="modal-overlay hidden" onclick="closeCloudBackdrop(event)">
+    <div class="modal">
+      <div class="modal-header">
+        <h2 id="cloud-modal-title">Cloud Connect</h2>
+        <button class="btn btn-sm" onclick="closeCloudModal()">X</button>
+      </div>
+      <div class="modal-body" id="cloud-modal-body"></div>
     </div>
   </div>
 
