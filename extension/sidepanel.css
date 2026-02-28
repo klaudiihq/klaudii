@@ -284,6 +284,19 @@ h1 {
 .perm-btn.active.perm-ask    { background: #1e3a5f; border-color: #2a4a7f; color: #60a5fa; }
 .perm-btn.active.perm-strict { background: #3a2a10; border-color: #5a3a10; color: #fbbf24; }
 
+/* Git icon links */
+.git-link {
+  display: inline-flex;
+  align-items: center;
+  color: #444;
+  text-decoration: none;
+  flex-shrink: 0;
+  transition: color 0.15s;
+  margin-left: 4px;
+}
+
+.git-link:hover { color: #999; }
+
 /* Git status bar */
 .git-bar {
   display: flex;
