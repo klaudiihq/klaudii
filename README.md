@@ -16,7 +16,7 @@ Klaudii lets you run several Claude Code instances in parallel — each in its o
 
 ```bash
 git clone <repo-url> && cd klaudii
-./install.sh
+./mac/install.sh
 ```
 
 The install script checks dependencies (installs `tmux` and `ttyd` via Homebrew if missing), creates a default `config.json`, compiles the menu bar app, and registers a launchd agent so the server starts automatically at login.
@@ -48,4 +48,4 @@ Edit `config.json` (created by the installer) to add workspaces manually:
 
 ## Menu bar
 
-The optional menu bar app puts a **Kii** icon in your macOS menu bar with a quick link to open the dashboard. To have it launch at login, add `menubar/KlaudiiMenu` to System Settings > General > Login Items.
+The optional menu bar app puts a **Kii** icon in your macOS menu bar with a quick link to open the dashboard. To have it launch at login, add `mac/menubar/KlaudiiMenu` to System Settings > General > Login Items.
