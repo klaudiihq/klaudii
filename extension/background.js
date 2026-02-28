@@ -1,0 +1,279 @@
+// Open side panel when extension icon is clicked
+chrome.sidePanel.setPanelBehavior({ openPanelOnActionClick: true });
+
+// Handle messages from the side panel
+chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
+  // Navigate the active tab and rename the claude.ai conversation
+  if (message.action === "navigateAndRename") {
+    navigateAndRename(message.url, message.title).then(sendResponse);
+    return true;
+  }
+
+  // Navigate the active tab in-place (no rename)
+  if (message.action === "navigateTab") {
+    navigateActiveTab(message.url).then(sendResponse);
+    return true;
+  }
+
+  // Open a URL in a new tab (used for dashboard, terminal, etc.)
+  if (message.action === "openUrl") {
+    chrome.tabs.create({ url: message.url }).then(sendResponse);
+    return true;
+  }
+
+  if (message.action === "getActiveTabUrl") {
+    chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
+      sendResponse({ url: tabs[0]?.url || null });
+    });
+    return true;
+  }
+});
+
+// Navigate the current active tab to a URL
+async function navigateActiveTab(url) {
+  const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+  if (tab) {
+    await chrome.tabs.update(tab.id, { url });
+    return { tabId: tab.id };
+  }
+  const newTab = await chrome.tabs.create({ url });
+  return { tabId: newTab.id };
+}
+
+// Navigate the active tab to a claude.ai URL, then rename the conversation
+async function navigateAndRename(url, title) {
+  const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+
+  // If tab is already at this URL (same path, ignore query params), skip navigation
+  const alreadyThere = tab?.url && tab.url.split("?")[0] === url.split("?")[0];
+  let targetTab;
+
+  if (alreadyThere) {
+    targetTab = tab;
+  } else {
+    targetTab = tab
+      ? await chrome.tabs.update(tab.id, { url })
+      : await chrome.tabs.create({ url });
+
+    await waitForTabLoad(targetTab.id);
+    // Extra pause for React to fully initialize
+    await new Promise((r) => setTimeout(r, 3000));
+  }
+
+  if (!title) return { tabId: targetTab.id };
+
+  const sessionId = new URL(url).pathname.split("/").filter(Boolean).pop();
+  if (!sessionId) return { tabId: targetTab.id };
+
+  try {
+    await chrome.scripting.executeScript({
+      target: { tabId: targetTab.id },
+      func: renameConversationInPage,
+      args: [sessionId, title],
+      world: "MAIN",
+    });
+  } catch (err) {
+    console.warn("Klaudii: rename script injection failed", err);
+  }
+
+  return { tabId: targetTab.id };
+}
+
+function waitForTabLoad(tabId) {
+  return new Promise((resolve) => {
+    let seenLoading = false;
+
+    function listener(id, changeInfo) {
+      if (id !== tabId) return;
+      if (changeInfo.status === "loading") seenLoading = true;
+      if (changeInfo.status === "complete" && seenLoading) {
+        chrome.tabs.onUpdated.removeListener(listener);
+        resolve();
+      }
+    }
+
+    chrome.tabs.onUpdated.addListener(listener);
+
+    // Don't wait forever
+    setTimeout(() => {
+      chrome.tabs.onUpdated.removeListener(listener);
+      resolve();
+    }, 15000);
+  });
+}
+
+// This function is injected into the claude.ai page context (MAIN world).
+// IMPORTANT: it must be entirely self-contained — chrome.scripting.executeScript
+// only serializes THIS function, not any helpers defined outside it.
+//
+// Simulates the claude.ai rename UI flow:
+//   1. Find & pointer-click the dropdown trigger (Radix requires pointerdown, not just click)
+//   2. Poll for [role="menuitem"] to appear, click "Rename"
+//   3. Poll for the rename input, set new value, confirm with Enter
+//
+// If the current session title is already custom (not "Remote Control session"),
+// the rename is skipped to avoid overwriting the user's own name.
+function renameConversationInPage(sessionId, newTitle) {
+  // Simulate a full pointer interaction — Radix UI listens to pointerdown, not click
+  function pointerClick(el) {
+    var opts = { bubbles: true, cancelable: true, view: window, button: 0, buttons: 1 };
+    el.dispatchEvent(new PointerEvent("pointerover", opts));
+    el.dispatchEvent(new MouseEvent("mouseover", opts));
+    el.dispatchEvent(new PointerEvent("pointerenter", opts));
+    el.dispatchEvent(new MouseEvent("mouseenter", opts));
+    el.dispatchEvent(new PointerEvent("pointermove", opts));
+    el.dispatchEvent(new MouseEvent("mousemove", opts));
+    el.dispatchEvent(new PointerEvent("pointerdown", opts));
+    el.dispatchEvent(new MouseEvent("mousedown", opts));
+    el.dispatchEvent(new FocusEvent("focus", { bubbles: false }));
+    el.dispatchEvent(new PointerEvent("pointerup", { ...opts, buttons: 0 }));
+    el.dispatchEvent(new MouseEvent("mouseup", { ...opts, buttons: 0 }));
+    el.dispatchEvent(new MouseEvent("click", { ...opts, buttons: 0 }));
+  }
+
+  // --- Step 1: Find and click the conversation dropdown trigger ---
+  var triggerAttempts = 0;
+  var triggerIndex = 0;
+  var allTriggers = [];
+
+  function step1_openDropdown() {
+    triggerAttempts++;
+
+    allTriggers = Array.from(document.querySelectorAll(
+      'button[aria-haspopup="menu"], [data-radix-dropdown-menu-trigger]'
+    ));
+
+    if (!allTriggers.length) {
+      if (triggerAttempts < 30) {
+        setTimeout(step1_openDropdown, 500);
+        return;
+      }
+      console.warn("Klaudii: dropdown trigger never found");
+      return;
+    }
+
+    if (triggerIndex >= allTriggers.length) {
+      console.warn("Klaudii: tried all triggers, none had a Rename menu item");
+      return;
+    }
+
+    pointerClick(allTriggers[triggerIndex]);
+    menuAttempts = 0;
+    setTimeout(step2_clickRename, 100);
+  }
+
+  // --- Step 2: Poll for the menu to open, then click "Rename" ---
+  var menuAttempts = 0;
+
+  function step2_clickRename() {
+    menuAttempts++;
+
+    var menuItems = document.querySelectorAll('[role="menuitem"]');
+
+    if (!menuItems.length) {
+      if (menuAttempts < 20) {
+        setTimeout(step2_clickRename, 100);
+        return;
+      }
+      // This trigger didn't open a menu with items — try the next one
+      triggerIndex++;
+      triggerAttempts = 0;
+      setTimeout(step1_openDropdown, 200);
+      return;
+    }
+
+    var renameItem = null;
+    for (var i = 0; i < menuItems.length; i++) {
+      if (menuItems[i].textContent.trim() === "Rename") {
+        renameItem = menuItems[i];
+        break;
+      }
+    }
+
+    if (!renameItem) {
+      // Wrong menu — close it and try next trigger
+      document.dispatchEvent(new KeyboardEvent("keydown", {
+        key: "Escape", code: "Escape", keyCode: 27, bubbles: true,
+      }));
+      triggerIndex++;
+      triggerAttempts = 0;
+      setTimeout(step1_openDropdown, 300);
+      return;
+    }
+
+    pointerClick(renameItem);
+    inputAttempts = 0;
+    setTimeout(step3_editInput, 100);
+  }
+
+  // --- Step 3: Poll for the rename input, set value, confirm ---
+  var inputAttempts = 0;
+
+  function step3_editInput() {
+    inputAttempts++;
+
+    var input =
+      document.querySelector('input[maxlength="200"][type="text"]') ||
+      document.querySelector('input[type="text"]');
+
+    if (!input) {
+      if (inputAttempts < 15) {
+        setTimeout(step3_editInput, 200);
+        return;
+      }
+      console.warn("Klaudii: rename input never appeared");
+      return;
+    }
+
+    var currentVal = input.value.trim();
+
+    // Respect user's custom title — only rename if it's the default
+    if (currentVal && currentVal !== "Remote Control session" && currentVal !== newTitle) {
+      input.dispatchEvent(new KeyboardEvent("keydown", {
+        key: "Escape", code: "Escape", keyCode: 27, bubbles: true,
+      }));
+      return;
+    }
+
+    // Already the right name — just cancel and sync the tab title
+    if (currentVal === newTitle) {
+      input.dispatchEvent(new KeyboardEvent("keydown", {
+        key: "Escape", code: "Escape", keyCode: 27, bubbles: true,
+      }));
+      document.title = newTitle + " \\ Claude";
+      return;
+    }
+
+    // Set the new value via React-compatible native setter
+    var setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value").set;
+    setter.call(input, newTitle);
+    input.dispatchEvent(new Event("input", { bubbles: true }));
+    input.dispatchEvent(new Event("change", { bubbles: true }));
+
+    // Confirm with Enter, then blur as backup
+    setTimeout(function() {
+      input.dispatchEvent(new KeyboardEvent("keydown", {
+        key: "Enter", code: "Enter", keyCode: 13, which: 13, bubbles: true,
+      }));
+      setTimeout(function() {
+        input.dispatchEvent(new Event("blur", { bubbles: true }));
+        input.dispatchEvent(new FocusEvent("focusout", { bubbles: true }));
+      }, 100);
+
+      // Update the browser tab title and keep it persistent against React overwrites
+      var fullTitle = newTitle + " \\ Claude";
+      document.title = fullTitle;
+      var titleTag = document.querySelector("title");
+      if (titleTag) {
+        var obs = new MutationObserver(function() {
+          if (document.title !== fullTitle) document.title = fullTitle;
+        });
+        obs.observe(titleTag, { childList: true, characterData: true, subtree: true });
+        setTimeout(function() { obs.disconnect(); }, 30000);
+      }
+    }, 100);
+  }
+
+  // Kick off the flow
+  step1_openDropdown();
+}
