@@ -4,6 +4,7 @@ const GIT_PATH = "M23.546 10.93L13.067.452c-.604-.603-1.582-.603-2.188 0L8.708 2
 const gitSvg = (size) => `<svg width="${size}" height="${size}" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="${GIT_PATH}"/></svg>`;
 let klaudiiUrl = DEFAULT_KLAUDII_URL;
 let pollTimer = null;
+let approvalFastPollTimer = null;
 let lastSessions = [];
 let lastProcs = [];
 let activeTabUrl = null;
@@ -155,6 +156,15 @@ async function checkApprovalStates(sessions) {
   const changed = sessions.some((s) => !!newStates[s.project] !== !!sessionNeedsInput[s.project]);
   sessionNeedsInput = newStates;
   if (changed) renderSessions(lastSessions, lastProcs);
+
+  // Run a fast poll while any session is waiting for input; cancel when clear
+  const anyNeedsInput = Object.values(sessionNeedsInput).some(Boolean);
+  if (anyNeedsInput && !approvalFastPollTimer) {
+    approvalFastPollTimer = setInterval(() => checkApprovalStates(lastSessions), 750);
+  } else if (!anyNeedsInput && approvalFastPollTimer) {
+    clearInterval(approvalFastPollTimer);
+    approvalFastPollTimer = null;
+  }
 }
 
 // --- Track which claude.ai tab is active ---
