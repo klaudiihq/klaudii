@@ -1,3 +1,87 @@
+/* =========================================================
+   CSS custom properties — dark (default) and light themes
+   ========================================================= */
+
+:root {
+  /* Structural backgrounds */
+  --bg:           #0f1117;
+  --bg-card:      #1a1d25;
+  --bg-hover:     #252830;
+  --bg-input:     #0f1117;
+  --bg-btn:       #2a2d35;
+  --bg-btn-hover: #3a3d45;
+  --bg-active:    #3a3d45;
+  --bg-badge:     #2a2d35;
+
+  /* Borders */
+  --border:        #2a2d35;
+  --border-subtle: #1a1d25;
+  --border-btn:    #3a3d45;
+  --border-active: #555;
+
+  /* Text */
+  --text:          #e0e0e0;
+  --text-strong:   #fff;
+  --text-secondary:#ccc;
+  --text-dim:      #aaa;
+  --text-muted:    #888;
+  --text-faint:    #666;
+  --text-fainter:  #555;
+
+  /* Semantic status — dark palette */
+  --s-green:       #4ade80;
+  --s-green-bg:    #1a3a2a;
+  --s-yellow:      #fbbf24;
+  --s-yellow-bg:   #3a2a1a;
+  --s-red:         #f87171;
+  --s-red-bg:      #3a1a1a;
+  --s-blue-text:   #60a5fa;
+  --s-blue-bg:     #1e3a5f;
+  --s-blue-deep:   #1a2535;
+
+  /* Primary action blue — same in both themes */
+  --btn-primary:       #2563eb;
+  --btn-primary-hover: #1d4ed8;
+}
+
+html.light {
+  --bg:           #f0f2f5;
+  --bg-card:      #ffffff;
+  --bg-hover:     #eaecf2;
+  --bg-input:     #ffffff;
+  --bg-btn:       #eef0f5;
+  --bg-btn-hover: #e2e5ec;
+  --bg-active:    #dde2ed;
+  --bg-badge:     #e5e8f0;
+
+  --border:        #d5d9e4;
+  --border-subtle: #eaecf2;
+  --border-btn:    #c5cad8;
+  --border-active: #9099b2;
+
+  --text:          #1e2235;
+  --text-strong:   #0f1120;
+  --text-secondary:#374151;
+  --text-dim:      #4b5568;
+  --text-muted:    #6b7280;
+  --text-faint:    #9ca3af;
+  --text-fainter:  #b8c0d0;
+
+  --s-green:       #16a34a;
+  --s-green-bg:    #dcfce7;
+  --s-yellow:      #b45309;
+  --s-yellow-bg:   #fef3c7;
+  --s-red:         #dc2626;
+  --s-red-bg:      #fee2e2;
+  --s-blue-text:   #2563eb;
+  --s-blue-bg:     #dbeafe;
+  --s-blue-deep:   #eff6ff;
+}
+
+/* =========================================================
+   Base
+   ========================================================= */
+
 * {
   margin: 0;
   padding: 0;
@@ -6,18 +90,22 @@
 
 body {
   font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-  background: #0f1117;
-  color: #e0e0e0;
+  background: var(--bg);
+  color: var(--text);
   min-height: 100vh;
   padding: 1rem;
 }
+
+/* =========================================================
+   Header
+   ========================================================= */
 
 header {
   display: flex;
   align-items: center;
   gap: 1rem;
   padding: 1rem 0;
-  border-bottom: 1px solid #2a2d35;
+  border-bottom: 1px solid var(--border);
   margin-bottom: 1.5rem;
 }
 
@@ -25,7 +113,7 @@ header {
   display: flex;
   align-items: center;
   gap: 0.6rem;
-  border: 1px solid #2a2d35;
+  border: 1px solid var(--border);
   border-radius: 6px;
   padding: 0.3rem 0.6rem;
   margin-left: auto;
@@ -33,7 +121,7 @@ header {
 
 .auth-title {
   font-size: 0.6rem;
-  color: #555;
+  color: var(--text-fainter);
   text-transform: uppercase;
   letter-spacing: 0.05em;
 }
@@ -43,7 +131,7 @@ header {
   align-items: center;
   gap: 0.3rem;
   font-size: 0.7rem;
-  color: #888;
+  color: var(--text-muted);
   cursor: default;
 }
 
@@ -53,26 +141,29 @@ header {
   border-radius: 50%;
 }
 
-.auth-dot.ok { background: #4ade80; }
-.auth-dot.error { background: #f87171; }
+.auth-dot.ok    { background: var(--s-green); }
+.auth-dot.error { background: var(--s-red); }
 
 h1 {
   font-size: 1.5rem;
   font-weight: 600;
-  color: #fff;
+  color: var(--text-strong);
 }
 
 h2 {
   font-size: 1.1rem;
   font-weight: 500;
   margin-bottom: 0.75rem;
-  color: #aaa;
+  color: var(--text-dim);
   display: flex;
   align-items: center;
   gap: 0.5rem;
 }
 
-/* Sort controls */
+/* =========================================================
+   Sort controls
+   ========================================================= */
+
 .sort-controls {
   display: inline-flex;
   gap: 0.25rem;
@@ -80,23 +171,30 @@ h2 {
 }
 
 .sort-btn.active {
-  background: #3a3d45;
-  color: #fff;
-  border-color: #555;
+  background: var(--bg-active);
+  color: var(--text-strong);
+  border-color: var(--border-active);
 }
+
+/* =========================================================
+   Badge
+   ========================================================= */
 
 .badge {
   font-size: 0.75rem;
   padding: 0.2rem 0.6rem;
   border-radius: 999px;
-  background: #2a2d35;
-  color: #888;
+  background: var(--bg-badge);
+  color: var(--text-muted);
 }
 
-.badge.ok { background: #1a3a2a; color: #4ade80; }
-.badge.error { background: #3a1a1a; color: #f87171; }
+.badge.ok    { background: var(--s-green-bg); color: var(--s-green); }
+.badge.error { background: var(--s-red-bg);   color: var(--s-red); }
 
-/* Card grid */
+/* =========================================================
+   Card grid
+   ========================================================= */
+
 .card-grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(340px, 1fr));
@@ -105,8 +203,8 @@ h2 {
 }
 
 .card {
-  background: #1a1d25;
-  border: 1px solid #2a2d35;
+  background: var(--bg-card);
+  border: 1px solid var(--border);
   border-radius: 8px;
   padding: 1rem;
 }
@@ -121,12 +219,12 @@ h2 {
 .card-title {
   font-size: 1rem;
   font-weight: 600;
-  color: #fff;
+  color: var(--text-strong);
 }
 
 .card-branch {
   font-weight: 400;
-  color: #666;
+  color: var(--text-faint);
 }
 
 .card-status {
@@ -135,14 +233,17 @@ h2 {
   border-radius: 999px;
 }
 
-.card-status.running { background: #1a3a2a; color: #4ade80; }
-.card-status.exited { background: #3a2a1a; color: #fbbf24; }
-.card-status.stopped { background: #2a2d35; color: #888; }
+.card-status.running { background: var(--s-green-bg);  color: var(--s-green); }
+.card-status.exited  { background: var(--s-yellow-bg); color: var(--s-yellow); }
+.card-status.stopped { background: var(--bg-badge);    color: var(--text-muted); }
 
-/* Permission toggle */
+/* =========================================================
+   Permission toggle
+   ========================================================= */
+
 .permission-toggle {
   display: inline-flex;
-  border: 1px solid #2a2d35;
+  border: 1px solid var(--border);
   border-radius: 6px;
   overflow: hidden;
   margin-bottom: 0.5rem;
@@ -153,33 +254,35 @@ h2 {
   padding: 0.2rem 0.6rem;
   border: none;
   background: transparent;
-  color: #555;
+  color: var(--text-fainter);
   cursor: pointer;
   transition: all 0.15s;
 }
 
 .perm-btn:not(:last-child) {
-  border-right: 1px solid #2a2d35;
+  border-right: 1px solid var(--border);
 }
 
 .perm-btn:hover {
-  color: #aaa;
-  background: #252830;
+  color: var(--text-dim);
+  background: var(--bg-hover);
 }
 
-.perm-btn.active.yolo { background: #1a3a2a; color: #4ade80; }
-.perm-btn.active.ask { background: #1e3a5f; color: #60a5fa; }
-.perm-btn.active.strict { background: #3a2a1a; color: #fbbf24; }
+.perm-btn.active.yolo   { background: var(--s-green-bg);  color: var(--s-green); }
+.perm-btn.active.ask    { background: var(--s-blue-bg);   color: var(--s-blue-text); }
+.perm-btn.active.strict { background: var(--s-yellow-bg); color: var(--s-yellow); }
 
 .permission-toggle.locked { border: none; }
+
 .perm-badge {
   font-size: 0.65rem;
   padding: 0.15rem 0.5rem;
   border-radius: 999px;
 }
-.perm-badge.yolo { background: #1a3a2a; color: #4ade80; }
-.perm-badge.ask { background: #1e3a5f; color: #60a5fa; }
-.perm-badge.strict { background: #3a2a1a; color: #fbbf24; }
+
+.perm-badge.yolo   { background: var(--s-green-bg);  color: var(--s-green); }
+.perm-badge.ask    { background: var(--s-blue-bg);   color: var(--s-blue-text); }
+.perm-badge.strict { background: var(--s-yellow-bg); color: var(--s-yellow); }
 
 .card-actions {
   display: flex;
@@ -187,7 +290,10 @@ h2 {
   flex-wrap: wrap;
 }
 
-/* Git status bar on workspace cards */
+/* =========================================================
+   Git status bar (on cards)
+   ========================================================= */
+
 .git-status-bar {
   display: flex;
   align-items: center;
@@ -196,40 +302,21 @@ h2 {
   margin-bottom: 0.4rem;
 }
 
-.git-dirty {
-  color: #fbbf24;
-  cursor: pointer;
-}
-
-.git-dirty:hover { text-decoration: underline; }
-
-.git-clean {
-  color: #4ade80;
-}
-
-.git-unpushed {
-  color: #f87171;
-  font-weight: 500;
-}
+.git-dirty         { color: var(--s-yellow); cursor: pointer; }
+.git-dirty:hover   { text-decoration: underline; }
+.git-clean         { color: var(--s-green); }
+.git-unpushed      { color: var(--s-red); font-weight: 500; }
 
 /* Card title links */
-.card-repo-link {
-  color: #fff;
-  text-decoration: none;
-  font-weight: 600;
-}
+.card-repo-link           { color: var(--text-strong); text-decoration: none; font-weight: 600; }
+.card-repo-link:hover     { text-decoration: underline; }
+.card-branch-link         { color: var(--text-faint); text-decoration: none; font-weight: 400; }
+.card-branch-link:hover   { color: var(--text-muted); text-decoration: underline; }
 
-.card-repo-link:hover { text-decoration: underline; }
+/* =========================================================
+   Git status modal
+   ========================================================= */
 
-.card-branch-link {
-  color: #666;
-  text-decoration: none;
-  font-weight: 400;
-}
-
-.card-branch-link:hover { color: #888; text-decoration: underline; }
-
-/* Git status modal */
 .git-detail-header {
   display: flex;
   align-items: center;
@@ -240,12 +327,12 @@ h2 {
 .git-detail-branch {
   font-size: 1rem;
   font-weight: 600;
-  color: #fff;
+  color: var(--text-strong);
   font-family: monospace;
 }
 
 .git-file-list {
-  border: 1px solid #2a2d35;
+  border: 1px solid var(--border);
   border-radius: 6px;
   overflow: hidden;
 }
@@ -256,7 +343,7 @@ h2 {
   gap: 0.75rem;
   padding: 0.4rem 0.75rem;
   font-size: 0.8rem;
-  border-bottom: 1px solid #1a1d25;
+  border-bottom: 1px solid var(--border-subtle);
   font-family: monospace;
 }
 
@@ -268,18 +355,18 @@ h2 {
   font-weight: 600;
 }
 
-.git-file-path {
-  color: #ccc;
-  word-break: break-all;
-}
+.git-file-path { color: var(--text-secondary); word-break: break-all; }
 
-.git-file.modified .git-file-status { color: #fbbf24; }
-.git-file.added .git-file-status { color: #4ade80; }
-.git-file.deleted .git-file-status { color: #f87171; }
-.git-file.untracked .git-file-status { color: #888; }
-.git-file.other .git-file-status { color: #888; }
+.git-file.modified .git-file-status { color: var(--s-yellow); }
+.git-file.added    .git-file-status { color: var(--s-green); }
+.git-file.deleted  .git-file-status { color: var(--s-red); }
+.git-file.untracked .git-file-status { color: var(--text-muted); }
+.git-file.other    .git-file-status { color: var(--text-muted); }
 
-/* Free range claude cards */
+/* =========================================================
+   Free range claude cards
+   ========================================================= */
+
 .freerange-top {
   display: flex;
   justify-content: space-between;
@@ -290,91 +377,91 @@ h2 {
 .freerange-pid {
   font-size: 0.85rem;
   font-weight: 600;
-  color: #e0e0e0;
+  color: var(--text);
   font-family: monospace;
 }
 
 .freerange-from {
   font-weight: 400;
-  color: #666;
+  color: var(--text-faint);
   font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
 }
 
-.freerange-stats {
-  font-size: 0.75rem;
-  color: #888;
-}
+.freerange-stats { font-size: 0.75rem; color: var(--text-muted); }
+.freerange-cwd   { font-size: 0.75rem; color: var(--text-faint); word-break: break-all; margin-bottom: 0.5rem; }
+.freerange-bottom { display: flex; }
 
-.freerange-cwd {
-  font-size: 0.75rem;
-  color: #666;
-  word-break: break-all;
-  margin-bottom: 0.5rem;
-}
+/* Process stats */
+.proc-stats { font-size: 0.75rem; color: var(--text-muted); margin-bottom: 0.5rem; }
 
-.freerange-bottom {
-  display: flex;
-}
+/* =========================================================
+   Buttons
+   ========================================================= */
 
-/* Process stats (on workspace cards) */
-.proc-stats {
-  font-size: 0.75rem;
-  color: #888;
-  margin-bottom: 0.5rem;
-}
-
-
-/* Buttons */
 .btn {
   font-size: 0.8rem;
   padding: 0.4rem 0.8rem;
-  border: 1px solid #3a3d45;
+  border: 1px solid var(--border-btn);
   border-radius: 6px;
-  background: #2a2d35;
-  color: #e0e0e0;
+  background: var(--bg-btn);
+  color: var(--text);
   cursor: pointer;
   transition: background 0.15s;
 }
 
-.btn:hover { background: #3a3d45; }
+.btn:hover    { background: var(--bg-btn-hover); }
 .btn:disabled { opacity: 0.4; cursor: not-allowed; }
 
-.btn.primary { background: #2563eb; border-color: #2563eb; color: #fff; }
-.btn.primary:hover { background: #1d4ed8; }
+.btn.primary       { background: var(--btn-primary);       border-color: var(--btn-primary);       color: #fff; }
+.btn.primary:hover { background: var(--btn-primary-hover); }
 
-.btn.danger { background: #991b1b; border-color: #991b1b; color: #fff; }
-.btn.danger:hover { background: #7f1d1d; }
+.btn.danger        { background: #7f1d1d; border-color: #7f1d1d; color: #fca5a5; }
+.btn.danger:hover  { background: #991b1b; }
 
-.btn.success { background: #166534; border-color: #166534; color: #fff; }
+.btn.success       { background: #166534; border-color: #166534; color: #fff; }
 .btn.success:hover { background: #14532d; }
 
-.btn.warning { background: #92400e; border-color: #92400e; color: #fff; }
+.btn.warning       { background: #92400e; border-color: #92400e; color: #fff; }
 .btn.warning:hover { background: #78350f; }
 
 .btn-sm { font-size: 0.7rem; padding: 0.25rem 0.5rem; }
 
-/* History */
-.history-list {
-  margin-top: 0.5rem;
+/* Theme toggle */
+.btn-theme {
+  font-size: 0.85rem;
+  padding: 0.25rem 0.45rem;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  line-height: 1;
 }
+.btn-theme:hover { color: var(--text); border-color: var(--border-active); }
+
+/* =========================================================
+   History
+   ========================================================= */
+
+.history-list { margin-top: 0.5rem; }
 
 .history-item {
   display: flex;
   justify-content: space-between;
   align-items: center;
   padding: 0.5rem 0.75rem;
-  border-bottom: 1px solid #1a1d25;
+  border-bottom: 1px solid var(--border-subtle);
   font-size: 0.85rem;
 }
 
 .history-item:hover {
-  background: #1a1d25;
+  background: var(--bg-card);
   border-radius: 4px;
 }
 
 .history-display {
   flex: 1;
-  color: #ccc;
+  color: var(--text-secondary);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -388,18 +475,13 @@ h2 {
   flex-shrink: 0;
 }
 
-.history-time {
-  font-size: 0.75rem;
-  color: #666;
-}
+.history-time { font-size: 0.75rem; color: var(--text-faint); }
+.history-id   { font-size: 0.7rem;  color: var(--text-fainter); font-family: monospace; }
 
-.history-id {
-  font-size: 0.7rem;
-  color: #555;
-  font-family: monospace;
-}
+/* =========================================================
+   Terminal overlay
+   ========================================================= */
 
-/* Full-screen terminal overlay */
 .terminal-overlay {
   position: fixed;
   inset: 0;
@@ -416,19 +498,19 @@ h2 {
   padding: 0 1rem;
   height: 40px;
   min-height: 40px;
-  background: #1a1d25;
-  border-bottom: 1px solid #2a2d35;
+  background: var(--bg-card);
+  border-bottom: 1px solid var(--border);
 }
 
 .terminal-bar-title {
   font-size: 0.9rem;
   font-weight: 600;
-  color: #fff;
+  color: var(--text-strong);
 }
 
 .terminal-bar-title .branch {
   font-weight: 400;
-  color: #666;
+  color: var(--text-faint);
 }
 
 .terminal-bar-actions {
@@ -444,14 +526,14 @@ h2 {
   background: #000;
 }
 
-/* Modal */
+/* =========================================================
+   Modal
+   ========================================================= */
+
 .modal-overlay {
   position: fixed;
-  top: 0;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  background: rgba(0, 0, 0, 0.7);
+  top: 0; left: 0; right: 0; bottom: 0;
+  background: rgba(0, 0, 0, 0.6);
   display: flex;
   align-items: flex-start;
   justify-content: center;
@@ -460,8 +542,8 @@ h2 {
 }
 
 .modal {
-  background: #1a1d25;
-  border: 1px solid #2a2d35;
+  background: var(--bg-card);
+  border: 1px solid var(--border);
   border-radius: 12px;
   width: 90%;
   max-width: 520px;
@@ -475,24 +557,19 @@ h2 {
   justify-content: space-between;
   align-items: center;
   padding: 1rem 1.25rem;
-  border-bottom: 1px solid #2a2d35;
+  border-bottom: 1px solid var(--border);
 }
 
 .modal-header h2 { margin: 0; }
 
-.modal-body {
-  padding: 1.25rem;
-  overflow-y: auto;
-}
+.modal-body { padding: 1.25rem; overflow-y: auto; }
 
-.form-group {
-  margin-bottom: 1rem;
-}
+.form-group { margin-bottom: 1rem; }
 
 .form-group label {
   display: block;
   font-size: 0.8rem;
-  color: #888;
+  color: var(--text-muted);
   margin-bottom: 0.4rem;
   text-transform: uppercase;
   letter-spacing: 0.05em;
@@ -500,9 +577,9 @@ h2 {
 
 .form-group input {
   width: 100%;
-  background: #0f1117;
-  color: #e0e0e0;
-  border: 1px solid #3a3d45;
+  background: var(--bg-input);
+  color: var(--text);
+  border: 1px solid var(--border-btn);
   border-radius: 6px;
   padding: 0.5rem 0.75rem;
   font-size: 0.9rem;
@@ -510,21 +587,22 @@ h2 {
 
 .form-group input:focus {
   outline: none;
-  border-color: #2563eb;
+  border-color: var(--btn-primary);
 }
 
-.form-hint {
-  font-size: 0.75rem;
-  color: #666;
-  margin: 0.4rem 0 0.75rem;
-}
+.form-hint         { font-size: 0.75rem; color: var(--text-faint); margin: 0.4rem 0 0.75rem; }
+.form-hint-inline  { font-size: 0.7rem;  color: var(--text-faint); text-transform: none; letter-spacing: 0; }
+.form-actions      { display: flex; gap: 0.5rem; justify-content: flex-end; margin-top: 1rem; }
 
-/* Repo list in modal */
+/* =========================================================
+   Repo list (in modal)
+   ========================================================= */
+
 .repo-list {
   max-height: 280px;
   overflow-y: auto;
   margin-top: 0.5rem;
-  border: 1px solid #2a2d35;
+  border: 1px solid var(--border);
   border-radius: 6px;
 }
 
@@ -534,23 +612,19 @@ h2 {
   align-items: center;
   padding: 0.6rem 0.75rem;
   cursor: pointer;
-  border-bottom: 1px solid #1a1d25;
+  border-bottom: 1px solid var(--border-subtle);
   transition: background 0.1s;
 }
 
 .repo-item:last-child { border-bottom: none; }
-.repo-item:hover { background: #252830; }
-.repo-item.selected { background: #1e3a5f; border-color: #2563eb; }
+.repo-item:hover      { background: var(--bg-hover); }
+.repo-item.selected   { background: var(--s-blue-bg); border-color: var(--btn-primary); }
 
-.repo-name {
-  font-size: 0.9rem;
-  color: #fff;
-  font-weight: 500;
-}
+.repo-name { font-size: 0.9rem; color: var(--text-strong); font-weight: 500; }
 
 .repo-desc {
   font-size: 0.75rem;
-  color: #666;
+  color: var(--text-faint);
   margin-top: 0.15rem;
   white-space: nowrap;
   overflow: hidden;
@@ -558,38 +632,39 @@ h2 {
   max-width: 300px;
 }
 
-.repo-badges {
-  display: flex;
-  gap: 0.4rem;
-  flex-shrink: 0;
-}
+.repo-badges { display: flex; gap: 0.4rem; flex-shrink: 0; }
 
 .repo-badge {
   font-size: 0.65rem;
   padding: 0.1rem 0.4rem;
   border-radius: 999px;
-  background: #2a2d35;
-  color: #888;
+  background: var(--bg-badge);
+  color: var(--text-muted);
 }
 
-.repo-badge.cloned { background: #1a3a2a; color: #4ade80; }
-.repo-badge.private { background: #3a2a1a; color: #fbbf24; }
+.repo-badge.cloned  { background: var(--s-green-bg);  color: var(--s-green); }
+.repo-badge.private { background: var(--s-yellow-bg); color: var(--s-yellow); }
 
-/* Cloud Connect */
+.btn-link       { background: none; border: none; color: var(--s-blue-text); cursor: pointer; padding: 0.5rem 0 0; font-size: 0.8rem; }
+.btn-link:hover { color: var(--s-blue-text); opacity: 0.8; }
 
-.cloud-connected { color: #4ade80 !important; border-color: #4ade80 !important; }
+/* =========================================================
+   Cloud Connect
+   ========================================================= */
+
+.cloud-connected { color: var(--s-green) !important; border-color: var(--s-green) !important; }
 
 .cloud-status-row {
   display: flex;
   justify-content: space-between;
   align-items: center;
   padding: 0.5rem 0;
-  border-bottom: 1px solid #2a2d35;
+  border-bottom: 1px solid var(--border);
 }
 
 .cloud-status-row .label {
   font-size: 0.8rem;
-  color: #888;
+  color: var(--text-muted);
   text-transform: uppercase;
   letter-spacing: 0.05em;
 }
@@ -597,62 +672,48 @@ h2 {
 .cloud-key-section {
   margin-top: 1rem;
   padding: 1rem;
-  background: #1a1d25;
+  background: var(--bg-card);
   border-radius: 8px;
-  border: 1px solid #2a2d35;
+  border: 1px solid var(--border);
 }
 
 .cloud-key-section.success {
-  border-color: #4ade80;
-  background: #0f2a1a;
+  border-color: var(--s-green);
+  background: var(--s-green-bg);
 }
 
-.cloud-key-section h3 {
-  margin: 0 0 0.5rem;
-  color: #4ade80;
-}
+.cloud-key-section h3  { margin: 0 0 0.5rem; color: var(--s-green); }
 
 .cloud-key-section label {
   display: block;
   font-size: 0.75rem;
-  color: #888;
+  color: var(--text-muted);
   margin-bottom: 0.5rem;
   text-transform: uppercase;
   letter-spacing: 0.05em;
 }
 
 .cloud-key-display {
-  background: #0f1117;
+  background: var(--bg);
   padding: 0.75rem;
   border-radius: 6px;
   font-size: 0.85rem;
   word-break: break-all;
   line-height: 1.6;
-  color: #fbbf24;
-  border: 1px solid #3a3d45;
+  color: var(--s-yellow);
+  border: 1px solid var(--border-btn);
   user-select: all;
 }
 
-.cloud-pair-form ol {
-  padding-left: 1.25rem;
-  margin: 0.75rem 0;
-  line-height: 1.8;
-  color: #aaa;
-}
+.cloud-pair-form ol       { padding-left: 1.25rem; margin: 0.75rem 0; line-height: 1.8; color: var(--text-dim); }
+.cloud-pair-form ol strong { color: var(--text); }
 
-.cloud-pair-form ol strong {
-  color: #e0e0e0;
-}
-
-.cloud-qr-section {
-  margin-top: 1rem;
-  text-align: center;
-}
+.cloud-qr-section { margin-top: 1rem; text-align: center; }
 
 .cloud-qr-section label {
   display: block;
   font-size: 0.8rem;
-  color: #888;
+  color: var(--text-muted);
   text-transform: uppercase;
   letter-spacing: 0.05em;
   margin-bottom: 0.75rem;
@@ -661,68 +722,33 @@ h2 {
 .cloud-qr-code {
   display: inline-block;
   padding: 0.5rem;
-  background: #0f1117;
+  background: var(--bg);
   border-radius: 8px;
-  border: 1px solid #2a2d35;
+  border: 1px solid var(--border);
 }
 
-.cloud-qr-code svg {
-  display: block;
-  max-width: 240px;
-  height: auto;
-}
+.cloud-qr-code svg { display: block; max-width: 240px; height: auto; }
 
-.cloud-key-details {
-  margin-top: 1rem;
-}
+.cloud-key-details { margin-top: 1rem; }
 
 .cloud-key-details summary {
   cursor: pointer;
-  color: #888;
+  color: var(--text-muted);
   font-size: 0.8rem;
   padding: 0.5rem 0;
 }
 
-.cloud-key-details summary:hover { color: #e0e0e0; }
+.cloud-key-details summary:hover { color: var(--text); }
 
 .mono { font-family: ui-monospace, monospace; }
 
-.btn.danger {
-  background: #7f1d1d;
-  color: #fca5a5;
-}
+/* =========================================================
+   Token usage chart
+   ========================================================= */
 
-.btn.danger:hover { background: #991b1b; }
-
-.btn-link {
-  background: none;
-  border: none;
-  color: #60a5fa;
-  cursor: pointer;
-  padding: 0.5rem 0 0;
-  font-size: 0.8rem;
-}
-
-.btn-link:hover { color: #93bbfc; }
-
-.form-hint-inline {
-  font-size: 0.7rem;
-  color: #666;
-  text-transform: none;
-  letter-spacing: 0;
-}
-
-.form-actions {
-  display: flex;
-  gap: 0.5rem;
-  justify-content: flex-end;
-  margin-top: 1rem;
-}
-
-/* Token usage chart */
 .usage-section {
-  background: #1a1d25;
-  border: 1px solid #2a2d35;
+  background: var(--bg-card);
+  border: 1px solid var(--border);
   border-radius: 8px;
   padding: 0.75rem 1rem 0.6rem;
   margin-bottom: 1.5rem;
@@ -737,7 +763,7 @@ h2 {
 
 .usage-label {
   font-size: 0.65rem;
-  color: #555;
+  color: var(--text-fainter);
   text-transform: uppercase;
   letter-spacing: 0.06em;
 }
@@ -754,24 +780,21 @@ h2 {
   border-radius: 999px;
 }
 
-.usage-status.limited {
-  background: #3a1a1a;
-  color: #f87171;
-}
+.usage-status.limited { background: var(--s-red-bg);   color: var(--s-red); }
+.usage-status.ok      { background: var(--s-blue-deep); color: var(--s-blue-text); }
 
-.usage-status.ok {
-  background: #1a2535;
-  color: #60a5fa;
-}
+.usage-total { font-size: 0.75rem; color: var(--text-muted); }
 
-.usage-total {
-  font-size: 0.75rem;
-  color: #888;
-}
+/* =========================================================
+   Utilities
+   ========================================================= */
 
 .hidden { display: none; }
 
-/* Responsive */
+/* =========================================================
+   Responsive
+   ========================================================= */
+
 @media (max-width: 600px) {
   body { padding: 0.5rem; }
   .card-grid { grid-template-columns: 1fr; }
