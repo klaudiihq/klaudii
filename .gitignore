@@ -1,0 +1,4 @@
+node_modules/
+menubar/KlaudiiMenu
+*.log
+credentials.json

@@ -1,0 +1,13 @@
+{
+  "name": "klaudii",
+  "version": "1.0.0",
+  "description": "Web-based manager for Claude Code CLI sessions",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "install-service": "./install.sh"
+  },
+  "dependencies": {
+    "express": "^5.1.0"
+  }
+}

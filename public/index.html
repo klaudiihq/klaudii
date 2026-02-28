@@ -1,0 +1,62 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Klaudii — Session Manager</title>
+  <link rel="stylesheet" href="/style.css">
+</head>
+<body>
+  <header>
+    <h1>Klaudii</h1>
+    <span id="status-badge" class="badge">checking...</span>
+  </header>
+
+  <main>
+    <section id="sessions-section">
+      <h2>Workspaces <button class="btn primary btn-sm" onclick="openNewSessionModal()">+ New Session</button></h2>
+      <div id="sessions-list" class="card-grid"></div>
+    </section>
+
+    <section id="unmanaged-section" class="hidden">
+      <h2>free range claudes</h2>
+      <div id="unmanaged-list" class="card-grid"></div>
+    </section>
+
+  </main>
+
+  <!-- Full-screen terminal overlay -->
+  <div id="terminal-overlay" class="terminal-overlay hidden">
+    <div class="terminal-bar">
+      <span id="terminal-title" class="terminal-bar-title"></span>
+      <div class="terminal-bar-actions" id="terminal-bar-actions"></div>
+    </div>
+    <iframe id="terminal-frame" src=""></iframe>
+  </div>
+
+  <!-- New Session Modal -->
+  <div id="new-session-modal" class="modal-overlay hidden" onclick="closeModal(event)">
+    <div class="modal">
+      <div class="modal-header">
+        <h2>New Session</h2>
+        <button class="btn btn-sm" onclick="closeNewSessionModal()">X</button>
+      </div>
+      <div class="modal-body">
+        <div class="form-group">
+          <label>Repository</label>
+          <input id="repo-search" type="text" placeholder="Search repos..." oninput="filterRepos()" />
+          <div id="repo-list" class="repo-list"></div>
+        </div>
+        <div id="branch-form" class="form-group hidden">
+          <label>Branch name</label>
+          <input id="branch-input" type="text" placeholder="e.g. fix-auth-bug" />
+          <div class="form-hint">A new git worktree will be created with this branch.</div>
+          <button class="btn primary" onclick="createNewSession()" id="create-session-btn">Start Session</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script src="/app.js"></script>
+</body>
+</html>
