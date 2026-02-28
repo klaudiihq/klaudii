@@ -1,6 +1,6 @@
 const express = require("express");
 const path = require("path");
-const { loadConfig, getProjects, addProject, getProject } = require("./lib/projects");
+const { loadConfig, getProjects, addProject, removeProject, getProject } = require("./lib/projects");
 const tmux = require("./lib/tmux");
 const ttyd = require("./lib/ttyd");
 const claude = require("./lib/claude");
@@ -220,6 +220,59 @@ app.post("/api/sessions/stop", (req, res) => {
   try {
     tmux.killSession(tmuxName);
     res.json({ ok: true });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.post("/api/projects/remove", (req, res) => {
+  const { project, force } = req.body;
+  if (!project) {
+    return res.status(400).json({ error: "project required" });
+  }
+
+  const proj = getProject(project);
+  if (!proj) {
+    return res.status(404).json({ error: `project "${project}" not found` });
+  }
+
+  // Refuse if session is running
+  const tmuxName = tmux.sessionName(project);
+  if (tmux.sessionExists(tmuxName)) {
+    return res.status(409).json({ error: "Stop the workspace before removing it" });
+  }
+
+  // Check git status — refuse if dirty unless forced
+  const status = git.getStatus(proj.path);
+  if (status && (status.dirtyFiles || status.unpushed) && !force) {
+    return res.status(409).json({
+      error: "Workspace has uncommitted or unpushed changes",
+      dirty: true,
+      dirtyFiles: status.dirtyFiles,
+      unpushed: status.unpushed,
+    });
+  }
+
+  try {
+    // If it's a worktree (`.git` is a file, not a directory), remove it
+    const dotGit = path.join(proj.path, ".git");
+    const isWorktree = fs.existsSync(dotGit) && fs.statSync(dotGit).isFile();
+    if (isWorktree && config.reposDir) {
+      // Derive main repo from project naming convention: {repo}--{branch}
+      const repoName = project.split("--")[0];
+      const mainRepoDir = path.join(config.reposDir, repoName);
+      if (git.isGitRepo(mainRepoDir)) {
+        git.removeWorktree(mainRepoDir, proj.path);
+      }
+    }
+
+    // Clean up session tracker URL cache
+    sessionTracker.clearClaudeUrl(project);
+
+    // Unregister from config
+    removeProject(project);
+
+    res.json({ ok: true, worktreeRemoved: isWorktree });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }

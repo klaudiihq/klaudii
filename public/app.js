@@ -68,6 +68,7 @@ function renderSessions(sessions, procs) {
             : `
           <button class="btn primary" onclick="startSession('${esc(s.project)}', {continueSession:true})">Continue</button>
           <button class="btn btn-sm" onclick="startSession('${esc(s.project)}')">New</button>
+          <button class="btn btn-sm danger" onclick="removeWorkspace(this, '${esc(s.project)}', ${!!(g && (g.dirtyFiles || g.unpushed))})">Remove</button>
         `
         }
         <button class="btn btn-sm" onclick="toggleHistory('${esc(s.project)}')">History</button>
@@ -205,6 +206,125 @@ function closeTerminal() {
   const frame = document.getElementById("terminal-frame");
   if (frame) frame.remove();
   document.getElementById("terminal-overlay").classList.add("hidden");
+}
+
+// --- Workspace removal ---
+
+async function removeWorkspace(btn, project, isDirty) {
+  // Dirty workspace: force them to see git status first
+  if (isDirty) {
+    openGitStatusForRemoval(project);
+    return;
+  }
+
+  // Clean workspace: two-step inline confirm
+  if (btn.dataset.armed) {
+    btn.textContent = "Removing...";
+    btn.disabled = true;
+    try {
+      const result = await api("/api/projects/remove", { method: "POST", body: { project } });
+      if (result.error) {
+        alert("Error: " + result.error);
+      } else {
+        refresh();
+        return;
+      }
+    } catch (err) {
+      alert("Failed: " + err.message);
+    }
+    btn.textContent = "Remove";
+    btn.disabled = false;
+    delete btn.dataset.armed;
+    return;
+  }
+
+  btn.dataset.armed = "1";
+  btn.textContent = "Confirm?";
+  btn.classList.replace("danger", "warning");
+  setTimeout(() => {
+    if (btn.isConnected) {
+      delete btn.dataset.armed;
+      btn.textContent = "Remove";
+      btn.classList.replace("warning", "danger");
+    }
+  }, 3000);
+}
+
+function openGitStatusForRemoval(project) {
+  const modal = document.getElementById("git-status-modal");
+  const title = document.getElementById("git-status-title");
+  const body = document.getElementById("git-status-body");
+
+  title.textContent = project;
+  body.innerHTML = '<p style="color:#666">Loading...</p>';
+  modal.classList.remove("hidden");
+
+  api("/api/sessions").then((sessions) => {
+    const s = sessions.find((x) => x.project === project);
+    if (!s || !s.git) {
+      body.innerHTML = '<p style="color:#666">No git info available.</p>';
+      return;
+    }
+    const g = s.git;
+
+    let html = `<div class="git-detail-header">`;
+    html += `<span class="git-detail-branch">${esc(g.branch || "unknown")}</span>`;
+    if (g.unpushed) {
+      html += ` <span class="git-unpushed">${g.unpushed} unpushed commit${g.unpushed > 1 ? "s" : ""}</span>`;
+    }
+    html += `</div>`;
+
+    if (g.files && g.files.length) {
+      html += `<div class="git-file-list">`;
+      for (const f of g.files) {
+        const statusClass = f.status === "?" ? "untracked" : f.status === "M" ? "modified" : f.status === "A" ? "added" : f.status === "D" ? "deleted" : "other";
+        html += `<div class="git-file ${statusClass}"><span class="git-file-status">${esc(f.status)}</span><span class="git-file-path">${esc(f.path)}</span></div>`;
+      }
+      html += `</div>`;
+    }
+
+    html += `<div style="margin-top:1rem;padding-top:0.75rem;border-top:1px solid #3a1a1a">`;
+    html += `<p style="color:#f87171;font-size:0.85rem;margin-bottom:0.75rem">`;
+    html += `This workspace has `;
+    const warnings = [];
+    if (g.dirtyFiles) warnings.push(`${g.dirtyFiles} uncommitted change${g.dirtyFiles > 1 ? "s" : ""}`);
+    if (g.unpushed) warnings.push(`${g.unpushed} unpushed commit${g.unpushed > 1 ? "s" : ""}`);
+    html += warnings.join(" and ");
+    html += ` that will be lost.</p>`;
+    html += `<button class="btn danger" onclick="confirmForceRemove(this, '${esc(project)}')">Remove anyway</button>`;
+    html += `</div>`;
+
+    body.innerHTML = html;
+  });
+}
+
+async function confirmForceRemove(btn, project) {
+  if (btn.dataset.armed) {
+    btn.textContent = "Removing...";
+    btn.disabled = true;
+    try {
+      const result = await api("/api/projects/remove", { method: "POST", body: { project, force: true } });
+      if (result.error) {
+        alert("Error: " + result.error);
+      } else {
+        closeGitStatus();
+        refresh();
+      }
+    } catch (err) {
+      alert("Failed: " + err.message);
+    }
+    return;
+  }
+  btn.dataset.armed = "1";
+  btn.textContent = "Confirm removal?";
+  btn.classList.replace("danger", "warning");
+  setTimeout(() => {
+    if (btn.isConnected) {
+      delete btn.dataset.armed;
+      btn.textContent = "Remove anyway";
+      btn.classList.replace("warning", "danger");
+    }
+  }, 4000);
 }
 
 // --- Per-workspace history ---
