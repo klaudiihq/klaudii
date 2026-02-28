@@ -119,6 +119,40 @@ h1 {
 .sort-btn:hover { color: #aaa; border-color: #3a3d45; }
 .sort-btn.active { background: #2a2d35; color: #e0e0e0; border-color: #3a3d45; }
 
+/* Add workspace form */
+.add-form {
+  padding: 8px 12px 10px;
+  border-bottom: 1px solid #2a2d35;
+  background: #0d1019;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.add-input {
+  width: 100%;
+  background: #1a1d25;
+  border: 1px solid #3a3d45;
+  border-radius: 5px;
+  color: #e0e0e0;
+  font-size: 12px;
+  font-family: monospace;
+  padding: 5px 8px;
+  box-sizing: border-box;
+}
+
+.add-input:focus {
+  outline: none;
+  border-color: #2563eb;
+}
+
+.add-input::placeholder { color: #444; }
+
+.add-actions {
+  display: flex;
+  gap: 6px;
+}
+
 /* Sessions container */
 #sessions-container {
   padding: 8px;

@@ -15,6 +15,17 @@ async function init() {
   klaudiiUrl = (config.klaudiiUrl || DEFAULT_KLAUDII_URL).replace(/\/+$/, "");
   openMode = config.openMode || "inplace";
 
+  document.getElementById("btn-add").addEventListener("click", toggleAddForm);
+  document.getElementById("btn-add-confirm").addEventListener("click", submitAddWorkspace);
+  document.getElementById("btn-add-cancel").addEventListener("click", closeAddForm);
+  document.getElementById("add-name").addEventListener("keydown", (e) => {
+    if (e.key === "Enter") document.getElementById("add-path").focus();
+    if (e.key === "Escape") closeAddForm();
+  });
+  document.getElementById("add-path").addEventListener("keydown", (e) => {
+    if (e.key === "Enter") submitAddWorkspace();
+    if (e.key === "Escape") closeAddForm();
+  });
   document.getElementById("btn-dashboard").addEventListener("click", openDashboard);
   document.getElementById("btn-refresh").addEventListener("click", refresh);
   document.getElementById("btn-settings").addEventListener("click", openSettings);
@@ -108,10 +119,14 @@ function trackActiveTab() {
 }
 
 function updateOpenTabs() {
-  chrome.tabs.query({ url: "https://claude.ai/*" }, (tabs) => {
-    openTabUrls = new Set((tabs || []).map((t) => t.url?.split("?")[0]).filter(Boolean));
-    // Re-render cards so Switch/Open labels stay current
-    if (lastSessions.length) renderSessions(lastSessions, lastProcs);
+  chrome.windows.getCurrent((win) => {
+    const query = { url: "https://claude.ai/*" };
+    if (win?.id) query.windowId = win.id;
+    chrome.tabs.query(query, (tabs) => {
+      openTabUrls = new Set((tabs || []).map((t) => t.url?.split("?")[0]).filter(Boolean));
+      // Re-render cards so Switch/Open labels stay current
+      if (lastSessions.length) renderSessions(lastSessions, lastProcs);
+    });
   });
 }
 
@@ -294,10 +309,13 @@ document.addEventListener("click", async (e) => {
 
   switch (action) {
     case "open":
-      chrome.runtime.sendMessage({
-        action: openMode === "tabs" ? "switchTab" : "navigateAndRename",
-        url: btn.dataset.url,
-        title: btn.dataset.title,
+      chrome.windows.getCurrent((win) => {
+        chrome.runtime.sendMessage({
+          action: openMode === "tabs" ? "switchTab" : "navigateAndRename",
+          url: btn.dataset.url,
+          title: btn.dataset.title,
+          windowId: win?.id,
+        });
       });
       break;
 
@@ -491,6 +509,38 @@ async function toggleHistory(project) {
       </div>`).join("");
   } catch {
     container.innerHTML = '<div style="padding:4px 0;color:#f87171;font-size:11px">Failed to load.</div>';
+  }
+}
+
+// --- Add workspace ---
+
+function toggleAddForm() {
+  const form = document.getElementById("add-workspace-form");
+  const isHidden = form.classList.contains("hidden");
+  form.classList.toggle("hidden");
+  if (isHidden) document.getElementById("add-name").focus();
+}
+
+function closeAddForm() {
+  document.getElementById("add-workspace-form").classList.add("hidden");
+  document.getElementById("add-name").value = "";
+  document.getElementById("add-path").value = "";
+}
+
+async function submitAddWorkspace() {
+  const name = document.getElementById("add-name").value.trim();
+  const path = document.getElementById("add-path").value.trim();
+  if (!name || !path) { showToast("Name and path are required."); return; }
+  const btn = document.getElementById("btn-add-confirm");
+  btn.disabled = true;
+  try {
+    await api("/api/projects", { method: "POST", body: { name, path } });
+    closeAddForm();
+    await refresh();
+  } catch (err) {
+    showToast("Error: " + err.message);
+  } finally {
+    btn.disabled = false;
   }
 }
 
