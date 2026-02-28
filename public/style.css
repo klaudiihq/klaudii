@@ -21,6 +21,25 @@ header {
   margin-bottom: 1.5rem;
 }
 
+.header-status {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-left: auto;
+}
+
+.auth-badge {
+  font-size: 0.65rem;
+  font-weight: 600;
+  padding: 0.15rem 0.45rem;
+  border-radius: 4px;
+  text-transform: uppercase;
+  cursor: default;
+}
+
+.auth-badge.ok { background: #1a3a2a; color: #4ade80; }
+.auth-badge.error { background: #3a1a1a; color: #f87171; }
+
 h1 {
   font-size: 1.5rem;
   font-weight: 600;
