@@ -493,6 +493,28 @@ async function refresh() {
       badge.className = "badge error";
     }
 
+    // Auth status indicators
+    const authEl = document.getElementById("auth-status");
+    const authParts = [];
+    if (health.ghAuth) {
+      if (health.ghAuth.loggedIn) {
+        authParts.push(`<span class="auth-badge ok" title="GitHub: ${esc(health.ghAuth.account)}">gh</span>`);
+      } else {
+        authParts.push('<span class="auth-badge error" title="GitHub CLI not authenticated. Run: gh auth login">gh</span>');
+      }
+    }
+    if (health.claudeAuth) {
+      if (health.claudeAuth.loggedIn) {
+        const label = health.claudeAuth.email ? esc(health.claudeAuth.email) : "authenticated";
+        authParts.push(`<span class="auth-badge ok" title="Claude: ${label}">claude</span>`);
+      } else {
+        authParts.push('<span class="auth-badge error" title="Claude CLI not authenticated. Run: claude auth login">claude</span>');
+      }
+    } else if (health.claudeAuth === null) {
+      authParts.push('<span class="auth-badge error" title="Claude CLI not installed">claude</span>');
+    }
+    authEl.innerHTML = authParts.join("");
+
     renderSessions(sessions, procs);
     renderProcesses(procs);
   } catch (err) {

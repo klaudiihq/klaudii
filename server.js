@@ -18,10 +18,39 @@ app.use(express.static(path.join(__dirname, "public")));
 // --- Health check ---
 
 app.get("/api/health", (_req, res) => {
+  const { execSync } = require("child_process");
+
+  // Check gh CLI auth
+  let ghAuth = null;
+  try {
+    const ghOut = execSync("gh auth status 2>&1", { encoding: "utf-8", stdio: ["pipe", "pipe", "pipe"] });
+    const acctMatch = ghOut.match(/Logged in to .* account (\S+)/);
+    ghAuth = { loggedIn: true, account: acctMatch ? acctMatch[1] : "unknown" };
+  } catch {
+    ghAuth = { loggedIn: false };
+  }
+
+  // Check claude CLI auth
+  let claudeAuth = null;
+  try {
+    const claudeOut = execSync("claude auth status 2>&1", { encoding: "utf-8", stdio: ["pipe", "pipe", "pipe"] });
+    claudeAuth = JSON.parse(claudeOut);
+  } catch {
+    // claude not installed or not logged in
+    try {
+      execSync("which claude", { stdio: "pipe" });
+      claudeAuth = { loggedIn: false };
+    } catch {
+      claudeAuth = null; // not installed
+    }
+  }
+
   res.json({
     ok: true,
     tmux: tmux.isTmuxInstalled(),
     ttyd: ttyd.isTtydInstalled(),
+    ghAuth,
+    claudeAuth,
   });
 });
 
