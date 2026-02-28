@@ -55,7 +55,7 @@ function renderSessions(sessions, procs) {
         ${g.unpushed ? `<span class="git-unpushed">${g.unpushed} unpushed</span>` : ""}
         <button class="btn btn-sm" onclick="openGitStatus('${esc(s.project)}')">git status</button>
       </div>` : ""}
-      ${proc ? `<div class="proc-stats">${proc.cpu}% cpu &middot; ${proc.memMB} MB${proc.uptime ? ` &middot; ${esc(proc.uptime)}` : ""}</div>` : ""}
+      ${proc ? `<div class="proc-stats">${proc.cpu}% cpu &middot; ${proc.memMB} MB${proc.uptime ? ` &middot; ${esc(proc.uptime)}` : ""}${s.sessionCount ? ` &middot; ${s.sessionCount} session${s.sessionCount === 1 ? "" : "s"}` : ""}</div>` : (s.sessionCount ? `<div class="proc-stats">${s.sessionCount} session${s.sessionCount === 1 ? "" : "s"}</div>` : "")}
       <div class="card-actions">
         ${
           s.running

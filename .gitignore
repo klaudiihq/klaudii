@@ -2,3 +2,4 @@ node_modules/
 menubar/KlaudiiMenu
 *.log
 config.json
+sessions.json
