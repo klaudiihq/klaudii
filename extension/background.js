@@ -1,8 +1,31 @@
 // Open side panel when extension icon is clicked
 chrome.sidePanel.setPanelBehavior({ openPanelOnActionClick: true });
 
-// Handle messages from the side panel
-chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
+// Per-tab approval state populated by content.js
+const tabApprovalState = new Map();
+chrome.tabs.onRemoved.addListener((tabId) => { tabApprovalState.delete(tabId); });
+
+// Handle messages from the side panel and content scripts
+chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+  // Content script: approval button appeared
+  if (message.action === "approvalDetected") {
+    if (sender.tab?.id) tabApprovalState.set(sender.tab.id, true);
+    chrome.runtime.sendMessage({ action: "approvalStateChanged" }).catch(() => {});
+    return;
+  }
+
+  // Content script: approval button went away
+  if (message.action === "approvalCleared") {
+    if (sender.tab?.id) tabApprovalState.set(sender.tab.id, false);
+    chrome.runtime.sendMessage({ action: "approvalStateChanged" }).catch(() => {});
+    return;
+  }
+
+  // Side panel: fetch current approval states
+  if (message.action === "getApprovalStates") {
+    sendResponse(Object.fromEntries(tabApprovalState));
+    return true;
+  }
   // Navigate the active tab and rename the claude.ai conversation
   if (message.action === "navigateAndRename") {
     navigateAndRename(message.url, message.title).then(sendResponse);
