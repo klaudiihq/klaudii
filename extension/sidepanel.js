@@ -9,15 +9,17 @@ let lastProcs = [];
 let activeTabUrl = null;
 let sortMode = localStorage.getItem("sortMode") || "activity";
 let openMode = "inplace";
+let attentionFlash = false;
 let openTabs = new Map();    // urlPath (no query string) → tabId, for open claude.ai tabs in this window
 let sessionNeedsInput = {}; // project → bool: session has a pending approval button
 
 // --- Init ---
 
 async function init() {
-  const config = await chrome.storage.sync.get(["klaudiiUrl", "openMode"]);
+  const config = await chrome.storage.sync.get(["klaudiiUrl", "openMode", "attentionFlash"]);
   klaudiiUrl = (config.klaudiiUrl || DEFAULT_KLAUDII_URL).replace(/\/+$/, "");
   openMode = config.openMode || "inplace";
+  attentionFlash = config.attentionFlash === true;
 
   document.getElementById("btn-add").addEventListener("click", toggleAddForm);
   document.getElementById("btn-add-confirm").addEventListener("click", submitAddWorkspace);
@@ -274,33 +276,26 @@ function renderCard(s, proc) {
 
   const displayTitle = gitBranch ? `${repo} (${gitBranch})` : repo;
   const needsInput = sessionNeedsInput[s.project] === true;
-  const inputDot = needsInput ? `<span class="needs-input-dot" title="Waiting for your approval"></span>` : "";
+  const showDot = needsInput && !attentionFlash;
+  const inputDot = showDot ? `<span class="needs-input-dot" title="Waiting for your approval"></span>` : "";
+  const attentionClass = needsInput && attentionFlash ? " needs-attention" : "";
 
-  let actions = "";
+  let menuItems = "";
   if (isRunning) {
-    let openBtn = "";
-    if (s.claudeUrl) {
-      const sessionUrlPath = s.claudeUrl.split("?")[0];
-      const tabIsOpen = openMode === "tabs" &&
-        [...openTabs.keys()].some((u) => u.startsWith(sessionUrlPath));
-      openBtn = `<button class="btn ${tabIsOpen ? "" : "success"}" data-action="open" data-url="${esc(s.claudeUrl)}" data-title="${esc(displayTitle)}">${tabIsOpen ? "Switch" : "Open"}</button>`;
-    }
-    actions = `
-      ${openBtn}
-      <button class="btn danger btn-sm" data-action="stop" data-project="${esc(s.project)}">Stop</button>
-      <button class="btn btn-sm" data-action="restart" data-project="${esc(s.project)}">Restart</button>
-      ${s.ttyd ? `<button class="btn btn-sm" data-action="terminal" data-port="${s.ttyd.port}">Term</button>` : ""}
-      <button class="btn btn-sm" data-action="history" data-project="${esc(s.project)}">History</button>`;
+    menuItems = `
+      <button class="menu-item danger" data-action="stop" data-project="${esc(s.project)}">Stop</button>
+      <button class="menu-item" data-action="restart" data-project="${esc(s.project)}">Restart</button>
+      ${s.ttyd ? `<button class="menu-item" data-action="terminal" data-port="${s.ttyd.port}">Terminal</button>` : ""}
+      <button class="menu-item" data-action="history" data-project="${esc(s.project)}">History</button>`;
   } else {
-    actions = `
-      <button class="btn primary" data-action="continue" data-project="${esc(s.project)}">Continue</button>
-      <button class="btn btn-sm" data-action="start" data-project="${esc(s.project)}">New</button>
-      <button class="btn btn-sm" data-action="history" data-project="${esc(s.project)}">History</button>
-      <button class="btn btn-sm danger" data-action="remove" data-project="${esc(s.project)}">Remove</button>`;
+    menuItems = `
+      <button class="menu-item" data-action="start" data-project="${esc(s.project)}">New Session</button>
+      <button class="menu-item" data-action="history" data-project="${esc(s.project)}">History</button>
+      <button class="menu-item danger" data-action="remove" data-project="${esc(s.project)}">Remove</button>`;
   }
 
   return `
-    <div class="card" data-project="${esc(s.project)}" data-claude-url="${esc(s.claudeUrl || "")}">
+    <div class="card${attentionClass}" data-project="${esc(s.project)}" data-claude-url="${esc(s.claudeUrl || "")}" data-status="${status}" data-open-title="${esc(displayTitle)}">
       <div class="card-header">
         ${repoGitLink}<span class="card-title">${esc(repo)}</span>
         ${inputDot}
@@ -308,11 +303,14 @@ function renderCard(s, proc) {
           ${permBadge}
           <span class="card-status ${status}">${status}</span>
         </div>
+        <button class="card-menu-btn icon-btn" data-action="toggle-menu" data-project="${esc(s.project)}" title="Actions">···</button>
       </div>
       ${gitBar}
       ${stats}
       ${permToggle}
-      <div class="card-actions">${actions}</div>
+      <div class="card-menu hidden">
+        ${menuItems}
+      </div>
       <div class="history-list hidden" id="history-${esc(s.project)}"></div>
     </div>`;
 }
@@ -346,6 +344,11 @@ function renderUnmanaged(procs) {
 // --- Actions (event delegation) ---
 
 document.addEventListener("click", async (e) => {
+  // Close open card menus when clicking outside them
+  if (!e.target.closest(".card-menu") && !e.target.closest("[data-action='toggle-menu']")) {
+    document.querySelectorAll(".card-menu:not(.hidden)").forEach((m) => m.classList.add("hidden"));
+  }
+
   const btn = e.target.closest("[data-action]");
   if (!btn) return;
 
@@ -520,6 +523,42 @@ document.addEventListener("click", async (e) => {
         }, 3000);
       }
       break;
+
+    case "toggle-menu": {
+      const card = btn.closest(".card");
+      const menu = card?.querySelector(".card-menu");
+      if (menu) menu.classList.toggle("hidden");
+      break;
+    }
+  }
+});
+
+// --- Card body click → primary action ---
+
+document.addEventListener("click", async (e) => {
+  if (e.target.closest("button, a, input")) return;
+  const card = e.target.closest(".card");
+  if (!card) return;
+
+  const status = card.dataset.status;
+  const url = card.dataset.claudeUrl;
+  const project = card.dataset.project;
+  const title = card.dataset.openTitle;
+
+  if (url && (status === "running" || status === "exited")) {
+    chrome.windows.getCurrent((win) => {
+      chrome.runtime.sendMessage({
+        action: openMode === "tabs" ? "switchTab" : "navigateAndRename",
+        url, title, windowId: win?.id,
+      });
+    });
+  } else if (status === "stopped") {
+    try {
+      await api("/api/sessions/start", { method: "POST", body: { project, continueSession: true } });
+    } catch (err) {
+      showToast("Error: " + err.message);
+    }
+    setTimeout(refresh, 1000);
   }
 });
 
