@@ -407,7 +407,9 @@ app.post("/api/sessions/restart", async (req, res) => {
 
 app.get("/api/usage", (req, res) => {
   const hours = Math.min(parseInt(req.query.hours) || 24, 168);
-  res.json(claude.getTokenUsage(hours));
+  const buckets = claude.getTokenUsage(hours);
+  const rateLimits = claude.getRateLimitEvents(168); // always scan full week
+  res.json({ buckets, rateLimits });
 });
 
 // --- GitHub & Repos ---
