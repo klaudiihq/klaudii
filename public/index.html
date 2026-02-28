@@ -57,6 +57,17 @@
     </div>
   </div>
 
+  <!-- Git Status Modal -->
+  <div id="git-status-modal" class="modal-overlay hidden" onclick="closeGitStatusBackdrop(event)">
+    <div class="modal">
+      <div class="modal-header">
+        <h2 id="git-status-title">git status</h2>
+        <button class="btn btn-sm" onclick="closeGitStatus()">X</button>
+      </div>
+      <div class="modal-body" id="git-status-body"></div>
+    </div>
+  </div>
+
   <script src="/app.js"></script>
 </body>
 </html>

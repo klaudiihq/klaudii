@@ -96,6 +96,98 @@ h2 {
   flex-wrap: wrap;
 }
 
+/* Git status bar on workspace cards */
+.git-status-bar {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.75rem;
+  margin-bottom: 0.4rem;
+}
+
+.git-dirty {
+  color: #fbbf24;
+  cursor: pointer;
+}
+
+.git-dirty:hover { text-decoration: underline; }
+
+.git-clean {
+  color: #4ade80;
+}
+
+.git-unpushed {
+  color: #f87171;
+  font-weight: 500;
+}
+
+/* Card title links */
+.card-repo-link {
+  color: #fff;
+  text-decoration: none;
+  font-weight: 600;
+}
+
+.card-repo-link:hover { text-decoration: underline; }
+
+.card-branch-link {
+  color: #666;
+  text-decoration: none;
+  font-weight: 400;
+}
+
+.card-branch-link:hover { color: #888; text-decoration: underline; }
+
+/* Git status modal */
+.git-detail-header {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  margin-bottom: 0.75rem;
+}
+
+.git-detail-branch {
+  font-size: 1rem;
+  font-weight: 600;
+  color: #fff;
+  font-family: monospace;
+}
+
+.git-file-list {
+  border: 1px solid #2a2d35;
+  border-radius: 6px;
+  overflow: hidden;
+}
+
+.git-file {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.4rem 0.75rem;
+  font-size: 0.8rem;
+  border-bottom: 1px solid #1a1d25;
+  font-family: monospace;
+}
+
+.git-file:last-child { border-bottom: none; }
+
+.git-file-status {
+  width: 1.5rem;
+  flex-shrink: 0;
+  font-weight: 600;
+}
+
+.git-file-path {
+  color: #ccc;
+  word-break: break-all;
+}
+
+.git-file.modified .git-file-status { color: #fbbf24; }
+.git-file.added .git-file-status { color: #4ade80; }
+.git-file.deleted .git-file-status { color: #f87171; }
+.git-file.untracked .git-file-status { color: #888; }
+.git-file.other .git-file-status { color: #888; }
+
 /* Free range claude cards */
 .freerange-top {
   display: flex;

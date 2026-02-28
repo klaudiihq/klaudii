@@ -90,6 +90,8 @@ app.get("/api/sessions", (_req, res) => {
     const tmuxSession = claudeSessions.find((s) => s.name === tmuxName);
     const ttydInstance = ttydInstances.find((t) => t.project === project.name);
 
+    const gitStatus = git.getStatus(project.path);
+
     return {
       project: project.name,
       projectPath: project.path,
@@ -97,6 +99,7 @@ app.get("/api/sessions", (_req, res) => {
       claudeUrl: tmuxSession ? tmux.getClaudeUrl(tmuxName) : null,
       tmux: tmuxSession || null,
       ttyd: ttydInstance || null,
+      git: gitStatus,
     };
   });
 

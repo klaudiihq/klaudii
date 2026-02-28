@@ -36,14 +36,25 @@ function renderSessions(sessions, procs) {
         const branch = parts.length > 1 ? parts.slice(1).join("--") : null;
         const sessionData = esc(JSON.stringify(s).replace(/'/g, "&#39;"));
         const proc = procByProject[s.project];
+        const g = s.git;
+        const gitBranch = g ? g.branch : branch;
+        const ghUrl = `https://github.com/bryantinsley/${esc(repo)}`;
+        const ghBranchUrl = gitBranch ? `${ghUrl}/tree/${esc(gitBranch)}` : ghUrl;
         return `
     <div class="card" id="card-${esc(s.project)}">
       <div class="card-header">
-        <span class="card-title">${esc(repo)}${branch ? ` <span class="card-branch">(${esc(branch)})</span>` : ""}</span>
+        <span class="card-title">
+          <a href="${ghUrl}" target="_blank" class="card-repo-link">${esc(repo)}</a>${gitBranch ? ` <a href="${ghBranchUrl}" target="_blank" class="card-branch-link">${esc(gitBranch)}</a>` : ""}
+        </span>
         <span class="card-status ${s.running ? "running" : "stopped"}">
           ${s.running ? "running" : "stopped"}
         </span>
       </div>
+      ${g ? `<div class="git-status-bar">
+        ${g.dirtyFiles ? `<span class="git-dirty" onclick="openGitStatus('${esc(s.project)}')">${g.dirtyFiles} changed</span>` : '<span class="git-clean">clean</span>'}
+        ${g.unpushed ? `<span class="git-unpushed">${g.unpushed} unpushed</span>` : ""}
+        <button class="btn btn-sm" onclick="openGitStatus('${esc(s.project)}')">git status</button>
+      </div>` : ""}
       ${proc ? `<div class="proc-stats">${proc.cpu}% cpu &middot; ${proc.memMB} MB${proc.uptime ? ` &middot; ${esc(proc.uptime)}` : ""}</div>` : ""}
       <div class="card-actions">
         ${
@@ -101,6 +112,58 @@ async function restartSession(project) {
 
 function resumeSession(sessionId, project) {
   if (project) startSession(project, { resumeSessionId: sessionId });
+}
+
+// --- Git status modal ---
+
+function openGitStatus(project) {
+  const modal = document.getElementById("git-status-modal");
+  const title = document.getElementById("git-status-title");
+  const body = document.getElementById("git-status-body");
+
+  title.textContent = project;
+  body.innerHTML = '<p style="color:#666">Loading...</p>';
+  modal.classList.remove("hidden");
+
+  // Find the session data from last refresh
+  api("/api/sessions").then((sessions) => {
+    const s = sessions.find((x) => x.project === project);
+    if (!s || !s.git) {
+      body.innerHTML = '<p style="color:#666">No git info available.</p>';
+      return;
+    }
+    const g = s.git;
+    const parts = project.split("--");
+    const repo = parts[0];
+
+    let html = `<div class="git-detail-header">`;
+    html += `<span class="git-detail-branch">${esc(g.branch || "unknown")}</span>`;
+    if (g.unpushed) {
+      html += ` <span class="git-unpushed">${g.unpushed} unpushed commit${g.unpushed > 1 ? "s" : ""}</span>`;
+    }
+    html += `</div>`;
+
+    if (!g.files || !g.files.length) {
+      html += '<p style="color:#4ade80;font-size:0.85rem;margin-top:0.75rem">Working tree clean</p>';
+    } else {
+      html += `<div class="git-file-list">`;
+      for (const f of g.files) {
+        const statusClass = f.status === "?" ? "untracked" : f.status === "M" ? "modified" : f.status === "A" ? "added" : f.status === "D" ? "deleted" : "other";
+        html += `<div class="git-file ${statusClass}"><span class="git-file-status">${esc(f.status)}</span><span class="git-file-path">${esc(f.path)}</span></div>`;
+      }
+      html += `</div>`;
+    }
+
+    body.innerHTML = html;
+  });
+}
+
+function closeGitStatus() {
+  document.getElementById("git-status-modal").classList.add("hidden");
+}
+
+function closeGitStatusBackdrop(event) {
+  if (event.target === event.currentTarget) closeGitStatus();
 }
 
 // --- Terminal overlay ---
