@@ -872,7 +872,7 @@ async function renderCloudModal() {
         <div class="cloud-qr-section">
           <label>Scan to pair a browser</label>
           <div class="cloud-qr-code">${keyResp.qrSvg}</div>
-          <div class="form-hint">Open connect.klaudii.com on your phone or laptop and scan this QR code. It contains your Connection Key — the relay never sees it.</div>
+          <div class="form-hint">Open klaudii-cloud-relay.fly.dev on your phone or laptop and scan this QR code. It contains your Connection Key — the relay never sees it.</div>
         </div>
         ` : ""}
         ${keyResp && keyResp.connectionKey ? `
@@ -880,7 +880,7 @@ async function renderCloudModal() {
           <summary>Manual entry (Connection Key)</summary>
           <div class="cloud-key-section">
             <div class="cloud-key-display mono">${esc(keyResp.connectionKey)}</div>
-            <div class="form-hint">Copy and paste this on connect.klaudii.com if you can't scan the QR code.</div>
+            <div class="form-hint">Copy and paste this on klaudii-cloud-relay.fly.dev if you can't scan the QR code.</div>
           </div>
         </details>
         ` : ""}
@@ -895,7 +895,7 @@ async function renderCloudModal() {
       <div class="cloud-pair-form">
         <p>Connect this Klaudii server to the cloud so you can access it from anywhere.</p>
         <ol>
-          <li>Go to <strong>connect.klaudii.com</strong> and sign in</li>
+          <li>Go to <strong>klaudii-cloud-relay.fly.dev</strong> and sign in</li>
           <li>Click <strong>Add Server</strong> to get a pairing code</li>
           <li>Enter the code below</li>
         </ol>
@@ -909,7 +909,7 @@ async function renderCloudModal() {
         </div>
         <div class="form-group">
           <label>Relay URL</label>
-          <input id="relay-url-input" type="text" value="https://connect.klaudii.com" />
+          <input id="relay-url-input" type="text" value="https://klaudii-cloud-relay.fly.dev" />
         </div>
         <button class="btn primary" onclick="pairCloud()" id="pair-btn">Pair</button>
         <div id="pair-result" class="hidden" style="margin-top: 16px"></div>
@@ -925,7 +925,7 @@ async function pairCloud() {
   const relayUrl = document.getElementById("relay-url-input").value.trim();
 
   if (!code) {
-    alert("Enter the pairing code from connect.klaudii.com");
+    alert("Enter the pairing code from klaudii-cloud-relay.fly.dev");
     return;
   }
 
@@ -947,14 +947,14 @@ async function pairCloud() {
     // Fetch the QR code from the server (now that pairing is done)
     const keyResp = await api("/api/cloud/connection-key").catch(() => null);
 
-    // Show QR code + connection key — user scans or enters this on connect.klaudii.com
+    // Show QR code + connection key — user scans or enters this on klaudii-cloud-relay.fly.dev
     const resultDiv = document.getElementById("pair-result");
     resultDiv.classList.remove("hidden");
     resultDiv.innerHTML = `
       <div class="cloud-key-section success">
         <h3>Paired successfully!</h3>
         ${keyResp && keyResp.qrSvg ? `
-          <label>Scan this QR code on connect.klaudii.com</label>
+          <label>Scan this QR code on klaudii-cloud-relay.fly.dev</label>
           <div class="cloud-qr-code">${keyResp.qrSvg}</div>
         ` : ""}
         <details open>

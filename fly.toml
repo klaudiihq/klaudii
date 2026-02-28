@@ -2,13 +2,14 @@ app = "klaudii-cloud-relay"
 primary_region = "sjc"
 
 [build]
-  dockerfile = "Dockerfile"
+  dockerfile = "connect/server/Dockerfile"
 
 [env]
   NODE_ENV = "production"
   PORT = "3000"
   DB_PATH = "/data/relay.db"
   RELAY_WS_URL = "wss://klaudii-cloud-relay.fly.dev"
+  GOOGLE_REDIRECT_URI = "https://klaudii-cloud-relay.fly.dev/auth/google/callback"
 
 [http_service]
   internal_port = 3000
