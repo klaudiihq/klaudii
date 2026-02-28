@@ -372,6 +372,9 @@ h1 {
 
 .git-link:hover { color: #aaa; }
 
+.card-title .git-link { margin-right: 4px; }
+.git-bar .git-link    { margin-right: 1px; }
+
 /* Git status bar */
 .git-bar {
   display: flex;
