@@ -384,6 +384,7 @@ document.addEventListener("click", async (e) => {
           url: btn.dataset.url,
           title: btn.dataset.title,
           windowId: win?.id,
+          needsInput: !!sessionNeedsInput[project],
         });
       });
       break;
@@ -571,6 +572,7 @@ document.addEventListener("click", async (e) => {
       chrome.runtime.sendMessage({
         action: openMode === "tabs" ? "switchTab" : "navigateAndRename",
         url, title, windowId: win?.id,
+        needsInput: !!sessionNeedsInput[project],
       });
     });
   } else if (status === "stopped") {
