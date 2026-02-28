@@ -104,7 +104,7 @@ async function refresh() {
     setConnected(true);
     renderSessions(sessions, procs);
     renderUnmanaged(procs);
-    updateApprovalStates(); // async, re-renders only if state changes
+    checkApprovalStates(sessions); // async, re-renders only if state changes
   } catch {
     setConnected(false);
   }
@@ -127,31 +127,35 @@ function setConnected(ok) {
 
 // --- Approval detection ---
 
-// Query background for per-tab approval states reported by the content script,
-// join with openTabs to determine which sessions need input, and re-render if changed.
-async function updateApprovalStates() {
-  const approvalByTabId = await new Promise((resolve) => {
-    chrome.runtime.sendMessage({ action: "getApprovalStates" }, (resp) => {
-      resolve(resp || {});
-    });
-  });
+// For each running session that has an open tab, inject a tiny script to check
+// whether the claude.ai page is currently showing an approval button.
+// Detects "Allow …" (any variant) and "Skip" buttons.
+// Re-renders cards only when the set of sessions needing input changes.
+async function checkApprovalStates(sessions) {
   const newStates = {};
-  for (const s of lastSessions) {
+  for (const s of sessions) {
     if (s.status !== "running" || !s.claudeUrl) continue;
     const sessionUrlPath = s.claudeUrl.split("?")[0];
     const entry = [...openTabs.entries()].find(([u]) => u.startsWith(sessionUrlPath));
     if (!entry) continue;
-    if (approvalByTabId[entry[1]]) newStates[s.project] = true;
+    const tabId = entry[1];
+    try {
+      const results = await chrome.scripting.executeScript({
+        target: { tabId },
+        func: () => Array.from(document.querySelectorAll("button")).some((b) => {
+          const text = b.textContent.trim();
+          return text.includes("Allow") || text === "Skip";
+        }),
+      });
+      if (results?.[0]?.result === true) newStates[s.project] = true;
+    } catch {
+      // Tab not injectable (loading, navigating, wrong origin, etc.)
+    }
   }
-  const changed = lastSessions.some((s) => !!newStates[s.project] !== !!sessionNeedsInput[s.project]);
+  const changed = sessions.some((s) => !!newStates[s.project] !== !!sessionNeedsInput[s.project]);
   sessionNeedsInput = newStates;
   if (changed) renderSessions(lastSessions, lastProcs);
 }
-
-// Listen for real-time approval state changes pushed by content.js via background
-chrome.runtime.onMessage.addListener((message) => {
-  if (message.action === "approvalStateChanged") updateApprovalStates();
-});
 
 // --- Track which claude.ai tab is active ---
 
