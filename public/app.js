@@ -702,35 +702,79 @@ async function refreshUsage() {
 
 function renderUsageChart(data) {
   const section = document.getElementById("usage-section");
-  if (!section || !data || !data.length) return;
+  if (!section || !data) return;
 
-  const totalTokens = data.reduce((sum, b) => sum + b.outputTokens, 0);
-  if (totalTokens === 0) {
+  // Handle both old format (array) and new format ({ buckets, rateLimits })
+  const buckets = Array.isArray(data) ? data : (data.buckets || []);
+  const rateLimits = Array.isArray(data) ? [] : (data.rateLimits || []);
+
+  const now = Date.now();
+  const totalTokens = buckets.reduce((sum, b) => sum + b.outputTokens, 0);
+  const tokens4h = buckets.slice(-4).reduce((sum, b) => sum + b.outputTokens, 0);
+
+  // Most recent rate limit event (any window)
+  const recentLimit = rateLimits[0] || null;
+  // Is there an active (not yet reset) rate limit?
+  const activeLimitResetAt = recentLimit && recentLimit.resetAt && recentLimit.resetAt > now
+    ? recentLimit.resetAt : null;
+
+  if (totalTokens === 0 && !recentLimit) {
     section.classList.add("hidden");
     return;
   }
   section.classList.remove("hidden");
 
+  // Total label
   document.getElementById("usage-total").textContent =
-    formatTokens(totalTokens) + " output tokens";
+    formatTokens(totalTokens) + " tokens";
 
-  const maxTokens = Math.max(...data.map((b) => b.outputTokens));
+  // Rate limit status
+  const statusEl = document.getElementById("usage-status");
+  if (statusEl) {
+    if (activeLimitResetAt) {
+      const minsLeft = Math.max(1, Math.round((activeLimitResetAt - now) / 60000));
+      statusEl.className = "usage-status limited";
+      statusEl.textContent = `rate limited · resets in ${minsLeft}m`;
+    } else if (recentLimit && recentLimit.resetAt && now - recentLimit.resetAt < 30 * 60000) {
+      // Reset happened within the last 30 min
+      statusEl.className = "usage-status ok";
+      statusEl.textContent = `quota reset ${Math.round((now - recentLimit.resetAt) / 60000)}m ago`;
+    } else if (recentLimit && now - recentLimit.timestamp < 4 * 3600000) {
+      // Hit a limit within the last 4h but reset time unknown or already passed
+      statusEl.className = "usage-status ok";
+      statusEl.textContent = `4h: ${formatTokens(tokens4h)} tokens`;
+    } else {
+      statusEl.className = "usage-status ok";
+      statusEl.textContent = `4h: ${formatTokens(tokens4h)} tokens`;
+    }
+  }
+
+  if (!buckets.length) return;
+  const maxTokens = Math.max(...buckets.map((b) => b.outputTokens));
   const W = 1000;
   const H = 48;
-  const n = data.length;
+  const n = buckets.length;
   const barW = W / n;
   const gap = 2;
-  const nowHour = Math.floor(Date.now() / 3600000) * 3600000;
+  const nowHour = Math.floor(now / 3600000) * 3600000;
 
-  const bars = data
+  // Mark the hours covered by the most recent rate limit event
+  const limitHour = recentLimit ? Math.floor(recentLimit.timestamp / 3600000) * 3600000 : null;
+
+  const bars = buckets
     .map((b, i) => {
       const h = maxTokens > 0 ? Math.max(2, Math.round((b.outputTokens / maxTokens) * H)) : 0;
       const x = (i * barW + gap).toFixed(1);
       const w = Math.max(1, barW - gap * 2).toFixed(1);
       const y = (H - h).toFixed(1);
-      const fill = b.hour === nowHour ? "#60a5fa" : "#2563eb";
+      const isCurrent = b.hour === nowHour;
+      const wasLimited = b.hour === limitHour;
+      const fill = wasLimited ? "#f87171" : isCurrent ? "#60a5fa" : "#2563eb";
       const time = new Date(b.hour).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
-      return `<rect x="${x}" y="${y}" width="${w}" height="${h}" fill="${fill}" rx="1"><title>${time}: ${b.outputTokens.toLocaleString()} tokens</title></rect>`;
+      const label = wasLimited
+        ? `${time}: ${b.outputTokens.toLocaleString()} tokens (rate limited)`
+        : `${time}: ${b.outputTokens.toLocaleString()} tokens`;
+      return `<rect x="${x}" y="${y}" width="${w}" height="${h}" fill="${fill}" rx="1"><title>${label}</title></rect>`;
     })
     .join("");
 

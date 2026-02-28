@@ -742,6 +742,28 @@ h2 {
   letter-spacing: 0.06em;
 }
 
+.usage-meta {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.usage-status {
+  font-size: 0.7rem;
+  padding: 0.1rem 0.5rem;
+  border-radius: 999px;
+}
+
+.usage-status.limited {
+  background: #3a1a1a;
+  color: #f87171;
+}
+
+.usage-status.ok {
+  background: #1a2535;
+  color: #60a5fa;
+}
+
 .usage-total {
   font-size: 0.75rem;
   color: #888;
