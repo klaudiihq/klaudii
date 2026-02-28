@@ -90,7 +90,7 @@ function getConnectionKeyQR() {
   // QR encodes: klaudii://<serverId>/<connectionKeyHex>
   // The browser scans this, extracts serverId + key, stores in localStorage
   const payload = `klaudii://${config.cloud.serverId}/${config.cloud.connectionKey}`;
-  return generateSVG(payload, { moduleSize: 4, margin: 4, darkColor: "#e0e0e0", lightColor: "#0f1117" });
+  return generateSVG(payload, { moduleSize: 4, margin: 4, darkColor: "#000000", lightColor: "#ffffff" });
 }
 
 module.exports = { redeemPairingCode, getCloudStatus, unpair, getConnectionKeyDisplay, getConnectionKeyQR };

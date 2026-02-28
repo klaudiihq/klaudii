@@ -660,8 +660,8 @@ h2 {
 
 .cloud-qr-code {
   display: inline-block;
-  padding: 0.5rem;
-  background: #0f1117;
+  padding: 0.75rem;
+  background: #ffffff;
   border-radius: 8px;
   border: 1px solid #2a2d35;
 }
