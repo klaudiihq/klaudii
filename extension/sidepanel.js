@@ -6,7 +6,8 @@ let lastProcs = [];
 let activeTabUrl = null;
 let sortMode = localStorage.getItem("sortMode") || "activity";
 let openMode = "inplace";
-let openTabUrls = new Set(); // full URLs (no query string) of open claude.ai tabs
+let openTabs = new Map();    // urlPath (no query string) → tabId, for open claude.ai tabs in this window
+let sessionNeedsInput = {}; // project → bool: session has a pending approval button
 
 // --- Init ---
 
@@ -83,6 +84,7 @@ async function refresh() {
     setConnected(true);
     renderSessions(sessions, procs);
     renderUnmanaged(procs);
+    checkApprovalStates(sessions); // async, re-renders only if state changes
   } catch {
     setConnected(false);
   }
@@ -101,6 +103,36 @@ function setConnected(ok) {
     badge.className = "badge error";
     errorBanner.classList.remove("hidden");
   }
+}
+
+// --- Approval detection ---
+
+// For each running session that has an open tab, inject a tiny script to check
+// whether the claude.ai page is currently showing an "Allow once" approval button.
+// Re-renders cards only when the set of sessions needing input changes.
+async function checkApprovalStates(sessions) {
+  const newStates = {};
+  for (const s of sessions) {
+    if (s.status !== "running" || !s.claudeUrl) continue;
+    const sessionUrlPath = s.claudeUrl.split("?")[0];
+    const entry = [...openTabs.entries()].find(([u]) => u.startsWith(sessionUrlPath));
+    if (!entry) continue;
+    const tabId = entry[1];
+    try {
+      const results = await chrome.scripting.executeScript({
+        target: { tabId },
+        func: () => Array.from(document.querySelectorAll("button")).some(
+          (b) => b.textContent.includes("Allow once") && b.querySelector("kbd")
+        ),
+      });
+      if (results?.[0]?.result === true) newStates[s.project] = true;
+    } catch {
+      // Tab not injectable (loading, navigating, wrong origin, etc.)
+    }
+  }
+  const changed = sessions.some((s) => !!newStates[s.project] !== !!sessionNeedsInput[s.project]);
+  sessionNeedsInput = newStates;
+  if (changed) renderSessions(lastSessions, lastProcs);
 }
 
 // --- Track which claude.ai tab is active ---
@@ -123,7 +155,7 @@ function updateOpenTabs() {
     const query = { url: "https://claude.ai/*" };
     if (win?.id) query.windowId = win.id;
     chrome.tabs.query(query, (tabs) => {
-      openTabUrls = new Set((tabs || []).map((t) => t.url?.split("?")[0]).filter(Boolean));
+      openTabs = new Map((tabs || []).filter((t) => t.url).map((t) => [t.url.split("?")[0], t.id]));
       // Re-render cards so Switch/Open labels stay current
       if (lastSessions.length) renderSessions(lastSessions, lastProcs);
     });
@@ -231,6 +263,8 @@ function renderCard(s, proc) {
     </div>` : "";
 
   const displayTitle = gitBranch ? `${repo} (${gitBranch})` : repo;
+  const needsInput = sessionNeedsInput[s.project] === true;
+  const inputDot = needsInput ? `<span class="needs-input-dot" title="Waiting for your approval"></span>` : "";
 
   let actions = "";
   if (isRunning) {
@@ -238,7 +272,7 @@ function renderCard(s, proc) {
     if (s.claudeUrl) {
       const sessionUrlPath = s.claudeUrl.split("?")[0];
       const tabIsOpen = openMode === "tabs" &&
-        [...openTabUrls].some((u) => u.startsWith(sessionUrlPath));
+        [...openTabs.keys()].some((u) => u.startsWith(sessionUrlPath));
       openBtn = `<button class="btn ${tabIsOpen ? "" : "success"}" data-action="open" data-url="${esc(s.claudeUrl)}" data-title="${esc(displayTitle)}">${tabIsOpen ? "Switch" : "Open"}</button>`;
     }
     actions = `
@@ -259,6 +293,7 @@ function renderCard(s, proc) {
     <div class="card" data-project="${esc(s.project)}" data-claude-url="${esc(s.claudeUrl || "")}">
       <div class="card-header">
         <span class="card-title">${esc(repo)}</span>
+        ${inputDot}
         <div class="card-badges">
           ${permBadge}
           <span class="card-status ${status}">${status}</span>

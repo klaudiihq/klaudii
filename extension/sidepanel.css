@@ -153,6 +153,21 @@ h1 {
   gap: 6px;
 }
 
+/* Approval needed indicator */
+.needs-input-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #fbbf24;
+  flex-shrink: 0;
+  animation: needs-input-pulse 1.2s ease-in-out infinite;
+}
+
+@keyframes needs-input-pulse {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50%       { opacity: 0.35; transform: scale(0.75); }
+}
+
 /* Sessions container */
 #sessions-container {
   padding: 8px;
