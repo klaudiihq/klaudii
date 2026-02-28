@@ -4,6 +4,7 @@ let pollTimer = null;
 let lastSessions = [];
 let lastProcs = [];
 let activeTabUrl = null;
+let sortMode = localStorage.getItem("sortMode") || "activity";
 
 // --- Init ---
 
@@ -15,6 +16,22 @@ async function init() {
   document.getElementById("btn-refresh").addEventListener("click", refresh);
   document.getElementById("btn-settings").addEventListener("click", openSettings);
   document.getElementById("btn-configure").addEventListener("click", openSettings);
+
+  // Sort toggle
+  document.querySelectorAll(".sort-btn").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      sortMode = btn.dataset.sort;
+      localStorage.setItem("sortMode", sortMode);
+      document.querySelectorAll(".sort-btn").forEach((b) =>
+        b.classList.toggle("active", b.dataset.sort === sortMode)
+      );
+      renderSessions(lastSessions, lastProcs);
+    });
+  });
+  // Set initial active state
+  document.querySelectorAll(".sort-btn").forEach((b) =>
+    b.classList.toggle("active", b.dataset.sort === sortMode)
+  );
 
   trackActiveTab();
   await refresh();
@@ -31,7 +48,10 @@ async function api(path, opts = {}) {
   });
   if (!res.ok) {
     const data = await res.json().catch(() => ({}));
-    throw new Error(data.error || `HTTP ${res.status}`);
+    const err = new Error(data.error || `HTTP ${res.status}`);
+    err.status = res.status;
+    err.data = data;
+    throw err;
   }
   return res.json();
 }
@@ -101,6 +121,19 @@ function highlightActiveSession() {
   });
 }
 
+// --- Sort ---
+
+function sortSessions(sessions) {
+  const statusOrder = { running: 0, exited: 1, stopped: 2 };
+  return [...sessions].sort((a, b) => {
+    const sa = statusOrder[a.status] ?? 2;
+    const sb = statusOrder[b.status] ?? 2;
+    if (sa !== sb) return sa - sb;
+    if (sortMode === "alpha") return a.project.localeCompare(b.project);
+    return (b.lastActivity || 0) - (a.lastActivity || 0);
+  });
+}
+
 // --- Render sessions ---
 
 function renderSessions(sessions, procs) {
@@ -115,7 +148,6 @@ function renderSessions(sessions, procs) {
     return;
   }
 
-  // Process stats lookup
   const procByProject = {};
   if (procs) {
     for (const p of procs) {
@@ -123,7 +155,9 @@ function renderSessions(sessions, procs) {
     }
   }
 
-  container.innerHTML = sessions.map((s) => renderCard(s, procByProject[s.project])).join("");
+  container.innerHTML = sortSessions(sessions)
+    .map((s) => renderCard(s, procByProject[s.project]))
+    .join("");
   highlightActiveSession();
 }
 
@@ -133,6 +167,9 @@ function renderCard(s, proc) {
   const branch = parts.length > 1 ? parts.slice(1).join("--") : null;
   const g = s.git;
   const gitBranch = g ? g.branch : branch;
+  const status = s.status || (s.running ? "running" : "stopped");
+  const isRunning = status === "running" || status === "exited";
+  const mode = s.permissionMode || "yolo";
 
   let gitBar = "";
   if (g) {
@@ -148,16 +185,24 @@ function renderCard(s, proc) {
 
   let stats = "";
   if (proc) {
-    const parts = [`${proc.cpu}% cpu`, `${proc.memMB} MB`];
-    if (proc.uptime) parts.push(esc(proc.uptime));
-    stats = `<div class="proc-stats">${parts.join(" · ")}</div>`;
+    const statParts = [`${proc.cpu}% cpu`, `${proc.memMB} MB`];
+    if (proc.uptime) statParts.push(esc(proc.uptime));
+    stats = `<div class="proc-stats">${statParts.join(" · ")}</div>`;
   }
 
-  // Title used to rename the claude.ai conversation: "repo (branch)"
+  // Permission mode display
+  const permBadge = `<span class="perm-badge perm-${mode}">${mode}</span>`;
+  const permToggle = !isRunning ? `
+    <div class="perm-toggle">
+      <button class="perm-btn${mode === "yolo" ? " active perm-yolo" : ""}" data-action="set-perm" data-project="${esc(s.project)}" data-mode="yolo">Yolo</button>
+      <button class="perm-btn${mode === "ask" ? " active perm-ask" : ""}" data-action="set-perm" data-project="${esc(s.project)}" data-mode="ask">Ask</button>
+      <button class="perm-btn${mode === "strict" ? " active perm-strict" : ""}" data-action="set-perm" data-project="${esc(s.project)}" data-mode="strict">Strict</button>
+    </div>` : "";
+
   const displayTitle = gitBranch ? `${repo} (${gitBranch})` : repo;
 
   let actions = "";
-  if (s.running) {
+  if (isRunning) {
     const openBtn = s.claudeUrl
       ? `<button class="btn success" data-action="open" data-url="${esc(s.claudeUrl)}" data-title="${esc(displayTitle)}">Open</button>`
       : "";
@@ -171,17 +216,22 @@ function renderCard(s, proc) {
     actions = `
       <button class="btn primary" data-action="continue" data-project="${esc(s.project)}">Continue</button>
       <button class="btn btn-sm" data-action="start" data-project="${esc(s.project)}">New</button>
-      <button class="btn btn-sm" data-action="history" data-project="${esc(s.project)}">History</button>`;
+      <button class="btn btn-sm" data-action="history" data-project="${esc(s.project)}">History</button>
+      <button class="btn btn-sm danger" data-action="remove" data-project="${esc(s.project)}">Remove</button>`;
   }
 
   return `
     <div class="card" data-project="${esc(s.project)}" data-claude-url="${esc(s.claudeUrl || "")}">
       <div class="card-header">
         <span class="card-title">${esc(repo)}</span>
-        <span class="card-status ${s.running ? "running" : "stopped"}">${s.running ? "running" : "stopped"}</span>
+        <div class="card-badges">
+          ${permBadge}
+          <span class="card-status ${status}">${status}</span>
+        </div>
       </div>
       ${gitBar}
       ${stats}
+      ${permToggle}
       <div class="card-actions">${actions}</div>
       <div class="history-list hidden" id="history-${esc(s.project)}"></div>
     </div>`;
@@ -293,6 +343,79 @@ document.addEventListener("click", async (e) => {
         showToast("Error: " + err.message);
       }
       setTimeout(refresh, 1000);
+      break;
+
+    case "set-perm": {
+      const mode = btn.dataset.mode;
+      // Update UI immediately for responsiveness
+      btn.closest(".perm-toggle").querySelectorAll(".perm-btn").forEach((b) => {
+        b.classList.remove("active", "perm-yolo", "perm-ask", "perm-strict");
+        if (b.dataset.mode === mode) b.classList.add("active", `perm-${mode}`);
+      });
+      btn.closest(".card").querySelector(".perm-badge").className = `perm-badge perm-${mode}`;
+      btn.closest(".card").querySelector(".perm-badge").textContent = mode;
+      try {
+        await api("/api/projects/permission", { method: "POST", body: { project, mode } });
+      } catch (err) {
+        showToast("Error: " + err.message);
+        refresh(); // revert on error
+      }
+      break;
+    }
+
+    case "remove":
+      if (btn.dataset.armed === "force") {
+        btn.disabled = true;
+        try {
+          await api("/api/projects/remove", { method: "POST", body: { project, force: true } });
+          refresh();
+        } catch (err) {
+          showToast("Error: " + err.message);
+          refresh();
+        }
+      } else if (btn.dataset.armed) {
+        btn.disabled = true;
+        try {
+          await api("/api/projects/remove", { method: "POST", body: { project } });
+          refresh();
+        } catch (err) {
+          if (err.status === 409) {
+            // Dirty repo — offer force
+            const g = err.data?.git;
+            const detail = g
+              ? `${g.dirtyFiles || 0} changed, ${g.unpushed || 0} unpushed`
+              : "uncommitted changes";
+            showToast(`Dirty repo (${detail}) — click Remove again to force`);
+            btn.disabled = false;
+            btn.dataset.armed = "force";
+            btn.textContent = "Force?";
+            btn.classList.add("warning");
+            btn.classList.remove("danger");
+            setTimeout(() => {
+              if (btn.isConnected) {
+                delete btn.dataset.armed;
+                btn.textContent = "Remove";
+                btn.classList.add("danger");
+                btn.classList.remove("warning");
+              }
+            }, 5000);
+          } else {
+            showToast("Error: " + err.message);
+            refresh();
+          }
+        }
+      } else {
+        btn.dataset.armed = "1";
+        btn.textContent = "Confirm?";
+        btn.classList.replace("danger", "warning");
+        setTimeout(() => {
+          if (btn.isConnected && btn.dataset.armed === "1") {
+            delete btn.dataset.armed;
+            btn.textContent = "Remove";
+            btn.classList.replace("warning", "danger");
+          }
+        }, 3000);
+      }
       break;
 
     case "kill":
