@@ -600,6 +600,34 @@ h2 {
   margin-top: 1rem;
 }
 
+/* Token usage chart */
+.usage-section {
+  background: #1a1d25;
+  border: 1px solid #2a2d35;
+  border-radius: 8px;
+  padding: 0.75rem 1rem 0.6rem;
+  margin-bottom: 1.5rem;
+}
+
+.usage-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 0.5rem;
+}
+
+.usage-label {
+  font-size: 0.65rem;
+  color: #555;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+.usage-total {
+  font-size: 0.75rem;
+  color: #888;
+}
+
 .hidden { display: none; }
 
 /* Responsive */

@@ -689,6 +689,61 @@ async function createNewRepo() {
   }
 }
 
+// --- Token usage chart ---
+
+async function refreshUsage() {
+  try {
+    const data = await api("/api/usage");
+    renderUsageChart(data);
+  } catch {
+    // Non-critical — silently ignore
+  }
+}
+
+function renderUsageChart(data) {
+  const section = document.getElementById("usage-section");
+  if (!section || !data || !data.length) return;
+
+  const totalTokens = data.reduce((sum, b) => sum + b.outputTokens, 0);
+  if (totalTokens === 0) {
+    section.classList.add("hidden");
+    return;
+  }
+  section.classList.remove("hidden");
+
+  document.getElementById("usage-total").textContent =
+    formatTokens(totalTokens) + " output tokens";
+
+  const maxTokens = Math.max(...data.map((b) => b.outputTokens));
+  const W = 1000;
+  const H = 48;
+  const n = data.length;
+  const barW = W / n;
+  const gap = 2;
+  const nowHour = Math.floor(Date.now() / 3600000) * 3600000;
+
+  const bars = data
+    .map((b, i) => {
+      const h = maxTokens > 0 ? Math.max(2, Math.round((b.outputTokens / maxTokens) * H)) : 0;
+      const x = (i * barW + gap).toFixed(1);
+      const w = Math.max(1, barW - gap * 2).toFixed(1);
+      const y = (H - h).toFixed(1);
+      const fill = b.hour === nowHour ? "#60a5fa" : "#2563eb";
+      const time = new Date(b.hour).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+      return `<rect x="${x}" y="${y}" width="${w}" height="${h}" fill="${fill}" rx="1"><title>${time}: ${b.outputTokens.toLocaleString()} tokens</title></rect>`;
+    })
+    .join("");
+
+  document.getElementById("usage-chart").innerHTML =
+    `<svg viewBox="0 0 ${W} ${H}" preserveAspectRatio="none" style="width:100%;height:48px;display:block">${bars}</svg>`;
+}
+
+function formatTokens(n) {
+  if (n >= 1000000) return (n / 1000000).toFixed(1) + "M";
+  if (n >= 1000) return Math.round(n / 1000) + "K";
+  return String(n);
+}
+
 // --- Helpers ---
 
 function esc(str) {
@@ -716,3 +771,5 @@ function formatTime(ts) {
 
 refresh();
 refreshTimer = setInterval(refresh, 10000);
+refreshUsage();
+setInterval(refreshUsage, 60000);
