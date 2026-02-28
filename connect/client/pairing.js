@@ -89,7 +89,7 @@ function getConnectionKeyQR() {
   }
   // QR encodes an HTTPS URL so iOS Camera / Android Camera can open it directly.
   // pair.html reads ?serverId + ?key from the URL and auto-stores the connection key.
-  const relayBase = (config.cloud.relayUrl || "https://klaudii-cloud-relay.fly.dev")
+  const relayBase = (config.cloud.relayUrl || "https://konnect.klaudii.com")
     .replace(/^wss?:\/\//, "https://")
     .replace(/\/ws$/, "")
     .replace(/\/$/, "");

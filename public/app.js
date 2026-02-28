@@ -901,7 +901,7 @@ async function renderCloudModal() {
         <div class="cloud-qr-section">
           <label>Scan to pair a browser</label>
           <div class="cloud-qr-code">${keyResp.qrSvg}</div>
-          <div class="form-hint">Open klaudii-cloud-relay.fly.dev on your phone or laptop and scan this QR code. It contains your Konnection Key — the relay never sees it.</div>
+          <div class="form-hint">Open konnect.klaudii.com on your phone or laptop and scan this QR code. It contains your Konnection Key — the relay never sees it.</div>
         </div>
         ` : ""}
         ${keyResp && keyResp.connectionKey ? `
@@ -911,7 +911,7 @@ async function renderCloudModal() {
             <div class="cloud-key-display mono" id="konnection-key-display" style="white-space:pre-wrap; line-height:1.6">${esc(formatKeyForDisplay(keyResp.connectionKey))}</div>
             <div style="display:flex; gap:0.5rem; margin-top:0.5rem; align-items:center">
               <button class="btn btn-sm" onclick="copyKonnectionKey()" id="copy-key-btn">Copy</button>
-              <span class="form-hint" style="margin:0">Paste on klaudii-cloud-relay.fly.dev if you can't scan the QR</span>
+              <span class="form-hint" style="margin:0">Paste on konnect.klaudii.com if you can't scan the QR</span>
             </div>
           </div>
         </details>
@@ -934,7 +934,7 @@ async function renderCloudModal() {
       <div class="cloud-pair-form">
         <p>Konnect this Klaudii server to the kloud so you can access it from anywhere.</p>
         <ol>
-          <li>Go to <strong>klaudii-cloud-relay.fly.dev</strong> and sign in</li>
+          <li>Go to <strong>konnect.klaudii.com</strong> and sign in</li>
           <li>Click <strong>Add Server</strong> to get a pairing code</li>
           <li>Enter the code below</li>
         </ol>
@@ -948,7 +948,7 @@ async function renderCloudModal() {
         </div>
         <div class="form-group">
           <label>Relay URL</label>
-          <input id="relay-url-input" type="text" value="https://klaudii-cloud-relay.fly.dev" />
+          <input id="relay-url-input" type="text" value="https://konnect.klaudii.com" />
         </div>
         <button class="btn primary" onclick="pairCloud()" id="pair-btn">Pair</button>
         <div id="pair-result" style="margin-top: 12px; display:none"></div>
@@ -970,7 +970,7 @@ async function pairCloud() {
   const relayUrl = document.getElementById("relay-url-input").value.trim();
 
   if (!code) {
-    showPairError("Enter the pairing code from klaudii-cloud-relay.fly.dev");
+    showPairError("Enter the pairing code from konnect.klaudii.com");
     document.getElementById("pairing-code-input").focus();
     return;
   }
@@ -1000,7 +1000,7 @@ async function pairCloud() {
       <div class="cloud-key-section success">
         <h3>Konnected!</h3>
         ${keyResp && keyResp.qrSvg ? `
-          <label>Scan this QR code on klaudii-cloud-relay.fly.dev</label>
+          <label>Scan this QR code on konnect.klaudii.com</label>
           <div class="cloud-qr-code">${keyResp.qrSvg}</div>
         ` : ""}
         <details open>
@@ -1008,7 +1008,7 @@ async function pairCloud() {
           <div class="cloud-key-display mono" id="konnection-key-display" style="white-space:pre-wrap; line-height:1.6; margin-top:0.5rem">${esc(formatKeyForDisplay(result.connectionKey))}</div>
           <button class="btn btn-sm" onclick="copyKonnectionKey()" id="copy-key-btn" style="margin-top:0.5rem">Copy Key</button>
         </details>
-        <div class="form-hint" style="margin-top:0.5rem">Paste on klaudii-cloud-relay.fly.dev → pair.html</div>
+        <div class="form-hint" style="margin-top:0.5rem">Paste on konnect.klaudii.com → pair.html</div>
       </div>
     `;
 

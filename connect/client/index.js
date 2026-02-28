@@ -105,7 +105,7 @@ function setupRoutes(app) {
       return res.status(400).json({ error: "Pairing code required" });
     }
 
-    const relay = relayUrl || "https://klaudii-cloud-relay.fly.dev";
+    const relay = relayUrl || "https://konnect.klaudii.com";
     const name = serverName || require("os").hostname();
 
     try {

@@ -8,8 +8,8 @@ primary_region = "sjc"
   NODE_ENV = "production"
   PORT = "3000"
   DB_PATH = "/data/relay.db"
-  RELAY_WS_URL = "wss://klaudii-cloud-relay.fly.dev/ws"
-  GOOGLE_REDIRECT_URI = "https://klaudii-cloud-relay.fly.dev/auth/google/callback"
+  RELAY_WS_URL = "wss://konnect.klaudii.com/ws"
+  GOOGLE_REDIRECT_URI = "https://konnect.klaudii.com/auth/google/callback"
 
 [http_service]
   internal_port = 3000
