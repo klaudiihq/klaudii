@@ -170,7 +170,10 @@ async function checkApprovalStates(sessions) {
       if (result?.clicked) {
         if (!sessionAutoApproved[s.project]) {
           sessionAutoApproved[s.project] = true;
-          setTimeout(() => { delete sessionAutoApproved[s.project]; renderSessions(lastSessions, lastProcs); }, 5000);
+          // Re-render immediately so green class is applied right now
+          renderSessions(lastSessions, lastProcs);
+          // Clean up state after 5s; next refresh() will render without the class
+          setTimeout(() => { delete sessionAutoApproved[s.project]; }, 5000);
         }
       } else if (result?.found) {
         newStates[s.project] = true;
