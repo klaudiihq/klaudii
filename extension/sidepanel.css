@@ -292,7 +292,7 @@ h1 {
   text-decoration: none;
   flex-shrink: 0;
   transition: color 0.15s;
-  margin-right: 4px;
+  margin-right: 2px;
 }
 
 .git-link:hover { color: #aaa; }
@@ -301,7 +301,7 @@ h1 {
 .git-bar {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: 4px;
   font-size: 11px;
   margin-bottom: 4px;
 }
