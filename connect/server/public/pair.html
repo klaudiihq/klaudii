@@ -133,14 +133,13 @@
 <body>
   <div class="pair-card">
     <h2>Pair this Browser</h2>
-    <p class="subtitle">
-      Scan the QR code shown on your Klaudii server's Cloud panel,
-      or enter the Connection Key manually.
+    <p class="subtitle" id="pair-subtitle">
+      Scan the QR code shown in your local Klaudii's Kloud Konnect panel, or paste the Konnection Key.
     </p>
 
     <div id="pair-content">
-      <!-- QR Scanner -->
-      <div id="scanner-section">
+      <!-- QR Scanner (only shown when BarcodeDetector is available) -->
+      <div id="scanner-section" style="display:none">
         <button class="btn" onclick="startScanner()" id="scan-btn">Scan QR Code</button>
         <div id="scanner-container" style="display:none">
           <video id="scanner-video" autoplay playsinline></video>
@@ -150,24 +149,24 @@
         <p class="scanner-status" id="scanner-status"></p>
       </div>
 
-      <div class="divider">or</div>
+      <div id="divider-el" class="divider" style="display:none">or</div>
 
-      <!-- Manual entry -->
-      <details id="manual-section">
-        <summary style="cursor:pointer; color:#888; font-size:0.85rem; padding:0.5rem 0">Enter key manually</summary>
-        <div style="margin-top: 0.75rem">
-          <label>Connection Key</label>
-          <input id="key-input" type="text" placeholder="xxxx-xxxx-xxxx-xxxx-xxxx-xxxx-xxxx-xxxx" />
-          <p class="hint">Paste the full key from your Klaudii dashboard's Cloud panel.</p>
-          <button class="btn" onclick="saveKey()">Save Key</button>
-        </div>
-      </details>
+      <!-- Paste / manual entry — always visible, primary on unsupported browsers -->
+      <div id="manual-section">
+        <label>Konnection Key</label>
+        <textarea id="key-input" rows="3"
+          placeholder="Paste the key from your local Klaudii's Kloud Konnect panel"
+          style="width:100%; background:#0f1117; color:#fbbf24; border:1px solid #3a3d45; border-radius:8px; padding:0.75rem; font-size:0.85rem; font-family:ui-monospace,monospace; letter-spacing:1px; resize:none; margin-bottom:0.5rem"
+        ></textarea>
+        <p class="hint">Open <strong>Kloud Konnect</strong> on your local Klaudii, copy the Konnection Key, and paste it above.</p>
+        <button class="btn" onclick="saveKey()" style="margin-top:0.25rem">Save Key</button>
+      </div>
 
       <p id="error-msg" class="error" style="display:none"></p>
     </div>
 
     <div id="success-msg" class="success" style="display:none">
-      Paired! <a href="/" style="color:#4ade80; font-weight:500">Go to dashboard</a>
+      Konnected! <a href="/" style="color:#4ade80; font-weight:500">Go to dashboard →</a>
     </div>
   </div>
 
@@ -176,6 +175,12 @@
     let targetServerId = params.get("serverId");
     let scannerStream = null;
     let scannerInterval = null;
+
+    // Show QR scanner option only if BarcodeDetector is supported
+    if ("BarcodeDetector" in window) {
+      document.getElementById("scanner-section").style.display = "block";
+      document.getElementById("divider-el").style.display = "block";
+    }
 
     // --- QR Scanner using camera + canvas ---
 
@@ -197,8 +202,7 @@
         // Start scanning frames
         scannerInterval = setInterval(() => scanFrame(), 300);
       } catch (err) {
-        status.textContent = "Camera access denied. Use manual entry instead.";
-        document.getElementById("manual-section").open = true;
+        status.textContent = "Camera access denied. Paste the key below instead.";
       }
     }
 
@@ -256,7 +260,7 @@
     // --- Manual entry ---
 
     function saveKey() {
-      const key = document.getElementById("key-input").value.trim();
+      const key = document.getElementById("key-input").value.replace(/\s/g, "").trim();
       if (!key) {
         showError("Please enter the connection key");
         return;

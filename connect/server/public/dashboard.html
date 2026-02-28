@@ -188,6 +188,22 @@
       justify-content: flex-end;
       gap: 0.5rem;
     }
+    .delete-server-btn {
+      background: none;
+      border: 1px solid transparent;
+      color: #555;
+      width: 26px;
+      height: 26px;
+      border-radius: 6px;
+      cursor: pointer;
+      font-size: 0.75rem;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      transition: all 0.15s;
+      flex-shrink: 0;
+    }
+    .delete-server-btn:hover { background: #2a1a1a; border-color: #ef4444; color: #f87171; }
   </style>
 </head>
 <body>
@@ -280,17 +296,31 @@
       list.innerHTML = servers.map(s => {
         const hasKey = hasConnectionKey(s.id);
         const lastSeen = s.lastSeen ? formatTimeAgo(s.lastSeen * 1000) : "never";
+        const clickAction = s.online && hasKey ? `selectServer('${s.id}', '${esc(s.name)}')` : (!hasKey ? `enterKey('${s.id}')` : "");
         return `
-          <div class="server-card" onclick="${s.online && hasKey ? `selectServer('${s.id}', '${esc(s.name)}')` : (hasKey ? '' : `enterKey('${s.id}')`)}">
-            <div>
+          <div class="server-card" onclick="${clickAction}">
+            <div style="flex:1; min-width:0">
               <div class="server-name">${esc(s.name)}</div>
               <div class="server-meta">${s.online ? "Online" : `Last seen ${lastSeen}`}</div>
-              ${!hasKey ? '<div class="no-key-warning">Connection key needed — click to enter</div>' : ""}
+              ${!hasKey ? '<div class="no-key-warning">Konnection key needed — click to enter</div>' : ""}
             </div>
-            <div class="status-dot ${s.online ? "online" : "offline"}"></div>
+            <div style="display:flex; align-items:center; gap:0.75rem; flex-shrink:0">
+              <div class="status-dot ${s.online ? "online" : "offline"}"></div>
+              <button class="delete-server-btn" onclick="event.stopPropagation(); deleteServer('${s.id}', '${esc(s.name)}')" title="Remove server">✕</button>
+            </div>
           </div>
         `;
       }).join("");
+    }
+
+    async function deleteServer(id, name) {
+      if (!confirm(`Remove "${name}"? This cannot be undone.`)) return;
+      // Also remove stored connection key
+      const keys = JSON.parse(localStorage.getItem("klaudii-connection-keys") || "{}");
+      delete keys[id];
+      localStorage.setItem("klaudii-connection-keys", JSON.stringify(keys));
+      await fetch(`/api/servers/${id}`, { method: "DELETE" });
+      loadServers();
     }
 
     function hasConnectionKey(serverId) {

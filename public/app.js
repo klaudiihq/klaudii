@@ -813,6 +813,35 @@ function formatTime(ts) {
 
 // --- Kloud Konnect ---
 
+// Format a dashed hex key into 4 groups per line for readability
+function formatKeyForDisplay(key) {
+  // Strip existing dashes, then re-group into chunks of 4, 4 per line
+  const clean = key.replace(/-/g, "");
+  const groups = clean.match(/.{1,4}/g) || [];
+  const lines = [];
+  for (let i = 0; i < groups.length; i += 4) {
+    lines.push(groups.slice(i, i + 4).join("-"));
+  }
+  return lines.join("\n");
+}
+
+// The raw key (no line-breaks) for clipboard
+function getRawKey() {
+  const el = document.getElementById("konnection-key-display");
+  return el ? el.textContent.replace(/\s/g, "").replace(/-/g, "-") : "";
+}
+
+async function copyKonnectionKey() {
+  const key = getRawKey();
+  try {
+    await navigator.clipboard.writeText(key);
+    const btn = document.getElementById("copy-key-btn");
+    if (btn) { btn.textContent = "Copied!"; setTimeout(() => { btn.textContent = "Copy"; }, 2000); }
+  } catch {
+    // clipboard not available; key is already visible to select manually
+  }
+}
+
 let cloudStatus = null;
 
 async function refreshCloudStatus() {
@@ -877,10 +906,13 @@ async function renderCloudModal() {
         ` : ""}
         ${keyResp && keyResp.connectionKey ? `
         <details class="cloud-key-details">
-          <summary>Manual entry (Konnection Key)</summary>
+          <summary>Konnection Key (copy &amp; paste)</summary>
           <div class="cloud-key-section">
-            <div class="cloud-key-display mono">${esc(keyResp.connectionKey)}</div>
-            <div class="form-hint">Copy and paste this on klaudii-cloud-relay.fly.dev if you can't scan the QR code.</div>
+            <div class="cloud-key-display mono" id="konnection-key-display" style="white-space:pre-wrap; line-height:1.6">${esc(formatKeyForDisplay(keyResp.connectionKey))}</div>
+            <div style="display:flex; gap:0.5rem; margin-top:0.5rem; align-items:center">
+              <button class="btn btn-sm" onclick="copyKonnectionKey()" id="copy-key-btn">Copy</button>
+              <span class="form-hint" style="margin:0">Paste on klaudii-cloud-relay.fly.dev if you can't scan the QR</span>
+            </div>
           </div>
         </details>
         ` : ""}
@@ -972,10 +1004,11 @@ async function pairCloud() {
           <div class="cloud-qr-code">${keyResp.qrSvg}</div>
         ` : ""}
         <details open>
-          <summary>Manual entry (Konnection Key)</summary>
-          <div class="cloud-key-display mono" style="margin-top: 0.5rem">${esc(result.connectionKey)}</div>
+          <summary>Konnection Key (copy &amp; paste)</summary>
+          <div class="cloud-key-display mono" id="konnection-key-display" style="white-space:pre-wrap; line-height:1.6; margin-top:0.5rem">${esc(formatKeyForDisplay(result.connectionKey))}</div>
+          <button class="btn btn-sm" onclick="copyKonnectionKey()" id="copy-key-btn" style="margin-top:0.5rem">Copy Key</button>
         </details>
-        <div class="form-hint">This key enables end-to-end encryption. The relay server never sees it.</div>
+        <div class="form-hint" style="margin-top:0.5rem">Paste on klaudii-cloud-relay.fly.dev → pair.html</div>
       </div>
     `;
 
