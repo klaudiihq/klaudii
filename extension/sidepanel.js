@@ -1,5 +1,12 @@
 const DEFAULT_KLAUDII_URL = "http://localhost:9876";
 
+const THEME_ICONS = {
+  auto: `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>`,
+  light: `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/></svg>`,
+  dark:  `<svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>`,
+};
+let themeMode = "auto"; // "auto" | "light" | "dark"
+
 const GIT_PATH = "M23.546 10.93L13.067.452c-.604-.603-1.582-.603-2.188 0L8.708 2.627l2.76 2.76c.645-.215 1.379-.07 1.889.441.516.515.658 1.258.438 1.9l2.658 2.66c.645-.223 1.387-.078 1.9.435.721.72.721 1.884 0 2.604-.719.719-1.881.719-2.6 0-.539-.541-.674-1.337-.404-1.996L12.86 8.955v6.525c.176.086.342.203.488.348.713.721.713 1.883 0 2.6-.719.721-1.889.721-2.609 0-.719-.719-.719-1.879 0-2.598.182-.18.387-.316.605-.406V8.835c-.217-.091-.424-.222-.6-.401-.545-.545-.676-1.342-.396-2.009L7.636 3.7.45 10.881c-.6.605-.6 1.584 0 2.189l10.48 10.477c.604.604 1.582.604 2.186 0l10.43-10.43c.605-.603.605-1.582 0-2.187";
 const gitSvg = (size) => `<svg width="${size}" height="${size}" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="${GIT_PATH}"/></svg>`;
 let klaudiiUrl = DEFAULT_KLAUDII_URL;
@@ -21,11 +28,13 @@ let addRepos = [];          // cached list from /api/github/repos
 // --- Init ---
 
 async function init() {
-  const config = await chrome.storage.sync.get(["klaudiiUrl", "openMode", "attentionFlash", "autoApprove"]);
+  const config = await chrome.storage.sync.get(["klaudiiUrl", "openMode", "attentionFlash", "autoApprove", "themeMode"]);
   klaudiiUrl = (config.klaudiiUrl || DEFAULT_KLAUDII_URL).replace(/\/+$/, "");
   openMode = config.openMode || "inplace";
   attentionFlash = config.attentionFlash === true;
   autoApprove = config.autoApprove === true;
+  themeMode = config.themeMode || "auto";
+  applyTheme();
 
   document.getElementById("btn-add").addEventListener("click", toggleAddForm);
   document.getElementById("btn-add-cancel").addEventListener("click", closeAddForm);
@@ -62,6 +71,13 @@ async function init() {
     autoApprove = !autoApprove;
     btnAutoApprove.classList.toggle("active", autoApprove);
     chrome.storage.sync.set({ autoApprove });
+  });
+
+  document.getElementById("btn-theme").addEventListener("click", () => {
+    // cycle: auto → dark → light → auto
+    themeMode = themeMode === "auto" ? "dark" : themeMode === "dark" ? "light" : "auto";
+    chrome.storage.sync.set({ themeMode });
+    applyTheme();
   });
 
   // Sort toggle
@@ -120,6 +136,15 @@ async function refresh() {
   } catch {
     setConnected(false);
   }
+}
+
+function applyTheme() {
+  document.documentElement.classList.remove("theme-light", "theme-dark");
+  if (themeMode !== "auto") document.documentElement.classList.add(`theme-${themeMode}`);
+  const TITLES = { auto: "Theme: auto — click for dark", dark: "Theme: dark — click for light", light: "Theme: light — click for auto" };
+  const btn = document.getElementById("btn-theme");
+  btn.innerHTML = THEME_ICONS[themeMode];
+  btn.title = TITLES[themeMode];
 }
 
 function setConnected(ok) {
