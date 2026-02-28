@@ -87,9 +87,13 @@ function getConnectionKeyQR() {
   if (!config.cloud || !config.cloud.connectionKey || !config.cloud.serverId) {
     return null;
   }
-  // QR encodes: klaudii://<serverId>/<connectionKeyHex>
-  // The browser scans this, extracts serverId + key, stores in localStorage
-  const payload = `klaudii://${config.cloud.serverId}/${config.cloud.connectionKey}`;
+  // QR encodes an HTTPS URL so iOS Camera / Android Camera can open it directly.
+  // pair.html reads ?serverId + ?key from the URL and auto-stores the connection key.
+  const relayBase = (config.cloud.relayUrl || "https://klaudii-cloud-relay.fly.dev")
+    .replace(/^wss?:\/\//, "https://")
+    .replace(/\/ws$/, "")
+    .replace(/\/$/, "");
+  const payload = `${relayBase}/pair.html?serverId=${config.cloud.serverId}&key=${config.cloud.connectionKey}`;
   return generateSVG(payload, { moduleSize: 4, margin: 4, darkColor: "#000000", lightColor: "#ffffff" });
 }
 

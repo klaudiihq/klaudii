@@ -177,6 +177,15 @@
     let scannerStream = null;
     let scannerInterval = null;
 
+    // Auto-pair if key is in the URL (QR scan opened this page directly)
+    const prefilledKey = params.get("key");
+    if (prefilledKey && targetServerId) {
+      const clean = prefilledKey.replace(/-/g, "").replace(/\s/g, "");
+      if (/^[0-9a-fA-F]{64}$/.test(clean)) {
+        saveKeyForServer(targetServerId, clean);
+      }
+    }
+
     // Show scanner section if getUserMedia is available (all modern browsers incl. iOS Safari)
     if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
       document.getElementById("scanner-section").style.display = "block";
@@ -227,17 +236,26 @@
     }
 
     function handleQRResult(text) {
-      // Expected format: klaudii://<serverId>/<connectionKeyHex>
+      // New format: https://<relay>/pair.html?serverId=<id>&key=<hex>
+      try {
+        const u = new URL(text);
+        if (u.pathname.endsWith("/pair.html")) {
+          const sid = u.searchParams.get("serverId");
+          const k = u.searchParams.get("key");
+          if (sid && k && /^[0-9a-fA-F]{64}$/.test(k)) {
+            stopScanner();
+            saveKeyForServer(targetServerId || sid, k);
+            return;
+          }
+        }
+      } catch {}
+
+      // Legacy format: klaudii://<serverId>/<connectionKeyHex>
       const match = text.match(/^klaudii:\/\/([^/]+)\/([0-9a-fA-F]{64})$/);
       if (!match) return;
-
       const [, scannedServerId, connectionKey] = match;
-
-      // Use the scanned serverId if we don't have one from URL
-      const effectiveServerId = targetServerId || scannedServerId;
-
       stopScanner();
-      saveKeyForServer(effectiveServerId, connectionKey);
+      saveKeyForServer(targetServerId || scannedServerId, connectionKey);
     }
 
     function stopScanner() {
