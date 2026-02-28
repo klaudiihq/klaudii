@@ -48,9 +48,9 @@ The main process. Runs on port 9876 (configurable). Serves the static frontend f
 
 ### tmux layer (`lib/tmux.js`)
 
-All Claude sessions run inside tmux, using a dedicated socket at `.klaudii-tmux.sock` in the project root. This keeps Klaudii's sessions separate from any personal tmux usage.
+All Claude sessions run inside tmux, using a dedicated socket (default `~/.claude/klaudii-tmux.sock`). This keeps Klaudii's sessions separate from any personal tmux usage.
 
-> **CRITICAL — tmux socket path:** The socket is resolved as `path.join(__dirname, '..', '.klaudii-tmux.sock')` — an absolute path relative to the project directory. This MUST be a path that resolves identically under both launchd (background service) and interactive shells. If they see different socket paths, they connect to different tmux servers and the dashboard can't see or control sessions. **Do not change this to use `os.homedir()` (wrong value under launchd), `/tmp/` (private per-process on macOS), or `process.env.HOME` (not set under launchd).** This was an extremely difficult bug to diagnose.
+> **CRITICAL — tmux socket path:** The socket MUST be an absolute path that resolves identically under both launchd (background service) and interactive shells. If they see different socket paths, they connect to different tmux servers and the dashboard can't see or control sessions. The path is read from `config.json` (`tmuxSocket` key), which is written at install time using `$HOME`. This avoids runtime dependence on `os.homedir()` (may return wrong value under launchd), `/tmp/` (private per-process on macOS), or `process.env.HOME` (not set under launchd). If `config.json` doesn't specify a socket, the fallback is project-relative (`.klaudii-tmux.sock` in the repo root). This was an extremely difficult bug to diagnose.
 
 **Session lifecycle:**
 
