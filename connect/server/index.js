@@ -17,6 +17,10 @@ const DB_PATH = process.env.DB_PATH || path.join(__dirname, "relay.db");
 db.init(DB_PATH);
 
 const app = express();
+
+// Trust Fly.io's TLS-terminating proxy so secure cookies work in production
+app.set("trust proxy", 1);
+
 app.use(express.json());
 
 // Session cookies
