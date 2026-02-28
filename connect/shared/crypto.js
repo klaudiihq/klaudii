@@ -12,15 +12,15 @@ function encrypt(key, plaintext) {
   const data = typeof plaintext === "string" ? plaintext : JSON.stringify(plaintext);
   const encrypted = Buffer.concat([cipher.update(data, "utf8"), cipher.final()]);
   const tag = cipher.getAuthTag();
-  // Return iv + tag + ciphertext as a single base64 string
-  return Buffer.concat([iv, tag, encrypted]).toString("base64");
+  // iv(12) + ciphertext(N) + tag(16) — matches Web Crypto AES-GCM output layout
+  return Buffer.concat([iv, encrypted, tag]).toString("base64");
 }
 
 function decrypt(key, payload) {
   const buf = Buffer.from(payload, "base64");
   const iv = buf.subarray(0, 12);
-  const tag = buf.subarray(12, 28);
-  const ciphertext = buf.subarray(28);
+  const tag = buf.subarray(buf.length - 16); // tag is last 16 bytes
+  const ciphertext = buf.subarray(12, buf.length - 16);
   const decipher = crypto.createDecipheriv("aes-256-gcm", key, iv);
   decipher.setAuthTag(tag);
   const decrypted = Buffer.concat([decipher.update(ciphertext), decipher.final()]);

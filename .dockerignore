@@ -1,0 +1,5 @@
+**/node_modules/
+*.log
+connect/server/relay.db
+connect/server/relay.db-shm
+connect/server/relay.db-wal

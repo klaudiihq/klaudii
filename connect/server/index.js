@@ -17,6 +17,10 @@ const DB_PATH = process.env.DB_PATH || path.join(__dirname, "relay.db");
 db.init(DB_PATH);
 
 const app = express();
+
+// Trust Fly.io's TLS-terminating proxy so secure cookies work in production
+app.set("trust proxy", 1);
+
 app.use(express.json());
 
 // Session cookies
@@ -38,6 +42,10 @@ app.use(express.static(path.join(__dirname, "public")));
 // Also serve the main Klaudii dashboard files under /dashboard/
 // This lets the cloud UI load the exact same frontend
 app.use("/dashboard", express.static(path.join(__dirname, "..", "..", "public")));
+
+// Also serve main Klaudii assets at root (index:false so SPA fallback stays in charge of /)
+// Needed because index.html uses absolute paths like /style.css and /app.js
+app.use(express.static(path.join(__dirname, "..", "..", "public"), { index: false }));
 
 // --- Health ---
 app.get("/api/relay/health", (_req, res) => {

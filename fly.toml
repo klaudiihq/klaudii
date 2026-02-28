@@ -2,11 +2,14 @@ app = "klaudii-cloud-relay"
 primary_region = "sjc"
 
 [build]
-  dockerfile = "../../Dockerfile"
+  dockerfile = "connect/server/Dockerfile"
 
 [env]
   NODE_ENV = "production"
   PORT = "3000"
+  DB_PATH = "/data/relay.db"
+  RELAY_WS_URL = "wss://konnect.klaudii.com/ws"
+  GOOGLE_REDIRECT_URI = "https://konnect.klaudii.com/auth/google/callback"
 
 [http_service]
   internal_port = 3000
@@ -21,7 +24,7 @@ primary_region = "sjc"
     soft_limit = 250
 
 # Persistent volume for SQLite database
-[mounts]
+[[mounts]]
   source = "klaudii_data"
   destination = "/data"
 

@@ -1,5 +1,5 @@
 const { generateSigningKeypair, generateConnectionKey, connectionKeyToWords } = require("../shared/crypto");
-const { generateSVG } = require("../shared/qr");
+const QRCode = require("qrcode");
 const { loadConfig, saveConfig } = require("../../lib/projects");
 
 async function redeemPairingCode(relayBaseUrl, code, serverName) {
@@ -87,10 +87,15 @@ function getConnectionKeyQR() {
   if (!config.cloud || !config.cloud.connectionKey || !config.cloud.serverId) {
     return null;
   }
-  // QR encodes: klaudii://<serverId>/<connectionKeyHex>
-  // The browser scans this, extracts serverId + key, stores in localStorage
-  const payload = `klaudii://${config.cloud.serverId}/${config.cloud.connectionKey}`;
-  return generateSVG(payload, { moduleSize: 4, margin: 4, darkColor: "#e0e0e0", lightColor: "#0f1117" });
+  // QR encodes an HTTPS URL so iOS Camera / Android Camera can open it directly.
+  // pair.html reads ?serverId + ?key from the URL and auto-stores the connection key.
+  const relayBase = (config.cloud.relayUrl || "https://konnect.klaudii.com")
+    .replace(/^wss?:\/\//, "https://")
+    .replace(/\/ws$/, "")
+    .replace(/\/$/, "");
+  const payload = `${relayBase}/pair.html?serverId=${config.cloud.serverId}&key=${config.cloud.connectionKey}`;
+  // Use qrcode package — battle-tested, correct QR generation
+  return QRCode.toString(payload, { type: "svg", margin: 2, color: { dark: "#000000", light: "#ffffff" } });
 }
 
 module.exports = { redeemPairingCode, getCloudStatus, unpair, getConnectionKeyDisplay, getConnectionKeyQR };

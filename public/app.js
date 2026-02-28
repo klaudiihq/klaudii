@@ -811,7 +811,36 @@ function formatTime(ts) {
   return `${diffDay}d ago`;
 }
 
-// --- Cloud Connect ---
+// --- Kloud Konnect ---
+
+// Format a dashed hex key into 4 groups per line for readability
+function formatKeyForDisplay(key) {
+  // Strip existing dashes, then re-group into chunks of 4, 4 per line
+  const clean = key.replace(/-/g, "");
+  const groups = clean.match(/.{1,4}/g) || [];
+  const lines = [];
+  for (let i = 0; i < groups.length; i += 4) {
+    lines.push(groups.slice(i, i + 4).join("-"));
+  }
+  return lines.join("\n");
+}
+
+// The raw key (no line-breaks) for clipboard
+function getRawKey() {
+  const el = document.getElementById("konnection-key-display");
+  return el ? el.textContent.replace(/\s/g, "").replace(/-/g, "-") : "";
+}
+
+async function copyKonnectionKey() {
+  const key = getRawKey();
+  try {
+    await navigator.clipboard.writeText(key);
+    const btn = document.getElementById("copy-key-btn");
+    if (btn) { btn.textContent = "Copied!"; setTimeout(() => { btn.textContent = "Copy"; }, 2000); }
+  } catch {
+    // clipboard not available; key is already visible to select manually
+  }
+}
 
 let cloudStatus = null;
 
@@ -821,17 +850,17 @@ async function refreshCloudStatus() {
     const btn = document.getElementById("cloud-btn");
     if (!btn) return;
     if (cloudStatus.paired && cloudStatus.connected) {
-      btn.textContent = "Cloud \u2022";
+      btn.textContent = "Kloud Konnect \u2022";
       btn.classList.add("cloud-connected");
     } else if (cloudStatus.paired) {
-      btn.textContent = "Cloud \u25CB";
+      btn.textContent = "Kloud Konnect \u25CB";
       btn.classList.remove("cloud-connected");
     } else {
-      btn.textContent = "Cloud";
+      btn.textContent = "Kloud Konnect";
       btn.classList.remove("cloud-connected");
     }
   } catch {
-    // Cloud endpoint not available
+    // Kloud endpoint not available
   }
 }
 
@@ -862,7 +891,7 @@ async function renderCloudModal() {
       <div class="cloud-status">
         <div class="cloud-status-row">
           <span class="label">Status</span>
-          <span class="badge ${cloudStatus.connected ? "running" : "stopped"}">${cloudStatus.connected ? "Connected" : "Disconnected"}</span>
+          <span class="badge ${cloudStatus.connected ? "running" : "stopped"}">${cloudStatus.connected ? "Konnected" : "Disconnected"}</span>
         </div>
         <div class="cloud-status-row">
           <span class="label">Server name</span>
@@ -872,20 +901,30 @@ async function renderCloudModal() {
         <div class="cloud-qr-section">
           <label>Scan to pair a browser</label>
           <div class="cloud-qr-code">${keyResp.qrSvg}</div>
-          <div class="form-hint">Open connect.klaudii.com on your phone or laptop and scan this QR code. It contains your Connection Key — the relay never sees it.</div>
+          <div class="form-hint">Open konnect.klaudii.com on your phone or laptop and scan this QR code. It contains your Konnection Key — the relay never sees it.</div>
         </div>
         ` : ""}
         ${keyResp && keyResp.connectionKey ? `
         <details class="cloud-key-details">
-          <summary>Manual entry (Connection Key)</summary>
+          <summary>Konnection Key (copy &amp; paste)</summary>
           <div class="cloud-key-section">
-            <div class="cloud-key-display mono">${esc(keyResp.connectionKey)}</div>
-            <div class="form-hint">Copy and paste this on connect.klaudii.com if you can't scan the QR code.</div>
+            <div class="cloud-key-display mono" id="konnection-key-display" style="white-space:pre-wrap; line-height:1.6">${esc(formatKeyForDisplay(keyResp.connectionKey))}</div>
+            <div style="display:flex; gap:0.5rem; margin-top:0.5rem; align-items:center">
+              <button class="btn btn-sm" onclick="copyKonnectionKey()" id="copy-key-btn">Copy</button>
+              <span class="form-hint" style="margin:0">Paste on konnect.klaudii.com if you can't scan the QR</span>
+            </div>
           </div>
         </details>
         ` : ""}
         <div style="margin-top: 16px">
-          <button class="btn danger" onclick="unpairCloud()">Unpair</button>
+          <button class="btn danger" onclick="showUnpairConfirm()">Unpair</button>
+          <div id="unpair-confirm" style="display:none" class="confirm-danger">
+            <p>Disconnect from Kloud Konnect? You'll need to re-pair to restore remote access.</p>
+            <div class="confirm-actions">
+              <button class="btn danger btn-sm" onclick="confirmUnpair()">Yes, Unpair</button>
+              <button class="btn btn-sm" onclick="document.getElementById('unpair-confirm').style.display='none'">Cancel</button>
+            </div>
+          </div>
         </div>
       </div>
     `;
@@ -893,9 +932,9 @@ async function renderCloudModal() {
     // Not paired — show pairing form
     body.innerHTML = `
       <div class="cloud-pair-form">
-        <p>Connect this Klaudii server to the cloud so you can access it from anywhere.</p>
+        <p>Konnect this Klaudii server to the kloud so you can access it from anywhere.</p>
         <ol>
-          <li>Go to <strong>connect.klaudii.com</strong> and sign in</li>
+          <li>Go to <strong>konnect.klaudii.com</strong> and sign in</li>
           <li>Click <strong>Add Server</strong> to get a pairing code</li>
           <li>Enter the code below</li>
         </ol>
@@ -904,19 +943,25 @@ async function renderCloudModal() {
           <input id="pairing-code-input" type="text" placeholder="XXX-XXX" maxlength="7" style="text-transform: uppercase; letter-spacing: 2px; font-size: 1.2em; text-align: center" />
         </div>
         <div class="form-group">
-          <label>Server name (optional)</label>
+          <label>Server name <span class="form-hint-inline">(optional)</span></label>
           <input id="server-name-input" type="text" placeholder="e.g. My MacBook Pro" />
         </div>
         <div class="form-group">
           <label>Relay URL</label>
-          <input id="relay-url-input" type="text" value="https://connect.klaudii.com" />
+          <input id="relay-url-input" type="text" value="https://konnect.klaudii.com" />
         </div>
         <button class="btn primary" onclick="pairCloud()" id="pair-btn">Pair</button>
-        <div id="pair-result" class="hidden" style="margin-top: 16px"></div>
+        <div id="pair-result" style="margin-top: 12px; display:none"></div>
       </div>
     `;
     document.getElementById("pairing-code-input").focus();
   }
+}
+
+function showPairError(msg) {
+  const d = document.getElementById("pair-result");
+  d.style.display = "block";
+  d.innerHTML = `<div class="error-msg">${esc(msg)}</div>`;
 }
 
 async function pairCloud() {
@@ -925,13 +970,15 @@ async function pairCloud() {
   const relayUrl = document.getElementById("relay-url-input").value.trim();
 
   if (!code) {
-    alert("Enter the pairing code from connect.klaudii.com");
+    showPairError("Enter the pairing code from konnect.klaudii.com");
+    document.getElementById("pairing-code-input").focus();
     return;
   }
 
   const btn = document.getElementById("pair-btn");
   btn.disabled = true;
   btn.textContent = "Pairing...";
+  document.getElementById("pair-result").style.display = "none";
 
   try {
     const result = await api("/api/cloud/pair", {
@@ -940,43 +987,45 @@ async function pairCloud() {
     });
 
     if (result.error) {
-      alert("Pairing failed: " + result.error);
+      showPairError("Pairing failed: " + result.error);
       return;
     }
 
     // Fetch the QR code from the server (now that pairing is done)
     const keyResp = await api("/api/cloud/connection-key").catch(() => null);
 
-    // Show QR code + connection key — user scans or enters this on connect.klaudii.com
     const resultDiv = document.getElementById("pair-result");
-    resultDiv.classList.remove("hidden");
+    resultDiv.style.display = "block";
     resultDiv.innerHTML = `
       <div class="cloud-key-section success">
-        <h3>Paired successfully!</h3>
+        <h3>Konnected!</h3>
         ${keyResp && keyResp.qrSvg ? `
-          <label>Scan this QR code on connect.klaudii.com</label>
+          <label>Scan this QR code on konnect.klaudii.com</label>
           <div class="cloud-qr-code">${keyResp.qrSvg}</div>
         ` : ""}
         <details open>
-          <summary>Manual entry</summary>
-          <div class="cloud-key-display mono" style="margin-top: 0.5rem">${esc(result.connectionKey)}</div>
+          <summary>Konnection Key (copy &amp; paste)</summary>
+          <div class="cloud-key-display mono" id="konnection-key-display" style="white-space:pre-wrap; line-height:1.6; margin-top:0.5rem">${esc(formatKeyForDisplay(result.connectionKey))}</div>
+          <button class="btn btn-sm" onclick="copyKonnectionKey()" id="copy-key-btn" style="margin-top:0.5rem">Copy Key</button>
         </details>
-        <div class="form-hint">This key enables end-to-end encryption. The relay server never sees it.</div>
+        <div class="form-hint" style="margin-top:0.5rem">Paste on konnect.klaudii.com → pair.html</div>
       </div>
     `;
 
     await refreshCloudStatus();
   } catch (err) {
-    alert("Pairing failed: " + err.message);
+    showPairError("Pairing failed: " + err.message);
   } finally {
     btn.disabled = false;
     btn.textContent = "Pair";
   }
 }
 
-async function unpairCloud() {
-  if (!confirm("Unpair from cloud? You will need to re-pair to use cloud access.")) return;
+function showUnpairConfirm() {
+  document.getElementById("unpair-confirm").style.display = "block";
+}
 
+async function confirmUnpair() {
   await api("/api/cloud/unpair", { method: "POST" });
   cloudStatus = null;
   await refreshCloudStatus();
