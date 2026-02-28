@@ -144,7 +144,7 @@ async function checkApprovalStates(sessions) {
         target: { tabId },
         func: () => Array.from(document.querySelectorAll("button")).some((b) => {
           const text = b.textContent.trim();
-          return text.includes("Allow") || text === "Skip";
+          return text.includes("Allow") || text.includes("Approve") || text === "Skip";
         }),
       });
       if (results?.[0]?.result === true) newStates[s.project] = true;

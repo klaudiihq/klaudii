@@ -1,11 +1,11 @@
 // Persistent content script running on claude.ai pages.
-// Watches for approval buttons ("Allow …" or "Skip") using a MutationObserver
-// and reports state changes to the background service worker immediately.
+// Watches for approval buttons ("Allow …", "Approve …", or "Skip") using a
+// MutationObserver and reports state changes to the background service worker immediately.
 
 function needsApproval() {
   return Array.from(document.querySelectorAll("button")).some((b) => {
     const text = b.textContent.trim();
-    return text.includes("Allow") || text === "Skip";
+    return text.includes("Allow") || text.includes("Approve") || text === "Skip";
   });
 }
 
