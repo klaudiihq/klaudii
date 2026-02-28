@@ -1032,7 +1032,20 @@ async function confirmUnpair() {
   renderCloudModal();
 }
 
+// --- Theme ---
+
+function toggleTheme() {
+  const isLight = document.documentElement.classList.toggle("light");
+  localStorage.setItem("klaudii-theme", isLight ? "light" : "dark");
+  document.getElementById("theme-toggle").textContent = isLight ? "🌙" : "☀";
+}
+
 // --- Init ---
+
+if (localStorage.getItem("klaudii-theme") === "light") {
+  document.documentElement.classList.add("light");
+  document.getElementById("theme-toggle").textContent = "🌙";
+}
 
 refresh();
 refreshCloudStatus();
