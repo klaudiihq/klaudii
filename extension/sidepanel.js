@@ -12,6 +12,8 @@ let openMode = "inplace";
 let attentionFlash = false;
 let openTabs = new Map();    // urlPath (no query string) → tabId, for open claude.ai tabs in this window
 let sessionNeedsInput = {}; // project → bool: session has a pending approval button
+let addSelectedRepo = null; // repo name chosen in the add-workspace flow
+let addRepos = [];          // cached list from /api/github/repos
 
 // --- Init ---
 
@@ -22,14 +24,27 @@ async function init() {
   attentionFlash = config.attentionFlash === true;
 
   document.getElementById("btn-add").addEventListener("click", toggleAddForm);
-  document.getElementById("btn-add-confirm").addEventListener("click", submitAddWorkspace);
   document.getElementById("btn-add-cancel").addEventListener("click", closeAddForm);
-  document.getElementById("add-name").addEventListener("keydown", (e) => {
-    if (e.key === "Enter") document.getElementById("add-path").focus();
+  document.getElementById("btn-add-newrepo").addEventListener("click", () => showAddStep("newrepo"));
+  document.getElementById("btn-add-backfromnewrepo").addEventListener("click", () => showAddStep("repo"));
+  document.getElementById("btn-add-createrepo").addEventListener("click", submitCreateRepo);
+  document.getElementById("btn-add-backtorepo").addEventListener("click", () => showAddStep("repo"));
+  document.getElementById("btn-add-start").addEventListener("click", submitStartSession);
+  document.getElementById("add-repo-q").addEventListener("input", filterAddRepos);
+  document.getElementById("add-repo-q").addEventListener("keydown", (e) => {
+    if (e.key === "Escape") closeAddForm();
+    if (e.key === "Enter") document.querySelector(".add-repo-item")?.click();
+  });
+  document.getElementById("add-branch-input").addEventListener("keydown", (e) => {
+    if (e.key === "Enter") submitStartSession();
     if (e.key === "Escape") closeAddForm();
   });
-  document.getElementById("add-path").addEventListener("keydown", (e) => {
-    if (e.key === "Enter") submitAddWorkspace();
+  document.getElementById("add-newrepo-name").addEventListener("keydown", (e) => {
+    if (e.key === "Enter") document.getElementById("add-newrepo-remote").focus();
+    if (e.key === "Escape") closeAddForm();
+  });
+  document.getElementById("add-newrepo-remote").addEventListener("keydown", (e) => {
+    if (e.key === "Enter") submitCreateRepo();
     if (e.key === "Escape") closeAddForm();
   });
   document.getElementById("btn-dashboard").addEventListener("click", openDashboard);
@@ -344,6 +359,10 @@ function renderUnmanaged(procs) {
 // --- Actions (event delegation) ---
 
 document.addEventListener("click", async (e) => {
+  // Repo list item click in add-workspace flow
+  const repoItem = e.target.closest("[data-add-repo]");
+  if (repoItem) { selectAddRepo(repoItem.dataset.addRepo); return; }
+
   // Close open card menus when clicking outside them
   if (!e.target.closest(".card-menu") && !e.target.closest("[data-action='toggle-menu']")) {
     document.querySelectorAll(".card-menu:not(.hidden)").forEach((m) => m.classList.add("hidden"));
@@ -602,23 +621,100 @@ function toggleAddForm() {
   const form = document.getElementById("add-workspace-form");
   const isHidden = form.classList.contains("hidden");
   form.classList.toggle("hidden");
-  if (isHidden) document.getElementById("add-name").focus();
+  if (isHidden) {
+    addSelectedRepo = null;
+    addRepos = [];
+    showAddStep("repo");
+    document.getElementById("add-repo-q").value = "";
+    document.getElementById("add-repo-q").focus();
+    loadAddRepos();
+  }
+}
+
+function showAddStep(step) {
+  document.getElementById("add-step-repo").classList.toggle("hidden", step !== "repo");
+  document.getElementById("add-step-branch").classList.toggle("hidden", step !== "branch");
+  document.getElementById("add-step-newrepo").classList.toggle("hidden", step !== "newrepo");
 }
 
 function closeAddForm() {
   document.getElementById("add-workspace-form").classList.add("hidden");
-  document.getElementById("add-name").value = "";
-  document.getElementById("add-path").value = "";
+  document.getElementById("add-repo-q").value = "";
+  document.getElementById("add-branch-input").value = "";
+  document.getElementById("add-newrepo-name").value = "";
+  document.getElementById("add-newrepo-remote").value = "";
+  addSelectedRepo = null;
+  addRepos = [];
 }
 
-async function submitAddWorkspace() {
-  const name = document.getElementById("add-name").value.trim();
-  const path = document.getElementById("add-path").value.trim();
-  if (!name || !path) { showToast("Name and path are required."); return; }
-  const btn = document.getElementById("btn-add-confirm");
+async function loadAddRepos() {
+  const list = document.getElementById("add-repo-list");
+  list.innerHTML = '<div class="add-loading">Loading...</div>';
+  try {
+    addRepos = await api("/api/github/repos");
+    renderAddRepos(addRepos);
+  } catch {
+    addRepos = [];
+    list.innerHTML = '<div class="add-loading">Type a repo name and press Enter.</div>';
+  }
+}
+
+function filterAddRepos() {
+  const q = document.getElementById("add-repo-q").value.toLowerCase();
+  const filtered = q ? addRepos.filter((r) => r.name.toLowerCase().includes(q)) : addRepos;
+  renderAddRepos(filtered, q);
+}
+
+function renderAddRepos(repos, q = "") {
+  const list = document.getElementById("add-repo-list");
+  if (!repos.length) {
+    if (q) {
+      list.innerHTML = `<div class="add-repo-item" data-add-repo="${esc(q)}"><span class="add-repo-name">${esc(q)}</span><span class="add-repo-badge new">use</span></div>`;
+    } else {
+      list.innerHTML = '<div class="add-loading">No repos found.</div>';
+    }
+    return;
+  }
+  list.innerHTML = repos.map((r) =>
+    `<div class="add-repo-item" data-add-repo="${esc(r.name)}">
+      <span class="add-repo-name">${esc(r.name)}</span>
+      ${r.cloned ? '<span class="add-repo-badge">cloned</span>' : ""}
+    </div>`
+  ).join("");
+}
+
+function selectAddRepo(name) {
+  addSelectedRepo = name;
+  document.getElementById("add-repo-label").textContent = name + "  /";
+  document.getElementById("add-branch-input").value = "";
+  showAddStep("branch");
+  document.getElementById("add-branch-input").focus();
+}
+
+async function submitStartSession() {
+  const branch = document.getElementById("add-branch-input").value.trim();
+  if (!branch) { showToast("Branch name required."); return; }
+  const btn = document.getElementById("btn-add-start");
   btn.disabled = true;
   try {
-    await api("/api/projects", { method: "POST", body: { name, path } });
+    await api("/api/sessions/new", { method: "POST", body: { repo: addSelectedRepo, branch } });
+    closeAddForm();
+    await refresh();
+  } catch (err) {
+    showToast("Error: " + err.message);
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+async function submitCreateRepo() {
+  const name = document.getElementById("add-newrepo-name").value.trim();
+  if (!name) { showToast("Repo name required."); return; }
+  const remoteUrl = document.getElementById("add-newrepo-remote").value.trim();
+  const btn = document.getElementById("btn-add-createrepo");
+  btn.disabled = true;
+  try {
+    await api("/api/repos/create", { method: "POST", body: { name, remoteUrl: remoteUrl || undefined } });
     closeAddForm();
     await refresh();
   } catch (err) {
