@@ -30,18 +30,25 @@ app.get("/api/health", (_req, res) => {
     ghAuth = { loggedIn: false };
   }
 
-  // Check claude CLI auth
+  // Check claude CLI auth — search common install locations since launchd
+  // PATH may not include ~/.local/bin where claude is typically installed
   let claudeAuth = null;
-  try {
-    const claudeOut = execSync("claude auth status 2>&1", { encoding: "utf-8", stdio: ["pipe", "pipe", "pipe"] });
-    claudeAuth = JSON.parse(claudeOut);
-  } catch {
-    // claude not installed or not logged in
+  const claudeBin = (() => {
+    try { return execSync("which claude 2>/dev/null", { encoding: "utf-8" }).trim(); } catch {}
+    const home = require("os").homedir();
+    const candidates = [
+      path.join(home, ".local", "bin", "claude"),
+      "/usr/local/bin/claude",
+      "/opt/homebrew/bin/claude",
+    ];
+    return candidates.find((p) => fs.existsSync(p)) || null;
+  })();
+  if (claudeBin) {
     try {
-      execSync("which claude", { stdio: "pipe" });
-      claudeAuth = { loggedIn: false };
+      const claudeOut = execSync(`${JSON.stringify(claudeBin)} auth status 2>&1`, { encoding: "utf-8", stdio: ["pipe", "pipe", "pipe"] });
+      claudeAuth = JSON.parse(claudeOut);
     } catch {
-      claudeAuth = null; // not installed
+      claudeAuth = { loggedIn: false };
     }
   }
 
