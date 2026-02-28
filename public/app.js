@@ -483,7 +483,7 @@ async function refresh() {
     const badge = document.getElementById("status-badge");
 
     if (health.ok && health.tmux && health.ttyd) {
-      badge.textContent = "ready";
+      badge.textContent = "connected";
       badge.className = "badge ok";
     } else {
       const missing = [];
@@ -493,27 +493,27 @@ async function refresh() {
       badge.className = "badge error";
     }
 
-    // Auth status indicators
+    // Auth status box
     const authEl = document.getElementById("auth-status");
-    const authParts = [];
+    const authRows = [];
     if (health.ghAuth) {
       if (health.ghAuth.loggedIn) {
-        authParts.push(`<span class="auth-badge ok" title="GitHub: ${esc(health.ghAuth.account)}">gh</span>`);
+        authRows.push(`<span class="auth-row ok" title="${esc(health.ghAuth.account)}"><span class="auth-dot ok"></span>GitHub</span>`);
       } else {
-        authParts.push('<span class="auth-badge error" title="GitHub CLI not authenticated. Run: gh auth login">gh</span>');
+        authRows.push('<span class="auth-row error" title="Run: gh auth login"><span class="auth-dot error"></span>GitHub</span>');
       }
     }
     if (health.claudeAuth) {
       if (health.claudeAuth.loggedIn) {
         const label = health.claudeAuth.email ? esc(health.claudeAuth.email) : "authenticated";
-        authParts.push(`<span class="auth-badge ok" title="Claude: ${label}">claude</span>`);
+        authRows.push(`<span class="auth-row ok" title="${label}"><span class="auth-dot ok"></span>Claude</span>`);
       } else {
-        authParts.push('<span class="auth-badge error" title="Claude CLI not authenticated. Run: claude auth login">claude</span>');
+        authRows.push('<span class="auth-row error" title="Run: claude auth login"><span class="auth-dot error"></span>Claude</span>');
       }
     } else if (health.claudeAuth === null) {
-      authParts.push('<span class="auth-badge error" title="Claude CLI not installed">claude</span>');
+      authRows.push('<span class="auth-row error" title="Claude CLI not installed"><span class="auth-dot error"></span>Claude</span>');
     }
-    authEl.innerHTML = authParts.join("");
+    authEl.innerHTML = (authRows.length ? '<span class="auth-title">auth</span>' : '') + authRows.join("");
 
     renderSessions(sessions, procs);
     renderProcesses(procs);
