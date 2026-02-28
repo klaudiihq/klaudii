@@ -11,18 +11,21 @@ let activeTabUrl = null;
 let sortMode = localStorage.getItem("sortMode") || "activity";
 let openMode = "inplace";
 let attentionFlash = false;
-let openTabs = new Map();    // urlPath (no query string) → tabId, for open claude.ai tabs in this window
-let sessionNeedsInput = {}; // project → bool: session has a pending approval button
+let autoApprove = false;
+let openTabs = new Map();       // urlPath (no query string) → tabId, for open claude.ai tabs in this window
+let sessionNeedsInput = {};     // project → bool: session has a pending approval button
+let sessionAutoApproved = {};   // project → bool: auto-approve just fired, show green flash
 let addSelectedRepo = null; // repo name chosen in the add-workspace flow
 let addRepos = [];          // cached list from /api/github/repos
 
 // --- Init ---
 
 async function init() {
-  const config = await chrome.storage.sync.get(["klaudiiUrl", "openMode", "attentionFlash"]);
+  const config = await chrome.storage.sync.get(["klaudiiUrl", "openMode", "attentionFlash", "autoApprove"]);
   klaudiiUrl = (config.klaudiiUrl || DEFAULT_KLAUDII_URL).replace(/\/+$/, "");
   openMode = config.openMode || "inplace";
   attentionFlash = config.attentionFlash === true;
+  autoApprove = config.autoApprove === true;
 
   document.getElementById("btn-add").addEventListener("click", toggleAddForm);
   document.getElementById("btn-add-cancel").addEventListener("click", closeAddForm);
@@ -52,6 +55,14 @@ async function init() {
   document.getElementById("btn-refresh").addEventListener("click", refresh);
   document.getElementById("btn-settings").addEventListener("click", openSettings);
   document.getElementById("btn-configure").addEventListener("click", openSettings);
+
+  const btnAutoApprove = document.getElementById("btn-auto-approve");
+  btnAutoApprove.classList.toggle("active", autoApprove);
+  btnAutoApprove.addEventListener("click", () => {
+    autoApprove = !autoApprove;
+    btnAutoApprove.classList.toggle("active", autoApprove);
+    chrome.storage.sync.set({ autoApprove });
+  });
 
   // Sort toggle
   document.querySelectorAll(".sort-btn").forEach((btn) => {
@@ -143,12 +154,27 @@ async function checkApprovalStates(sessions) {
     try {
       const results = await chrome.scripting.executeScript({
         target: { tabId },
-        func: () => Array.from(document.querySelectorAll("button")).some((b) => {
-          const text = b.textContent.trim();
-          return text.includes("Allow") || text.includes("Approve") || text === "Skip";
-        }),
+        func: (shouldAutoApprove) => {
+          const btn = Array.from(document.querySelectorAll("button")).find((b) => {
+            const text = b.textContent.trim();
+            return text.includes("Allow") || text.includes("Approve") || text === "Skip";
+          });
+          if (!btn) return { found: false, clicked: false };
+          const isApprovable = btn.textContent.trim().includes("Allow") || btn.textContent.trim().includes("Approve");
+          if (shouldAutoApprove && isApprovable) { btn.click(); return { found: true, clicked: true }; }
+          return { found: true, clicked: false };
+        },
+        args: [autoApprove],
       });
-      if (results?.[0]?.result === true) newStates[s.project] = true;
+      const result = results?.[0]?.result;
+      if (result?.clicked) {
+        if (!sessionAutoApproved[s.project]) {
+          sessionAutoApproved[s.project] = true;
+          setTimeout(() => { delete sessionAutoApproved[s.project]; renderSessions(lastSessions, lastProcs); }, 5000);
+        }
+      } else if (result?.found) {
+        newStates[s.project] = true;
+      }
     } catch {
       // Tab not injectable (loading, navigating, wrong origin, etc.)
     }
@@ -158,7 +184,7 @@ async function checkApprovalStates(sessions) {
   if (changed) renderSessions(lastSessions, lastProcs);
 
   // Run a fast poll while any session is waiting for input; cancel when clear
-  const anyNeedsInput = Object.values(sessionNeedsInput).some(Boolean);
+  const anyNeedsInput = Object.values(sessionNeedsInput).some(Boolean) || Object.values(sessionAutoApproved).some(Boolean);
   if (anyNeedsInput && !approvalFastPollTimer) {
     approvalFastPollTimer = setInterval(() => checkApprovalStates(lastSessions), 750);
   } else if (!anyNeedsInput && approvalFastPollTimer) {
@@ -303,9 +329,11 @@ function renderCard(s, proc) {
 
   const displayTitle = gitBranch ? `${repo} (${gitBranch})` : repo;
   const needsInput = sessionNeedsInput[s.project] === true;
+  const wasAutoApproved = sessionAutoApproved[s.project] === true;
   const showDot = needsInput && !attentionFlash;
   const inputDot = showDot ? `<span class="needs-input-dot" title="Waiting for your approval"></span>` : "";
-  const attentionClass = needsInput && attentionFlash ? " needs-attention" : "";
+  const attentionClass = wasAutoApproved ? " auto-approved"
+    : (needsInput && attentionFlash ? " needs-attention" : "");
 
   let menuItems = "";
   if (isRunning) {
