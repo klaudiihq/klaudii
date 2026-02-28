@@ -2,7 +2,8 @@
 set -e
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-PLIST_NAME="com.bryantinsley.klaudii.plist"
+PROJECT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
+PLIST_NAME="com.klaudii.plist"
 LAUNCH_AGENTS_DIR="$HOME/Library/LaunchAgents"
 SKIP_MENUBAR=false
 
@@ -12,7 +13,7 @@ for arg in "$@"; do
   esac
 done
 
-echo "=== Klaudii Session Manager — Install ==="
+echo "=== Klaudii Session Manager — Install (macOS) ==="
 echo ""
 
 # --- Prerequisites ---
@@ -66,7 +67,7 @@ if ! $SKIP_MENUBAR; then
     echo ""
     echo "  Options:"
     echo "    1) Install them:  xcode-select --install"
-    echo "    2) Skip the icon: ./install.sh --skip-menu-bar-icon"
+    echo "    2) Skip the icon: ./mac/install.sh --skip-menu-bar-icon"
     echo ""
     exit 1
   fi
@@ -92,12 +93,12 @@ fi
 
 echo ""
 echo "Installing npm dependencies..."
-cd "$SCRIPT_DIR"
+cd "$PROJECT_DIR"
 npm install
 
 # --- config.json ---
 
-if [ ! -f "$SCRIPT_DIR/config.json" ]; then
+if [ ! -f "$PROJECT_DIR/config.json" ]; then
   echo ""
   echo "Creating config.json..."
 
@@ -118,7 +119,7 @@ if [ ! -f "$SCRIPT_DIR/config.json" ]; then
     echo "  Detected repos directory: $REPOS_DIR"
   fi
 
-  cat > "$SCRIPT_DIR/config.json" <<CONF
+  cat > "$PROJECT_DIR/config.json" <<CONF
 {
   "port": 9876,
   "ttydBasePort": 9877,
@@ -139,7 +140,7 @@ if ! $SKIP_MENUBAR; then
   echo "Compiling menu bar app..."
   if swiftc -o "$SCRIPT_DIR/menubar/KlaudiiMenu" "$SCRIPT_DIR/menubar/KlaudiiMenu.swift" \
     -framework Cocoa 2>/dev/null; then
-    echo "  Built: menubar/KlaudiiMenu"
+    echo "  Built: mac/menubar/KlaudiiMenu"
   else
     echo "  WARN: Swift compilation failed (menu bar icon won't work)"
   fi
@@ -157,7 +158,7 @@ mkdir -p "$LAUNCH_AGENTS_DIR"
 NODE_PATH="$(which node)"
 
 # Unload existing if present (check both old and new names)
-for old_plist in "com.bryantinsley.claudes.plist" "$PLIST_NAME"; do
+for old_plist in "com.bryantinsley.klaudii.plist" "$PLIST_NAME"; do
   if [ -f "$LAUNCH_AGENTS_DIR/$old_plist" ]; then
     echo "  Unloading $old_plist..."
     launchctl unload "$LAUNCH_AGENTS_DIR/$old_plist" 2>/dev/null || true
@@ -171,16 +172,16 @@ cat > "$LAUNCH_AGENTS_DIR/$PLIST_NAME" <<PLIST
 <plist version="1.0">
 <dict>
   <key>Label</key>
-  <string>com.bryantinsley.klaudii</string>
+  <string>com.klaudii</string>
 
   <key>ProgramArguments</key>
   <array>
     <string>$NODE_PATH</string>
-    <string>$SCRIPT_DIR/server.js</string>
+    <string>$PROJECT_DIR/server.js</string>
   </array>
 
   <key>WorkingDirectory</key>
-  <string>$SCRIPT_DIR</string>
+  <string>$PROJECT_DIR</string>
 
   <key>RunAtLoad</key>
   <true/>
@@ -213,14 +214,14 @@ echo "=== Install complete ==="
 echo ""
 echo "  Dashboard:  http://localhost:9876"
 echo "  Logs:       /tmp/klaudii.log"
-echo "  Config:     $SCRIPT_DIR/config.json"
+echo "  Config:     $PROJECT_DIR/config.json"
 if ! $SKIP_MENUBAR; then
-  echo "  Menu bar:   Run ./menubar/KlaudiiMenu to start"
+  echo "  Menu bar:   Run ./mac/menubar/KlaudiiMenu to start"
 fi
 echo ""
 echo "The server will auto-start at login."
 if ! $SKIP_MENUBAR; then
-  echo "To add the menu bar icon to Login Items, drag menubar/KlaudiiMenu"
+  echo "To add the menu bar icon to Login Items, drag mac/menubar/KlaudiiMenu"
   echo "into System Settings > General > Login Items."
 fi
 echo ""

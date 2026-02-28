@@ -109,6 +109,7 @@ app.get("/api/sessions", (_req, res) => {
     const ttydInstance = ttydInstances.find((t) => t.project === project.name);
 
     const gitStatus = git.getStatus(project.path);
+    const remoteUrl = git.getRemoteUrl(project.path);
 
     const tracked = sessionTracker.getSessions(project.name);
     const lastActivity = tracked.length ? tracked[0].startedAt : 0;
@@ -129,6 +130,7 @@ app.get("/api/sessions", (_req, res) => {
       tmux: tmuxSession || null,
       ttyd: ttydInstance || null,
       git: gitStatus,
+      remoteUrl,
       sessionCount: tracked.length,
       lastActivity,
     };

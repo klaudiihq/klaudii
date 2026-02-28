@@ -126,7 +126,7 @@ A minimal Cocoa app that puts a **Kii** icon in the macOS menu bar. The only act
 
 ### launchd agent
 
-The install script generates a launchd plist (`com.bryantinsley.klaudii`) that:
+The install script generates a launchd plist (`com.klaudii`) that:
 
 - Starts the Node.js server at login (`RunAtLoad`)
 - Keeps it alive if it crashes (`KeepAlive`)

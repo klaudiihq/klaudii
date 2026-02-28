@@ -1,5 +1,6 @@
 node_modules/
-menubar/KlaudiiMenu
+mac/menubar/KlaudiiMenu
 *.log
 config.json
 sessions.json
+.klaudii-tmux.sock

@@ -74,13 +74,13 @@ function renderSessions(sessions, procs) {
         const pm = s.permissionMode || "yolo";
         const g = s.git;
         const gitBranch = g ? g.branch : branch;
-        const ghUrl = `https://github.com/bryantinsley/${esc(repo)}`;
-        const ghBranchUrl = gitBranch ? `${ghUrl}/tree/${esc(gitBranch)}` : ghUrl;
+        const ghUrl = s.remoteUrl || null;
+        const ghBranchUrl = ghUrl && gitBranch ? `${ghUrl}/tree/${esc(gitBranch)}` : ghUrl;
         return `
     <div class="card" id="card-${esc(s.project)}">
       <div class="card-header">
         <span class="card-title">
-          <a href="${ghUrl}" target="_blank" class="card-repo-link">${esc(repo)}</a>${gitBranch ? ` <a href="${ghBranchUrl}" target="_blank" class="card-branch-link">${esc(gitBranch)}</a>` : ""}
+          ${ghUrl ? `<a href="${esc(ghUrl)}" target="_blank" class="card-repo-link">${esc(repo)}</a>` : `<span class="card-repo-link">${esc(repo)}</span>`}${gitBranch ? (ghBranchUrl ? ` <a href="${esc(ghBranchUrl)}" target="_blank" class="card-branch-link">${esc(gitBranch)}</a>` : ` <span class="card-branch-link">${esc(gitBranch)}</span>`) : ""}
         </span>
         <span class="card-status ${s.status || (s.running ? "running" : "stopped")}">
           ${s.status || (s.running ? "running" : "stopped")}
