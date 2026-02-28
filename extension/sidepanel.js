@@ -5,13 +5,28 @@ let lastSessions = [];
 let lastProcs = [];
 let activeTabUrl = null;
 let sortMode = localStorage.getItem("sortMode") || "activity";
+let openMode = "inplace";
+let openTabs = new Map();    // urlPath (no query string) → tabId, for open claude.ai tabs in this window
+let sessionNeedsInput = {}; // project → bool: session has a pending approval button
 
 // --- Init ---
 
 async function init() {
-  const config = await chrome.storage.sync.get(["klaudiiUrl"]);
+  const config = await chrome.storage.sync.get(["klaudiiUrl", "openMode"]);
   klaudiiUrl = (config.klaudiiUrl || DEFAULT_KLAUDII_URL).replace(/\/+$/, "");
+  openMode = config.openMode || "inplace";
 
+  document.getElementById("btn-add").addEventListener("click", toggleAddForm);
+  document.getElementById("btn-add-confirm").addEventListener("click", submitAddWorkspace);
+  document.getElementById("btn-add-cancel").addEventListener("click", closeAddForm);
+  document.getElementById("add-name").addEventListener("keydown", (e) => {
+    if (e.key === "Enter") document.getElementById("add-path").focus();
+    if (e.key === "Escape") closeAddForm();
+  });
+  document.getElementById("add-path").addEventListener("keydown", (e) => {
+    if (e.key === "Enter") submitAddWorkspace();
+    if (e.key === "Escape") closeAddForm();
+  });
   document.getElementById("btn-dashboard").addEventListener("click", openDashboard);
   document.getElementById("btn-refresh").addEventListener("click", refresh);
   document.getElementById("btn-settings").addEventListener("click", openSettings);
@@ -69,6 +84,7 @@ async function refresh() {
     setConnected(true);
     renderSessions(sessions, procs);
     renderUnmanaged(procs);
+    checkApprovalStates(sessions); // async, re-renders only if state changes
   } catch {
     setConnected(false);
   }
@@ -89,13 +105,60 @@ function setConnected(ok) {
   }
 }
 
+// --- Approval detection ---
+
+// For each running session that has an open tab, inject a tiny script to check
+// whether the claude.ai page is currently showing an "Allow once" approval button.
+// Re-renders cards only when the set of sessions needing input changes.
+async function checkApprovalStates(sessions) {
+  const newStates = {};
+  for (const s of sessions) {
+    if (s.status !== "running" || !s.claudeUrl) continue;
+    const sessionUrlPath = s.claudeUrl.split("?")[0];
+    const entry = [...openTabs.entries()].find(([u]) => u.startsWith(sessionUrlPath));
+    if (!entry) continue;
+    const tabId = entry[1];
+    try {
+      const results = await chrome.scripting.executeScript({
+        target: { tabId },
+        func: () => Array.from(document.querySelectorAll("button")).some(
+          (b) => b.textContent.includes("Allow once") && b.querySelector("kbd")
+        ),
+      });
+      if (results?.[0]?.result === true) newStates[s.project] = true;
+    } catch {
+      // Tab not injectable (loading, navigating, wrong origin, etc.)
+    }
+  }
+  const changed = sessions.some((s) => !!newStates[s.project] !== !!sessionNeedsInput[s.project]);
+  sessionNeedsInput = newStates;
+  if (changed) renderSessions(lastSessions, lastProcs);
+}
+
 // --- Track which claude.ai tab is active ---
 
 function trackActiveTab() {
   updateActiveTabUrl();
+  updateOpenTabs();
   chrome.tabs.onActivated.addListener(() => updateActiveTabUrl());
   chrome.tabs.onUpdated.addListener((_tabId, changeInfo) => {
-    if (changeInfo.url || changeInfo.status === "complete") updateActiveTabUrl();
+    if (changeInfo.url || changeInfo.status === "complete") {
+      updateActiveTabUrl();
+      updateOpenTabs();
+    }
+  });
+  chrome.tabs.onRemoved.addListener(() => updateOpenTabs());
+}
+
+function updateOpenTabs() {
+  chrome.windows.getCurrent((win) => {
+    const query = { url: "https://claude.ai/*" };
+    if (win?.id) query.windowId = win.id;
+    chrome.tabs.query(query, (tabs) => {
+      openTabs = new Map((tabs || []).filter((t) => t.url).map((t) => [t.url.split("?")[0], t.id]));
+      // Re-render cards so Switch/Open labels stay current
+      if (lastSessions.length) renderSessions(lastSessions, lastProcs);
+    });
   });
 }
 
@@ -200,12 +263,18 @@ function renderCard(s, proc) {
     </div>` : "";
 
   const displayTitle = gitBranch ? `${repo} (${gitBranch})` : repo;
+  const needsInput = sessionNeedsInput[s.project] === true;
+  const inputDot = needsInput ? `<span class="needs-input-dot" title="Waiting for your approval"></span>` : "";
 
   let actions = "";
   if (isRunning) {
-    const openBtn = s.claudeUrl
-      ? `<button class="btn success" data-action="open" data-url="${esc(s.claudeUrl)}" data-title="${esc(displayTitle)}">Open</button>`
-      : "";
+    let openBtn = "";
+    if (s.claudeUrl) {
+      const sessionUrlPath = s.claudeUrl.split("?")[0];
+      const tabIsOpen = openMode === "tabs" &&
+        [...openTabs.keys()].some((u) => u.startsWith(sessionUrlPath));
+      openBtn = `<button class="btn ${tabIsOpen ? "" : "success"}" data-action="open" data-url="${esc(s.claudeUrl)}" data-title="${esc(displayTitle)}">${tabIsOpen ? "Switch" : "Open"}</button>`;
+    }
     actions = `
       ${openBtn}
       <button class="btn danger btn-sm" data-action="stop" data-project="${esc(s.project)}">Stop</button>
@@ -224,6 +293,7 @@ function renderCard(s, proc) {
     <div class="card" data-project="${esc(s.project)}" data-claude-url="${esc(s.claudeUrl || "")}">
       <div class="card-header">
         <span class="card-title">${esc(repo)}</span>
+        ${inputDot}
         <div class="card-badges">
           ${permBadge}
           <span class="card-status ${status}">${status}</span>
@@ -274,10 +344,13 @@ document.addEventListener("click", async (e) => {
 
   switch (action) {
     case "open":
-      chrome.runtime.sendMessage({
-        action: "navigateAndRename",
-        url: btn.dataset.url,
-        title: btn.dataset.title,
+      chrome.windows.getCurrent((win) => {
+        chrome.runtime.sendMessage({
+          action: openMode === "tabs" ? "switchTab" : "navigateAndRename",
+          url: btn.dataset.url,
+          title: btn.dataset.title,
+          windowId: win?.id,
+        });
       });
       break;
 
@@ -471,6 +544,38 @@ async function toggleHistory(project) {
       </div>`).join("");
   } catch {
     container.innerHTML = '<div style="padding:4px 0;color:#f87171;font-size:11px">Failed to load.</div>';
+  }
+}
+
+// --- Add workspace ---
+
+function toggleAddForm() {
+  const form = document.getElementById("add-workspace-form");
+  const isHidden = form.classList.contains("hidden");
+  form.classList.toggle("hidden");
+  if (isHidden) document.getElementById("add-name").focus();
+}
+
+function closeAddForm() {
+  document.getElementById("add-workspace-form").classList.add("hidden");
+  document.getElementById("add-name").value = "";
+  document.getElementById("add-path").value = "";
+}
+
+async function submitAddWorkspace() {
+  const name = document.getElementById("add-name").value.trim();
+  const path = document.getElementById("add-path").value.trim();
+  if (!name || !path) { showToast("Name and path are required."); return; }
+  const btn = document.getElementById("btn-add-confirm");
+  btn.disabled = true;
+  try {
+    await api("/api/projects", { method: "POST", body: { name, path } });
+    closeAddForm();
+    await refresh();
+  } catch (err) {
+    showToast("Error: " + err.message);
+  } finally {
+    btn.disabled = false;
   }
 }
 

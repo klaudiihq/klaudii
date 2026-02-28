@@ -74,13 +74,13 @@ function renderSessions(sessions, procs) {
         const pm = s.permissionMode || "yolo";
         const g = s.git;
         const gitBranch = g ? g.branch : branch;
-        const ghUrl = `https://github.com/bryantinsley/${esc(repo)}`;
-        const ghBranchUrl = gitBranch ? `${ghUrl}/tree/${esc(gitBranch)}` : ghUrl;
+        const ghUrl = s.remoteUrl || null;
+        const ghBranchUrl = ghUrl && gitBranch ? `${ghUrl}/tree/${esc(gitBranch)}` : ghUrl;
         return `
     <div class="card" id="card-${esc(s.project)}">
       <div class="card-header">
         <span class="card-title">
-          <a href="${ghUrl}" target="_blank" class="card-repo-link">${esc(repo)}</a>${gitBranch ? ` <a href="${ghBranchUrl}" target="_blank" class="card-branch-link">${esc(gitBranch)}</a>` : ""}
+          ${ghUrl ? `<a href="${esc(ghUrl)}" target="_blank" class="card-repo-link">${esc(repo)}</a>` : `<span class="card-repo-link">${esc(repo)}</span>`}${gitBranch ? (ghBranchUrl ? ` <a href="${esc(ghBranchUrl)}" target="_blank" class="card-branch-link">${esc(gitBranch)}</a>` : ` <span class="card-branch-link">${esc(gitBranch)}</span>`) : ""}
         </span>
         <span class="card-status ${s.status || (s.running ? "running" : "stopped")}">
           ${s.status || (s.running ? "running" : "stopped")}
@@ -483,7 +483,7 @@ async function refresh() {
     const badge = document.getElementById("status-badge");
 
     if (health.ok && health.tmux && health.ttyd) {
-      badge.textContent = "ready";
+      badge.textContent = "connected";
       badge.className = "badge ok";
     } else {
       const missing = [];
@@ -492,6 +492,28 @@ async function refresh() {
       badge.textContent = `missing: ${missing.join(", ")}`;
       badge.className = "badge error";
     }
+
+    // Auth status box
+    const authEl = document.getElementById("auth-status");
+    const authRows = [];
+    if (health.ghAuth) {
+      if (health.ghAuth.loggedIn) {
+        authRows.push(`<span class="auth-row ok" title="${esc(health.ghAuth.account)}"><span class="auth-dot ok"></span>GitHub</span>`);
+      } else {
+        authRows.push('<span class="auth-row error" title="Run: gh auth login"><span class="auth-dot error"></span>GitHub</span>');
+      }
+    }
+    if (health.claudeAuth) {
+      if (health.claudeAuth.loggedIn) {
+        const label = health.claudeAuth.email ? esc(health.claudeAuth.email) : "authenticated";
+        authRows.push(`<span class="auth-row ok" title="${label}"><span class="auth-dot ok"></span>Claude</span>`);
+      } else {
+        authRows.push('<span class="auth-row error" title="Run: claude auth login"><span class="auth-dot error"></span>Claude</span>');
+      }
+    } else if (health.claudeAuth === null) {
+      authRows.push('<span class="auth-row error" title="Claude CLI not installed"><span class="auth-dot error"></span>Claude</span>');
+    }
+    authEl.innerHTML = (authRows.length ? '<span class="auth-title">auth</span>' : '') + authRows.join("");
 
     renderSessions(sessions, procs);
     renderProcesses(procs);
@@ -512,6 +534,7 @@ async function openNewSessionModal() {
   document.getElementById("branch-form").classList.add("hidden");
   document.getElementById("repo-search").value = "";
   document.getElementById("branch-input").value = "";
+  showRepoSearchView();
   document.getElementById("new-session-modal").classList.remove("hidden");
 
   document.getElementById("repo-list").innerHTML = '<div style="padding:1rem;color:#666">Loading repos...</div>';
@@ -521,6 +544,19 @@ async function openNewSessionModal() {
   } catch (err) {
     document.getElementById("repo-list").innerHTML = `<div style="padding:1rem;color:#f87171">Failed to load repos: ${esc(err.message)}</div>`;
   }
+}
+
+function showCreateRepoForm() {
+  document.getElementById("repo-search-view").classList.add("hidden");
+  document.getElementById("create-repo-view").classList.remove("hidden");
+  document.getElementById("new-repo-name").value = "";
+  document.getElementById("new-repo-remote").value = "";
+  document.getElementById("new-repo-name").focus();
+}
+
+function showRepoSearchView() {
+  document.getElementById("create-repo-view").classList.add("hidden");
+  document.getElementById("repo-search-view").classList.remove("hidden");
 }
 
 function closeNewSessionModal() {
@@ -604,6 +640,39 @@ async function createNewSession() {
   } finally {
     btn.disabled = false;
     btn.textContent = "Start Session";
+  }
+}
+
+async function createNewRepo() {
+  const name = document.getElementById("new-repo-name").value.trim();
+  if (!name) {
+    alert("Please enter a repo name");
+    return;
+  }
+
+  const remoteUrl = document.getElementById("new-repo-remote").value.trim();
+
+  const btn = document.getElementById("create-repo-btn");
+  btn.disabled = true;
+  btn.textContent = "Creating...";
+
+  try {
+    const result = await api("/api/repos/create", {
+      method: "POST",
+      body: { name, remoteUrl: remoteUrl || undefined },
+    });
+
+    if (result.error) {
+      alert("Error: " + result.error);
+    } else {
+      closeNewSessionModal();
+      refresh();
+    }
+  } catch (err) {
+    alert("Failed: " + err.message);
+  } finally {
+    btn.disabled = false;
+    btn.textContent = "Create Repo";
   }
 }
 

@@ -48,14 +48,17 @@ The main process. Runs on port 9876 (configurable). Serves the static frontend f
 
 ### tmux layer (`lib/tmux.js`)
 
-All Claude sessions run inside tmux, using a dedicated socket at `~/.claude/klaudii-tmux.sock`. This keeps Klaudii's sessions separate from any personal tmux usage.
+All Claude sessions run inside tmux, using a dedicated socket (default `~/.claude/klaudii-tmux.sock`). This keeps Klaudii's sessions separate from any personal tmux usage.
+
+> **CRITICAL — tmux socket path:** The socket MUST be an absolute path that resolves identically under both launchd (background service) and interactive shells. If they see different socket paths, they connect to different tmux servers and the dashboard can't see or control sessions. The path is read from `config.json` (`tmuxSocket` key), which is written at install time using `$HOME`. This avoids runtime dependence on `os.homedir()` (may return wrong value under launchd), `/tmp/` (private per-process on macOS), or `process.env.HOME` (not set under launchd). If `config.json` doesn't specify a socket, the fallback is project-relative (`.klaudii-tmux.sock` in the repo root). This was an extremely difficult bug to diagnose.
 
 **Session lifecycle:**
 
-1. `createSession(name, projectDir, claudeArgs)` — Creates a tmux session, `cd`s to the project directory, and runs `claude --dangerously-skip-permissions <args>`.
+1. `createSession(name, projectDir, claudeArgs)` — Creates a tmux session, `cd`s to the project directory, and runs `claude <args>` (flags depend on permission mode).
 2. Before starting, `ensureWorkspaceTrust(projectDir)` writes `hasTrustDialogAccepted: true` into `~/.claude.json` for the project path. This prevents the interactive trust dialog from blocking headless startup.
-3. `getClaudeUrl(sessionName)` captures the tmux pane output and extracts any `https://claude.ai/code/...` URL, which appears when running in `remote-control` mode.
-4. `getManagedPids()` returns all tmux pane PIDs — used by process discovery to distinguish managed vs. unmanaged Claude instances.
+3. `getClaudeUrlFromProcess(sessionName)` extracts the session ID from the Claude process's command-line args (`--session-id`), constructing a `https://claude.ai/code/` URL. This is more reliable than pane scraping since Claude's TUI uses an alternate screen buffer.
+4. `isClaudeAlive(sessionName)` walks the process tree under the tmux pane to detect if Claude is still running (vs. the tmux session existing with a dead Claude inside).
+5. `getManagedPids()` returns all tmux pane PIDs — used by process discovery to distinguish managed vs. unmanaged Claude instances.
 
 **Session naming:** Project name `my-project` becomes tmux session `claude-my-project`.
 
@@ -126,7 +129,7 @@ A minimal Cocoa app that puts a **Kii** icon in the macOS menu bar. The only act
 
 ### launchd agent
 
-The install script generates a launchd plist (`com.bryantinsley.klaudii`) that:
+The install script generates a launchd plist (`com.klaudii`) that:
 
 - Starts the Node.js server at login (`RunAtLoad`)
 - Keeps it alive if it crashes (`KeepAlive`)

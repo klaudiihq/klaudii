@@ -18,10 +18,46 @@ app.use(express.static(path.join(__dirname, "public")));
 // --- Health check ---
 
 app.get("/api/health", (_req, res) => {
+  const { execSync } = require("child_process");
+
+  // Check gh CLI auth
+  let ghAuth = null;
+  try {
+    const ghOut = execSync("gh auth status 2>&1", { encoding: "utf-8", stdio: ["pipe", "pipe", "pipe"] });
+    const acctMatch = ghOut.match(/Logged in to .* account (\S+)/);
+    ghAuth = { loggedIn: true, account: acctMatch ? acctMatch[1] : "unknown" };
+  } catch {
+    ghAuth = { loggedIn: false };
+  }
+
+  // Check claude CLI auth — search common install locations since launchd
+  // PATH may not include ~/.local/bin where claude is typically installed
+  let claudeAuth = null;
+  const claudeBin = (() => {
+    try { return execSync("which claude 2>/dev/null", { encoding: "utf-8" }).trim(); } catch {}
+    const home = require("os").homedir();
+    const candidates = [
+      path.join(home, ".local", "bin", "claude"),
+      "/usr/local/bin/claude",
+      "/opt/homebrew/bin/claude",
+    ];
+    return candidates.find((p) => fs.existsSync(p)) || null;
+  })();
+  if (claudeBin) {
+    try {
+      const claudeOut = execSync(`${JSON.stringify(claudeBin)} auth status 2>&1`, { encoding: "utf-8", stdio: ["pipe", "pipe", "pipe"] });
+      claudeAuth = JSON.parse(claudeOut);
+    } catch {
+      claudeAuth = { loggedIn: false };
+    }
+  }
+
   res.json({
     ok: true,
     tmux: tmux.isTmuxInstalled(),
     ttyd: ttyd.isTtydInstalled(),
+    ghAuth,
+    claudeAuth,
   });
 });
 
@@ -109,6 +145,7 @@ app.get("/api/sessions", (_req, res) => {
     const ttydInstance = ttydInstances.find((t) => t.project === project.name);
 
     const gitStatus = git.getStatus(project.path);
+    const remoteUrl = git.getRemoteUrl(project.path);
 
     const tracked = sessionTracker.getSessions(project.name);
     const lastActivity = tracked.length ? tracked[0].startedAt : 0;
@@ -129,6 +166,7 @@ app.get("/api/sessions", (_req, res) => {
       tmux: tmuxSession || null,
       ttyd: ttydInstance || null,
       git: gitStatus,
+      remoteUrl,
       sessionCount: tracked.length,
       lastActivity,
     };
@@ -400,6 +438,41 @@ app.get("/api/repos/:name/worktrees", (req, res) => {
   }
   const worktrees = git.listWorktrees(repoDir);
   res.json(worktrees);
+});
+
+// --- Create new repo ---
+
+app.post("/api/repos/create", (req, res) => {
+  const { name, remoteUrl } = req.body;
+  if (!name) {
+    return res.status(400).json({ error: "name required" });
+  }
+  if (!config.reposDir) {
+    return res.status(400).json({ error: "reposDir not configured" });
+  }
+  if (!/^[a-zA-Z0-9._-]+$/.test(name)) {
+    return res.status(400).json({ error: "Invalid repo name (letters, numbers, dots, hyphens, underscores only)" });
+  }
+
+  const repoDir = path.join(config.reposDir, name);
+  if (fs.existsSync(repoDir)) {
+    return res.status(409).json({ error: `Directory already exists: ${name}` });
+  }
+
+  try {
+    git.initRepo(repoDir, remoteUrl || null);
+
+    // Register as a project
+    try {
+      addProject(name, repoDir);
+    } catch {
+      // Already registered is fine
+    }
+
+    res.json({ ok: true, name, path: repoDir });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
 });
 
 // --- New session (clone + worktree + start) ---

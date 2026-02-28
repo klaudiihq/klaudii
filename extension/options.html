@@ -82,6 +82,66 @@
 
     .status-ok { color: #4ade80; }
     .status-err { color: #f87171; }
+
+    .section {
+      margin-top: 20px;
+      padding-top: 20px;
+      border-top: 1px solid #2a2d35;
+    }
+
+    .radio-group {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      margin-top: 2px;
+    }
+
+    .radio-opt {
+      display: flex;
+      align-items: flex-start;
+      gap: 10px;
+      padding: 10px 12px;
+      border: 1px solid #2a2d35;
+      border-radius: 6px;
+      cursor: pointer;
+      transition: border-color 0.15s;
+    }
+
+    .radio-opt:hover { border-color: #3a3d45; }
+
+    .radio-opt input[type="radio"] {
+      width: auto;
+      margin-top: 2px;
+      flex-shrink: 0;
+      accent-color: #2563eb;
+    }
+
+    .radio-opt input[type="radio"]:checked + .radio-text strong {
+      color: #fff;
+    }
+
+    .radio-opt:has(input:checked) {
+      border-color: #2563eb;
+      background: #0f1520;
+    }
+
+    .radio-text {
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+    }
+
+    .radio-text strong {
+      font-size: 12px;
+      font-weight: 600;
+      color: #ccc;
+    }
+
+    .radio-text small {
+      font-size: 11px;
+      color: #555;
+      line-height: 1.4;
+    }
   </style>
 </head>
 <body>
@@ -90,6 +150,26 @@
   <label for="url-input">Klaudii Instance URL</label>
   <input id="url-input" type="url" placeholder="http://localhost:9876" />
   <div class="hint">The URL where your Klaudii server is running.</div>
+
+  <div class="section">
+    <label>When clicking "Open"</label>
+    <div class="radio-group">
+      <label class="radio-opt">
+        <input type="radio" name="openMode" value="inplace">
+        <span class="radio-text">
+          <strong>Navigate in place</strong>
+          <small>Replaces the current tab with the session's claude.ai page</small>
+        </span>
+      </label>
+      <label class="radio-opt">
+        <input type="radio" name="openMode" value="tabs">
+        <span class="radio-text">
+          <strong>Switch tabs</strong>
+          <small>Each session opens in its own tab; clicking "Open" switches to it</small>
+        </span>
+      </label>
+    </div>
+  </div>
 
   <div class="actions">
     <button class="btn primary" id="btn-save">Save</button>

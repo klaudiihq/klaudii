@@ -9,6 +9,12 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
     return true;
   }
 
+  // Switch to an existing tab for this URL, or open a new one
+  if (message.action === "switchTab") {
+    switchTab(message.url, message.title, message.windowId).then(sendResponse);
+    return true;
+  }
+
   // Navigate the active tab in-place (no rename)
   if (message.action === "navigateTab") {
     navigateActiveTab(message.url).then(sendResponse);
@@ -57,6 +63,49 @@ async function navigateAndRename(url, title) {
 
     await waitForTabLoad(targetTab.id);
     // Extra pause for React to fully initialize
+    await new Promise((r) => setTimeout(r, 3000));
+  }
+
+  if (!title) return { tabId: targetTab.id };
+
+  const sessionId = new URL(url).pathname.split("/").filter(Boolean).pop();
+  if (!sessionId) return { tabId: targetTab.id };
+
+  try {
+    await chrome.scripting.executeScript({
+      target: { tabId: targetTab.id },
+      func: renameConversationInPage,
+      args: [sessionId, title],
+      world: "MAIN",
+    });
+  } catch (err) {
+    console.warn("Klaudii: rename script injection failed", err);
+  }
+
+  return { tabId: targetTab.id };
+}
+
+// Switch to an existing tab already at the URL, or open a new one.
+// Scoped to windowId so we stay in the same window as the side panel.
+async function switchTab(url, title, windowId) {
+  const urlPath = url.split("?")[0];
+
+  // Look for a tab in this window already at this URL — use startsWith because
+  // claude.ai often appends /chat/... segments to the base project URL
+  const queryOpts = { url: "https://claude.ai/*" };
+  if (windowId) queryOpts.windowId = windowId;
+  const candidates = await chrome.tabs.query(queryOpts);
+  const existing = candidates.find((t) => t.url && t.url.startsWith(urlPath));
+
+  let targetTab;
+  if (existing) {
+    await chrome.tabs.update(existing.id, { active: true });
+    targetTab = existing;
+  } else {
+    const createOpts = { url };
+    if (windowId) createOpts.windowId = windowId;
+    targetTab = await chrome.tabs.create(createOpts);
+    await waitForTabLoad(targetTab.id);
     await new Promise((r) => setTimeout(r, 3000));
   }
 

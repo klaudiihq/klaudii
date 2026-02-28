@@ -21,6 +21,41 @@ header {
   margin-bottom: 1.5rem;
 }
 
+.auth-box {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  border: 1px solid #2a2d35;
+  border-radius: 6px;
+  padding: 0.3rem 0.6rem;
+  margin-left: auto;
+}
+
+.auth-title {
+  font-size: 0.6rem;
+  color: #555;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.auth-row {
+  display: flex;
+  align-items: center;
+  gap: 0.3rem;
+  font-size: 0.7rem;
+  color: #888;
+  cursor: default;
+}
+
+.auth-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+}
+
+.auth-dot.ok { background: #4ade80; }
+.auth-dot.error { background: #f87171; }
+
 h1 {
   font-size: 1.5rem;
   font-weight: 600;
@@ -658,6 +693,31 @@ h2 {
 }
 
 .btn.danger:hover { background: #991b1b; }
+
+.btn-link {
+  background: none;
+  border: none;
+  color: #60a5fa;
+  cursor: pointer;
+  padding: 0.5rem 0 0;
+  font-size: 0.8rem;
+}
+
+.btn-link:hover { color: #93bbfc; }
+
+.form-hint-inline {
+  font-size: 0.7rem;
+  color: #666;
+  text-transform: none;
+  letter-spacing: 0;
+}
+
+.form-actions {
+  display: flex;
+  gap: 0.5rem;
+  justify-content: flex-end;
+  margin-top: 1rem;
+}
 
 .hidden { display: none; }
 

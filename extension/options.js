@@ -2,16 +2,20 @@ const DEFAULT_URL = "http://localhost:9876";
 const input = document.getElementById("url-input");
 const statusEl = document.getElementById("status");
 
-// Load saved URL
-chrome.storage.sync.get(["klaudiiUrl"], (config) => {
+// Load saved settings
+chrome.storage.sync.get(["klaudiiUrl", "openMode"], (config) => {
   input.value = config.klaudiiUrl || DEFAULT_URL;
+  const mode = config.openMode || "inplace";
+  const radio = document.querySelector(`input[name="openMode"][value="${mode}"]`);
+  if (radio) radio.checked = true;
 });
 
 // Save
 document.getElementById("btn-save").addEventListener("click", () => {
   const url = input.value.trim().replace(/\/+$/, "") || DEFAULT_URL;
   input.value = url;
-  chrome.storage.sync.set({ klaudiiUrl: url }, () => {
+  const openMode = document.querySelector('input[name="openMode"]:checked')?.value || "inplace";
+  chrome.storage.sync.set({ klaudiiUrl: url, openMode }, () => {
     statusEl.textContent = "Saved.";
     statusEl.className = "status-ok";
     setTimeout(() => { statusEl.textContent = ""; }, 2000);
