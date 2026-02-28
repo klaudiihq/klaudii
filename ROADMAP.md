@@ -16,9 +16,9 @@ The stuff that should have been there from day one. Pay off tech debt, fix the r
 - [x] Handle the case where tmux session exists but Claude inside it has died — shows as "exited" (yellow badge) with Restart/Clean up actions
 
 ### Permissions model
-- [ ] Per-workspace permission mode: `--dangerously-skip-permissions` (current default), normal interactive, or custom allowlist
-- [ ] UI toggle on each workspace card to switch between permission modes
-- [ ] Support for `--allowedTools` flag — let the user specify which tools a Claude can use per workspace
+- [x] Per-workspace permission mode: `--dangerously-skip-permissions` (current default), normal interactive, or custom allowlist — three modes: Yolo (auto-approve), Ask (terminal approval), Strict (read-only tools)
+- [x] UI toggle on each workspace card to switch between permission modes — segmented control with color-coded active state
+- [x] Support for `--allowedTools` flag — Strict mode uses `--allowedTools Read,Glob,Grep,WebSearch,WebFetch`
 - [ ] "Supervised" mode — Claude runs but pauses for approval on destructive actions, approvals come through the dashboard
 
 ### Configuration

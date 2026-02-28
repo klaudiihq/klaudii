@@ -71,6 +71,7 @@ function renderSessions(sessions, procs) {
         const branch = parts.length > 1 ? parts.slice(1).join("--") : null;
         const sessionData = esc(JSON.stringify(s).replace(/'/g, "&#39;"));
         const proc = procByProject[s.project];
+        const pm = s.permissionMode || "yolo";
         const g = s.git;
         const gitBranch = g ? g.branch : branch;
         const ghUrl = `https://github.com/bryantinsley/${esc(repo)}`;
@@ -91,6 +92,11 @@ function renderSessions(sessions, procs) {
         <button class="btn btn-sm" onclick="openGitStatus('${esc(s.project)}')">git status</button>
       </div>` : ""}
       ${proc ? `<div class="proc-stats">${proc.cpu}% cpu &middot; ${proc.memMB} MB${proc.uptime ? ` &middot; ${esc(proc.uptime)}` : ""}${s.sessionCount ? ` &middot; ${s.sessionCount} session${s.sessionCount === 1 ? "" : "s"}` : ""}</div>` : (s.sessionCount ? `<div class="proc-stats">${s.sessionCount} session${s.sessionCount === 1 ? "" : "s"}</div>` : "")}
+      <div class="permission-toggle">
+        <button class="perm-btn${pm === 'yolo' ? ' active yolo' : ''}" onclick="setPermission('${esc(s.project)}', 'yolo')" title="Auto-approve all actions">Yolo</button>
+        <button class="perm-btn${pm === 'ask' ? ' active ask' : ''}" onclick="setPermission('${esc(s.project)}', 'ask')" title="Approve each action in terminal">Ask</button>
+        <button class="perm-btn${pm === 'strict' ? ' active strict' : ''}" onclick="setPermission('${esc(s.project)}', 'strict')" title="Read-only tools only">Strict</button>
+      </div>
       <div class="card-actions">
         ${
           s.status === "running"
@@ -143,6 +149,11 @@ async function startSession(project, opts = {}) {
 async function stopSession(project) {
   await api("/api/sessions/stop", { method: "POST", body: { project } });
   closeTerminal();
+  refresh();
+}
+
+async function setPermission(project, mode) {
+  await api("/api/projects/permission", { method: "POST", body: { project, mode } });
   refresh();
 }
 

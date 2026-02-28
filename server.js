@@ -1,6 +1,6 @@
 const express = require("express");
 const path = require("path");
-const { loadConfig, getProjects, addProject, removeProject, getProject } = require("./lib/projects");
+const { loadConfig, getProjects, addProject, removeProject, getProject, setPermissionMode } = require("./lib/projects");
 const tmux = require("./lib/tmux");
 const ttyd = require("./lib/ttyd");
 const claude = require("./lib/claude");
@@ -79,6 +79,23 @@ app.post("/api/processes/kill", (req, res) => {
   res.json({ ok });
 });
 
+// --- Permission-aware Claude args builder ---
+
+function buildClaudeArgs(permissionMode, opts = {}) {
+  const parts = [];
+  if (permissionMode === "yolo") {
+    parts.push("--dangerously-skip-permissions");
+  } else if (permissionMode === "strict") {
+    parts.push("--dangerously-skip-permissions");
+    parts.push("--allowedTools", "Read,Glob,Grep,WebSearch,WebFetch");
+  }
+  // "ask" mode: no permission flags — Claude prompts for approval in terminal
+  if (opts.resumeSessionId) parts.push("--resume", opts.resumeSessionId);
+  else if (opts.continueSession) parts.push("--continue");
+  parts.push("remote-control");
+  return parts.join(" ");
+}
+
 // --- Sessions ---
 
 app.get("/api/sessions", (_req, res) => {
@@ -105,6 +122,7 @@ app.get("/api/sessions", (_req, res) => {
     return {
       project: project.name,
       projectPath: project.path,
+      permissionMode: project.permissionMode || "yolo",
       running: status === "running",
       status,
       claudeUrl: tmuxSession ? sessionTracker.getClaudeUrl(project.name) : null,
@@ -170,12 +188,8 @@ app.post("/api/sessions/start", async (req, res) => {
   const startTs = Date.now();
 
   try {
-    let claudeArgs = "";
-    if (resumeSessionId) {
-      claudeArgs = `--resume ${resumeSessionId} remote-control`;
-    } else if (continueSession) {
-      claudeArgs = "--continue remote-control";
-    }
+    const permissionMode = proj.permissionMode || "yolo";
+    const claudeArgs = buildClaudeArgs(permissionMode, { resumeSessionId, continueSession });
 
     tmux.createSession(tmuxName, proj.path, claudeArgs);
 
@@ -287,6 +301,19 @@ app.post("/api/projects/remove", (req, res) => {
   }
 });
 
+app.post("/api/projects/permission", (req, res) => {
+  const { project, mode } = req.body;
+  if (!project || !mode) {
+    return res.status(400).json({ error: "project and mode required" });
+  }
+  try {
+    setPermissionMode(project, mode);
+    res.json({ ok: true, mode });
+  } catch (err) {
+    res.status(400).json({ error: err.message });
+  }
+});
+
 app.post("/api/sessions/restart", async (req, res) => {
   const { project } = req.body;
   if (!project) {
@@ -315,7 +342,9 @@ app.post("/api/sessions/restart", async (req, res) => {
   const startTs = Date.now();
 
   try {
-    tmux.createSession(tmuxName, proj.path, "--continue remote-control");
+    const permissionMode = proj.permissionMode || "yolo";
+    const claudeArgs = buildClaudeArgs(permissionMode, { continueSession: true });
+    tmux.createSession(tmuxName, proj.path, claudeArgs);
 
     const port = ttyd.allocatePort(config.ttydBasePort);
     try {
@@ -429,7 +458,8 @@ app.post("/api/sessions/new", (req, res) => {
     }
 
     const startTs = Date.now();
-    tmux.createSession(tmuxName, worktreeDir, "");
+    const claudeArgs = buildClaudeArgs("yolo");
+    tmux.createSession(tmuxName, worktreeDir, claudeArgs);
 
     const port = ttyd.allocatePort(config.ttydBasePort);
     try {
