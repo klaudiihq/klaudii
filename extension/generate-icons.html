@@ -1,0 +1,89 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Klaudii Icon Generator</title>
+  <style>
+    body { font-family: system-ui; background: #1a1a2e; color: #eee; padding: 2rem; }
+    canvas { border: 1px solid #333; margin: 0.5rem; }
+    .row { display: flex; align-items: center; gap: 1rem; margin-bottom: 1rem; }
+    a { color: #4ade80; }
+    button { padding: 0.5rem 1rem; background: #2563eb; color: #fff; border: none; border-radius: 6px; cursor: pointer; font-size: 14px; }
+    button:hover { background: #1d4ed8; }
+    .instructions { background: #0f1117; padding: 1rem; border-radius: 8px; margin-top: 1rem; font-size: 14px; line-height: 1.6; }
+    code { background: #2a2d35; padding: 2px 6px; border-radius: 3px; }
+  </style>
+</head>
+<body>
+  <h1>Klaudii Icon Generator</h1>
+  <p>Click each "Download" link to save the icon PNGs into <code>extension/icons/</code></p>
+
+  <div id="icons"></div>
+
+  <div class="instructions">
+    <strong>Quick setup:</strong><br>
+    1. Open this file in Chrome: <code>File > Open File > generate-icons.html</code><br>
+    2. Click each download link below<br>
+    3. Save each file to <code>extension/icons/</code> with the filename shown<br>
+    4. Load the extension: <code>chrome://extensions</code> > Developer mode > Load unpacked > select <code>extension/</code> folder
+  </div>
+
+  <script>
+    const sizes = [16, 48, 128];
+
+    function drawIcon(canvas, size) {
+      const ctx = canvas.getContext("2d");
+      canvas.width = size;
+      canvas.height = size;
+
+      // Background: dark rounded rect
+      const r = size * 0.18;
+      ctx.fillStyle = "#1a1d25";
+      ctx.beginPath();
+      ctx.roundRect(0, 0, size, size, r);
+      ctx.fill();
+
+      // Border
+      ctx.strokeStyle = "#2a2d35";
+      ctx.lineWidth = Math.max(1, size * 0.02);
+      ctx.beginPath();
+      ctx.roundRect(0, 0, size, size, r);
+      ctx.stroke();
+
+      // "K" letter
+      ctx.fillStyle = "#4ade80";
+      ctx.font = `bold ${size * 0.6}px -apple-system, BlinkMacSystemFont, sans-serif`;
+      ctx.textAlign = "center";
+      ctx.textBaseline = "middle";
+      ctx.fillText("K", size * 0.42, size * 0.52);
+
+      // "ii" subscript
+      ctx.fillStyle = "#2563eb";
+      ctx.font = `bold ${size * 0.3}px -apple-system, BlinkMacSystemFont, sans-serif`;
+      ctx.fillText("ii", size * 0.74, size * 0.62);
+    }
+
+    const container = document.getElementById("icons");
+
+    sizes.forEach((size) => {
+      const row = document.createElement("div");
+      row.className = "row";
+
+      const canvas = document.createElement("canvas");
+      drawIcon(canvas, size);
+
+      const label = document.createElement("span");
+      label.textContent = `${size}x${size} → icon${size}.png`;
+
+      const link = document.createElement("a");
+      link.textContent = "Download";
+      link.download = `icon${size}.png`;
+      link.href = canvas.toDataURL("image/png");
+
+      row.appendChild(canvas);
+      row.appendChild(label);
+      row.appendChild(link);
+      container.appendChild(row);
+    });
+  </script>
+</body>
+</html>
