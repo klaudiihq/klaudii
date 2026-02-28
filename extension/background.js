@@ -11,7 +11,7 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
 
   // Switch to an existing tab for this URL, or open a new one
   if (message.action === "switchTab") {
-    switchTab(message.url, message.title).then(sendResponse);
+    switchTab(message.url, message.title, message.windowId).then(sendResponse);
     return true;
   }
 
@@ -85,22 +85,26 @@ async function navigateAndRename(url, title) {
   return { tabId: targetTab.id };
 }
 
-// Switch to an existing tab already at the URL, or open a new one
-async function switchTab(url, title) {
+// Switch to an existing tab already at the URL, or open a new one.
+// Scoped to windowId so we stay in the same window as the side panel.
+async function switchTab(url, title, windowId) {
   const urlPath = url.split("?")[0];
 
-  // Look for a tab already at this URL — use startsWith because claude.ai often
-  // appends /chat/... segments to the base project URL after navigation
-  const candidates = await chrome.tabs.query({ url: "https://claude.ai/*" });
+  // Look for a tab in this window already at this URL — use startsWith because
+  // claude.ai often appends /chat/... segments to the base project URL
+  const queryOpts = { url: "https://claude.ai/*" };
+  if (windowId) queryOpts.windowId = windowId;
+  const candidates = await chrome.tabs.query(queryOpts);
   const existing = candidates.find((t) => t.url && t.url.startsWith(urlPath));
 
   let targetTab;
   if (existing) {
     await chrome.tabs.update(existing.id, { active: true });
-    await chrome.windows.update(existing.windowId, { focused: true });
     targetTab = existing;
   } else {
-    targetTab = await chrome.tabs.create({ url });
+    const createOpts = { url };
+    if (windowId) createOpts.windowId = windowId;
+    targetTab = await chrome.tabs.create(createOpts);
     await waitForTabLoad(targetTab.id);
     await new Promise((r) => setTimeout(r, 3000));
   }

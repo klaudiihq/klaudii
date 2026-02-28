@@ -12,6 +12,11 @@
       <span id="status-badge" class="badge">connecting...</span>
     </div>
     <div class="header-actions">
+      <button id="btn-add" class="icon-btn" title="Add workspace">
+        <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
+          <path d="M8 1.5a.5.5 0 01.5.5v5.5H14a.5.5 0 010 1H8.5V14a.5.5 0 01-1 0V8.5H2a.5.5 0 010-1h5.5V2a.5.5 0 01.5-.5z"/>
+        </svg>
+      </button>
       <button id="btn-dashboard" class="icon-btn" title="Open full dashboard">
         <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
           <path d="M2 2h5v5H2V2zm7 0h5v5H9V2zM2 9h5v5H2V9zm7 0h5v5H9V9z" opacity="0.8"/>
@@ -39,6 +44,15 @@
     <span class="sort-label">Sort</span>
     <button class="sort-btn active" id="sort-activity" data-sort="activity">Activity</button>
     <button class="sort-btn" id="sort-alpha" data-sort="alpha">A–Z</button>
+  </div>
+
+  <div id="add-workspace-form" class="add-form hidden">
+    <input id="add-name" class="add-input" type="text" placeholder="Name  (e.g. myrepo--main)" autocomplete="off" />
+    <input id="add-path" class="add-input" type="text" placeholder="Path  (e.g. /home/user/myrepo)" autocomplete="off" />
+    <div class="add-actions">
+      <button class="btn primary btn-sm" id="btn-add-confirm">Add</button>
+      <button class="btn btn-sm" id="btn-add-cancel">Cancel</button>
+    </div>
   </div>
 
   <div id="sessions-container"></div>
