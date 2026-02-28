@@ -119,11 +119,17 @@ if [ ! -f "$PROJECT_DIR/config.json" ]; then
     echo "  Detected repos directory: $REPOS_DIR"
   fi
 
+  # Socket path must be an absolute path that works identically under launchd
+  # and interactive shells. We resolve it at install time using $HOME.
+  TMUX_SOCKET="$HOME/.claude/klaudii-tmux.sock"
+  mkdir -p "$(dirname "$TMUX_SOCKET")"
+
   cat > "$PROJECT_DIR/config.json" <<CONF
 {
   "port": 9876,
   "ttydBasePort": 9877,
   "reposDir": "$REPOS_DIR",
+  "tmuxSocket": "$TMUX_SOCKET",
   "projects": []
 }
 CONF
