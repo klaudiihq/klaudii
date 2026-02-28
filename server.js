@@ -96,10 +96,17 @@ app.get("/api/sessions", (_req, res) => {
     const tracked = sessionTracker.getSessions(project.name);
     const lastActivity = tracked.length ? tracked[0].startedAt : 0;
 
+    // Determine session status: running, exited, or stopped
+    let status = "stopped";
+    if (tmuxSession) {
+      status = tmux.isClaudeAlive(tmuxName) ? "running" : "exited";
+    }
+
     return {
       project: project.name,
       projectPath: project.path,
-      running: !!tmuxSession,
+      running: status === "running",
+      status,
       claudeUrl: tmuxSession ? sessionTracker.getClaudeUrl(project.name) : null,
       tmux: tmuxSession || null,
       ttyd: ttydInstance || null,

@@ -28,9 +28,12 @@ function updateSortButtons() {
 }
 
 function sortSessions(sessions) {
+  const statusOrder = { running: 0, exited: 1, stopped: 2 };
   return [...sessions].sort((a, b) => {
-    // Running always floats to top
-    if (a.running !== b.running) return a.running ? -1 : 1;
+    // Running/exited float to top, stopped at bottom
+    const sa = statusOrder[a.status] ?? 2;
+    const sb = statusOrder[b.status] ?? 2;
+    if (sa !== sb) return sa - sb;
 
     if (sortMode === "alpha") {
       return a.project.localeCompare(b.project);
@@ -78,8 +81,8 @@ function renderSessions(sessions, procs) {
         <span class="card-title">
           <a href="${ghUrl}" target="_blank" class="card-repo-link">${esc(repo)}</a>${gitBranch ? ` <a href="${ghBranchUrl}" target="_blank" class="card-branch-link">${esc(gitBranch)}</a>` : ""}
         </span>
-        <span class="card-status ${s.running ? "running" : "stopped"}">
-          ${s.running ? "running" : "stopped"}
+        <span class="card-status ${s.status || (s.running ? "running" : "stopped")}">
+          ${s.status || (s.running ? "running" : "stopped")}
         </span>
       </div>
       ${g ? `<div class="git-status-bar">
@@ -90,11 +93,17 @@ function renderSessions(sessions, procs) {
       ${proc ? `<div class="proc-stats">${proc.cpu}% cpu &middot; ${proc.memMB} MB${proc.uptime ? ` &middot; ${esc(proc.uptime)}` : ""}${s.sessionCount ? ` &middot; ${s.sessionCount} session${s.sessionCount === 1 ? "" : "s"}` : ""}</div>` : (s.sessionCount ? `<div class="proc-stats">${s.sessionCount} session${s.sessionCount === 1 ? "" : "s"}</div>` : "")}
       <div class="card-actions">
         ${
-          s.running
+          s.status === "running"
             ? `
           ${s.claudeUrl ? `<a class="btn success" href="${esc(s.claudeUrl)}" target="_blank">Open</a>` : ""}
           <button class="btn danger" onclick="stopSession('${esc(s.project)}')">Stop</button>
           <button class="btn primary" onclick="restartSession('${esc(s.project)}')">Restart</button>
+          ${s.ttyd ? `<button class="btn" onclick='openTerminal(${s.ttyd.port}, ${sessionData})'>Terminal</button>` : ""}
+        `
+          : s.status === "exited"
+            ? `
+          <button class="btn primary" onclick="restartSession('${esc(s.project)}')">Restart</button>
+          <button class="btn danger" onclick="stopSession('${esc(s.project)}')">Clean up</button>
           ${s.ttyd ? `<button class="btn" onclick='openTerminal(${s.ttyd.port}, ${sessionData})'>Terminal</button>` : ""}
         `
             : `

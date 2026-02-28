@@ -101,6 +101,7 @@ h2 {
 }
 
 .card-status.running { background: #1a3a2a; color: #4ade80; }
+.card-status.exited { background: #3a2a1a; color: #fbbf24; }
 .card-status.stopped { background: #2a2d35; color: #888; }
 
 .card-actions {

@@ -10,10 +10,10 @@ The stuff that should have been there from day one. Pay off tech debt, fix the r
 
 ### Session reliability
 - [x] New sessions should start in `remote-control` mode by default (currently starts with no args)
-- [ ] Detect when a Claude session crashes or exits and update the UI immediately instead of waiting for the next poll
+- [x] Detect when a Claude session crashes or exits — process tree health check on every poll
 - [x] ~~Graceful shutdown~~ — not feasible; can't reliably inject keystrokes when TUI state is unknown (mid-approval, etc). `kill-session` sends SIGTERM which Claude handles gracefully already
-- [ ] Session health heartbeat — periodically check if the Claude process inside tmux is actually alive vs. the shell just sitting there after Claude exited
-- [ ] Handle the case where tmux session exists but Claude inside it has died — show as "exited" not "running"
+- [x] Session health heartbeat — `isClaudeAlive()` checks process tree under tmux pane on each 10s poll
+- [x] Handle the case where tmux session exists but Claude inside it has died — shows as "exited" (yellow badge) with Restart/Clean up actions
 
 ### Permissions model
 - [ ] Per-workspace permission mode: `--dangerously-skip-permissions` (current default), normal interactive, or custom allowlist
