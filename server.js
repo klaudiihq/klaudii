@@ -148,7 +148,9 @@ app.get("/api/sessions", (_req, res) => {
     const remoteUrl = git.getRemoteUrl(project.path);
 
     const tracked = sessionTracker.getSessions(project.name);
-    const lastActivity = tracked.length ? tracked[0].startedAt : 0;
+    // Use mtime of session .jsonl files as activity — reflects real work, not just session start
+    const lastActivity = claude.getProjectLastActivity(project.path)
+      || (tracked.length ? tracked[0].startedAt : 0);
 
     // Determine session status: running, exited, or stopped
     let status = "stopped";
