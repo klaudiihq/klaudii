@@ -254,17 +254,22 @@ h1 {
   border-color: #3a3d45;
 }
 
-/* Auto-approved green flash: two quick bursts then fade out */
+/* Auto-approved green flash: bursts spread across full duration, dimming over time */
 @keyframes auto-approved-flash {
-  0%   { border-color: #4ade80; box-shadow: 0 0 0 3px rgba(74,222,128,0.45); }
-  12%  { border-color: #2a2d35; box-shadow: none; }
-  24%  { border-color: #4ade80; box-shadow: 0 0 0 2px rgba(74,222,128,0.35); }
-  45%  { border-color: #2a2d35; box-shadow: none; }
+  0%   { border-color: #4ade80; box-shadow: 0 0 0 3px rgba(74,222,128,0.5); }
+  10%  { border-color: #2a2d35; box-shadow: none; }
+  20%  { border-color: #4ade80; box-shadow: 0 0 0 2px rgba(74,222,128,0.45); }
+  32%  { border-color: #2a2d35; box-shadow: none; }
+  44%  { border-color: #4ade80; box-shadow: 0 0 0 2px rgba(74,222,128,0.35); }
+  58%  { border-color: #2a2d35; box-shadow: none; }
+  70%  { border-color: #4ade80; box-shadow: 0 0 0 2px rgba(74,222,128,0.25); }
+  84%  { border-color: #2a2d35; box-shadow: none; }
+  94%  { border-color: #4ade80; box-shadow: 0 0 0 1px rgba(74,222,128,0.15); }
   100% { border-color: #2a2d35; box-shadow: none; }
 }
 
 .card.auto-approved {
-  animation: auto-approved-flash 5s ease-out forwards;
+  animation: auto-approved-flash 5s ease-in-out forwards;
   transition: none;
 }
 
