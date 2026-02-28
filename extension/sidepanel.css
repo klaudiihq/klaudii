@@ -153,6 +153,61 @@ h1 {
   gap: 6px;
 }
 
+/* Repo list in add-workspace flow */
+.add-repo-list {
+  max-height: 150px;
+  overflow-y: auto;
+  border: 1px solid #2a2d35;
+  border-radius: 5px;
+  background: #0f1117;
+}
+
+.add-repo-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 5px 8px;
+  font-size: 12px;
+  cursor: pointer;
+  transition: background 0.1s;
+}
+
+.add-repo-item:hover { background: #1a1d25; }
+
+.add-repo-name {
+  font-family: monospace;
+  color: #e0e0e0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.add-repo-badge {
+  font-size: 9px;
+  padding: 1px 5px;
+  border-radius: 999px;
+  background: #1a3a2a;
+  color: #4ade80;
+  flex-shrink: 0;
+  margin-left: 4px;
+}
+
+.add-repo-badge.new { background: #1e3a5f; color: #60a5fa; }
+
+.add-loading {
+  padding: 8px;
+  font-size: 11px;
+  color: #555;
+  text-align: center;
+}
+
+.add-repo-label {
+  font-size: 11px;
+  font-family: monospace;
+  color: #888;
+  margin-bottom: 2px;
+}
+
 /* Approval needed indicator */
 .needs-input-dot {
   width: 8px;
@@ -214,6 +269,7 @@ h1 {
 
 .card.needs-attention {
   animation: attention-flash 2.6s ease-in-out infinite;
+  transition: none;
 }
 
 .card.active-in-tab {
