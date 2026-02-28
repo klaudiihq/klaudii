@@ -1,0 +1,40 @@
+name: Release Extension Zip
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "extension/**"
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build extension zip
+        run: |
+          cd extension
+          zip -r ../klaudii-extension.zip . \
+            --exclude "generate-icons.*" \
+            --exclude "*/__MACOSX/*" \
+            --exclude "*/.DS_Store"
+
+      - name: Delete existing 'latest' release and tag
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release delete latest --yes 2>/dev/null || true
+          git push origin :refs/tags/latest 2>/dev/null || true
+
+      - name: Publish new 'latest' release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release create latest \
+            --title "Klaudii Extension — latest build" \
+            --notes "Auto-built from the latest commit to \`main\`. See the [installation instructions](https://github.com/${{ github.repository }}/tree/main/extension#installation) in the extension README." \
+            klaudii-extension.zip
