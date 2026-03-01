@@ -15,7 +15,12 @@ function connect(config, messageHandler) {
 
   onMessage = messageHandler;
   const { relayUrl, serverId, signingKey } = config.cloud;
-  const url = `${relayUrl}?role=server&serverId=${encodeURIComponent(serverId)}`;
+  // Ensure the /ws path is present (stored URLs may omit it)
+  const base = new URL(relayUrl);
+  if (!base.pathname || base.pathname === "/") base.pathname = "/ws";
+  base.searchParams.set("role", "server");
+  base.searchParams.set("serverId", serverId);
+  const url = base.toString();
 
   try {
     ws = new WebSocket(url);

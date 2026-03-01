@@ -47,12 +47,37 @@
   </div>
 
   <div id="add-workspace-form" class="add-form hidden">
-    <input id="add-name" class="add-input" type="text" placeholder="Name  (e.g. myrepo--main)" autocomplete="off" />
-    <input id="add-path" class="add-input" type="text" placeholder="Path  (e.g. /home/user/myrepo)" autocomplete="off" />
-    <div class="add-actions">
-      <button class="btn primary btn-sm" id="btn-add-confirm">Add</button>
-      <button class="btn btn-sm" id="btn-add-cancel">Cancel</button>
+
+    <!-- Step 1: repo search / select -->
+    <div id="add-step-repo">
+      <input id="add-repo-q" class="add-input" type="text" placeholder="Search repos..." autocomplete="off" />
+      <div id="add-repo-list" class="add-repo-list"></div>
+      <div class="add-actions">
+        <button class="btn btn-sm" id="btn-add-newrepo">+ New repo</button>
+        <button class="btn btn-sm" id="btn-add-cancel">Cancel</button>
+      </div>
     </div>
+
+    <!-- Step 1b: create a new repo -->
+    <div id="add-step-newrepo" class="hidden">
+      <input id="add-newrepo-name" class="add-input" type="text" placeholder="Repo name" autocomplete="off" />
+      <input id="add-newrepo-remote" class="add-input" type="text" placeholder="Remote URL (optional)" autocomplete="off" />
+      <div class="add-actions">
+        <button class="btn primary btn-sm" id="btn-add-createrepo">Create</button>
+        <button class="btn btn-sm" id="btn-add-backfromnewrepo">Back</button>
+      </div>
+    </div>
+
+    <!-- Step 2: branch name -->
+    <div id="add-step-branch" class="hidden">
+      <div id="add-repo-label" class="add-repo-label"></div>
+      <input id="add-branch-input" class="add-input" type="text" placeholder="Branch name" autocomplete="off" />
+      <div class="add-actions">
+        <button class="btn primary btn-sm" id="btn-add-start">Start Session</button>
+        <button class="btn btn-sm" id="btn-add-backtorepo">Back</button>
+      </div>
+    </div>
+
   </div>
 
   <div id="sessions-container"></div>
@@ -61,6 +86,13 @@
     <h2 class="section-title">free range claudes</h2>
     <div id="unmanaged-container"></div>
   </div>
+
+  <footer class="auto-approve-bar">
+    <button id="btn-auto-approve" class="auto-approve-toggle" title="Automatically click Allow/Approve on every permission request">
+      <span class="auto-approve-label">Auto Approve</span>
+      <span class="auto-approve-dot"></span>
+    </button>
+  </footer>
 
   <script src="sidepanel.js"></script>
 </body>

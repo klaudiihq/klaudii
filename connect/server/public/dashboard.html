@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Klaudii — Cloud Dashboard</title>
+  <title>Klaudii — Kloud Konnect</title>
   <link rel="stylesheet" href="/dashboard/style.css">
   <style>
     /* Cloud-specific overrides */
@@ -99,9 +99,135 @@
       height: calc(100vh - 45px);
       border: none;
     }
+    /* Pairing code modal */
+    .pair-modal-overlay {
+      position: fixed;
+      inset: 0;
+      background: rgba(0,0,0,0.75);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      z-index: 200;
+      backdrop-filter: blur(4px);
+    }
+    .pair-modal {
+      background: #1a1d25;
+      border: 1px solid #2a2d35;
+      border-radius: 12px;
+      padding: 2rem 2rem 1.5rem;
+      max-width: 460px;
+      width: 90%;
+    }
+    .pair-modal h2 {
+      text-align: center;
+      margin-bottom: 0.35rem;
+      font-size: 1.25rem;
+    }
+    .pair-modal-sub {
+      text-align: center;
+      color: #666;
+      font-size: 0.82rem;
+      margin-bottom: 1.5rem;
+    }
+    .pairing-code-display {
+      background: #0f1117;
+      border: 1px solid #2a2d35;
+      border-radius: 8px;
+      padding: 1.25rem 1rem;
+      text-align: center;
+      margin-bottom: 0.75rem;
+    }
+    .pairing-code-display .code {
+      font-size: 2.75rem;
+      font-weight: 700;
+      letter-spacing: 0.2em;
+      font-family: ui-monospace, monospace;
+      color: #4ade80;
+      line-height: 1;
+    }
+    .pairing-code-display .expires {
+      font-size: 0.75rem;
+      color: #555;
+      margin-top: 0.5rem;
+    }
+    .pair-steps {
+      list-style: none;
+      padding: 0;
+      margin: 1.25rem 0 1.5rem;
+      border: 1px solid #2a2d35;
+      border-radius: 8px;
+      overflow: hidden;
+    }
+    .pair-steps li {
+      display: flex;
+      align-items: flex-start;
+      gap: 0.75rem;
+      padding: 0.65rem 1rem;
+      border-bottom: 1px solid #2a2d35;
+      font-size: 0.83rem;
+      color: #aaa;
+      line-height: 1.4;
+    }
+    .pair-steps li:last-child { border-bottom: none; }
+    .pair-step-num {
+      min-width: 20px;
+      height: 20px;
+      border-radius: 50%;
+      background: #252830;
+      color: #888;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 0.7rem;
+      font-weight: 600;
+      flex-shrink: 0;
+      margin-top: 0.05rem;
+    }
+    .pair-modal-footer {
+      display: flex;
+      justify-content: flex-end;
+      gap: 0.5rem;
+    }
+    .delete-server-btn {
+      background: none;
+      border: 1px solid transparent;
+      color: #555;
+      width: 26px;
+      height: 26px;
+      border-radius: 6px;
+      cursor: pointer;
+      font-size: 0.75rem;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      transition: all 0.15s;
+      flex-shrink: 0;
+    }
+    .delete-server-btn:hover { background: #2a1a1a; border-color: #ef4444; color: #f87171; }
   </style>
 </head>
 <body>
+  <!-- Pairing code modal -->
+  <div id="pair-modal" class="pair-modal-overlay" style="display:none">
+    <div class="pair-modal">
+      <h2>Pairing Code</h2>
+      <p class="pair-modal-sub">Enter this in your local Klaudii to konnect</p>
+      <div class="pairing-code-display">
+        <div class="code" id="pair-modal-code"></div>
+        <div class="expires" id="pair-modal-expires"></div>
+      </div>
+      <ul class="pair-steps">
+        <li><span class="pair-step-num">1</span>Open <strong style="color:#e0e0e0">http://localhost:9876</strong> on your home machine</li>
+        <li><span class="pair-step-num">2</span>Click the <strong style="color:#e0e0e0">Kloud Konnect</strong> button in the header</li>
+        <li><span class="pair-step-num">3</span>Enter the code above and click <strong style="color:#e0e0e0">Pair</strong></li>
+        <li><span class="pair-step-num">4</span>Scan the QR code that appears to complete the konnection</li>
+      </ul>
+      <div class="pair-modal-footer">
+        <button class="btn btn-sm" onclick="closePairModal()">Done</button>
+      </div>
+    </div>
+  </div>
+
   <!-- Server picker view -->
   <div id="picker-view">
     <header>
@@ -157,7 +283,7 @@
       if (servers.length === 0) {
         list.innerHTML = `
           <div class="empty-state">
-            <h3>No servers connected</h3>
+            <h3>No servers konnected</h3>
             <p>Add your first Klaudii server to access it from anywhere.</p>
             <div class="pair-action">
               <button class="btn primary" onclick="addServer()">Add Server</button>
@@ -170,17 +296,31 @@
       list.innerHTML = servers.map(s => {
         const hasKey = hasConnectionKey(s.id);
         const lastSeen = s.lastSeen ? formatTimeAgo(s.lastSeen * 1000) : "never";
+        const clickAction = s.online && hasKey ? `selectServer('${s.id}', '${esc(s.name)}')` : (!hasKey ? `enterKey('${s.id}')` : "");
         return `
-          <div class="server-card" onclick="${s.online && hasKey ? `selectServer('${s.id}', '${esc(s.name)}')` : (hasKey ? '' : `enterKey('${s.id}')`)}">
-            <div>
+          <div class="server-card" onclick="${clickAction}">
+            <div style="flex:1; min-width:0">
               <div class="server-name">${esc(s.name)}</div>
               <div class="server-meta">${s.online ? "Online" : `Last seen ${lastSeen}`}</div>
-              ${!hasKey ? '<div class="no-key-warning">Connection key needed — click to enter</div>' : ""}
+              ${!hasKey ? '<div class="no-key-warning">Konnection key needed — click to enter</div>' : ""}
             </div>
-            <div class="status-dot ${s.online ? "online" : "offline"}"></div>
+            <div style="display:flex; align-items:center; gap:0.75rem; flex-shrink:0">
+              <div class="status-dot ${s.online ? "online" : "offline"}"></div>
+              <button class="delete-server-btn" onclick="event.stopPropagation(); deleteServer('${s.id}', '${esc(s.name)}')" title="Remove server">✕</button>
+            </div>
           </div>
         `;
       }).join("");
+    }
+
+    async function deleteServer(id, name) {
+      if (!confirm(`Remove "${name}"? This cannot be undone.`)) return;
+      // Also remove stored connection key
+      const keys = JSON.parse(localStorage.getItem("klaudii-connection-keys") || "{}");
+      delete keys[id];
+      localStorage.setItem("klaudii-connection-keys", JSON.stringify(keys));
+      await fetch(`/api/servers/${id}`, { method: "DELETE" });
+      loadServers();
     }
 
     function hasConnectionKey(serverId) {
@@ -194,20 +334,23 @@
     }
 
     async function addServer() {
-      const resp = await fetch("/api/pairing/create", { method: "POST" });
-      const { code, expiresIn } = await resp.json();
+      const btn = document.querySelector('[onclick="addServer()"]');
+      if (btn) { btn.disabled = true; btn.textContent = "Generating..."; }
+      try {
+        const resp = await fetch("/api/pairing/create", { method: "POST" });
+        const { code, expiresIn } = await resp.json();
+        document.getElementById("pair-modal-code").textContent = code;
+        document.getElementById("pair-modal-expires").textContent =
+          `Expires in ${Math.floor(expiresIn / 60)} minutes`;
+        document.getElementById("pair-modal").style.display = "flex";
+      } finally {
+        if (btn) { btn.disabled = false; btn.textContent = "+ Add Server"; }
+      }
+    }
 
-      alert(
-        `Pairing code: ${code}\n\n` +
-        `Enter this code in your local Klaudii dashboard:\n` +
-        `1. Open http://localhost:9876\n` +
-        `2. Click the "Cloud" button\n` +
-        `3. Enter the pairing code\n\n` +
-        `This code expires in ${Math.floor(expiresIn / 60)} minutes.`
-      );
-
-      // Refresh server list after a delay (user needs time to pair)
-      setTimeout(loadServers, 5000);
+    function closePairModal() {
+      document.getElementById("pair-modal").style.display = "none";
+      loadServers();
     }
 
     function enterKey(serverId) {

@@ -90,6 +90,14 @@ function initCloudTunnel(serverId, connectionKeyHex, userId) {
       clearTimeout(pending.timeout);
 
       if (msg.error) {
+        if (msg.error === "wrong_key") {
+          // Server couldn't decrypt — our stored key is stale. Clear it and redirect to pair.
+          const keys = JSON.parse(localStorage.getItem("klaudii-connection-keys") || "{}");
+          if (currentServerId) delete keys[currentServerId];
+          localStorage.setItem("klaudii-connection-keys", JSON.stringify(keys));
+          window.location.href = `/pair.html?serverId=${currentServerId}`;
+          return;
+        }
         pending.reject(new Error(msg.error));
         return;
       }

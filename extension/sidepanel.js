@@ -4,36 +4,65 @@ const GIT_PATH = "M23.546 10.93L13.067.452c-.604-.603-1.582-.603-2.188 0L8.708 2
 const gitSvg = (size) => `<svg width="${size}" height="${size}" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="${GIT_PATH}"/></svg>`;
 let klaudiiUrl = DEFAULT_KLAUDII_URL;
 let pollTimer = null;
+let approvalFastPollTimer = null;
 let lastSessions = [];
 let lastProcs = [];
 let activeTabUrl = null;
 let sortMode = localStorage.getItem("sortMode") || "activity";
 let openMode = "inplace";
-let openTabs = new Map();    // urlPath (no query string) → tabId, for open claude.ai tabs in this window
-let sessionNeedsInput = {}; // project → bool: session has a pending approval button
+let attentionFlash = false;
+let autoApprove = false;
+let openTabs = new Map();       // urlPath (no query string) → tabId, for open claude.ai tabs in this window
+let sessionNeedsInput = {};     // project → bool: session has a pending approval button
+let sessionAutoApproved = {};   // project → bool: auto-approve just fired, show green flash
+let addSelectedRepo = null; // repo name chosen in the add-workspace flow
+let addRepos = [];          // cached list from /api/github/repos
 
 // --- Init ---
 
 async function init() {
-  const config = await chrome.storage.sync.get(["klaudiiUrl", "openMode"]);
+  const config = await chrome.storage.sync.get(["klaudiiUrl", "openMode", "attentionFlash", "autoApprove"]);
   klaudiiUrl = (config.klaudiiUrl || DEFAULT_KLAUDII_URL).replace(/\/+$/, "");
   openMode = config.openMode || "inplace";
+  attentionFlash = config.attentionFlash === true;
+  autoApprove = config.autoApprove === true;
 
   document.getElementById("btn-add").addEventListener("click", toggleAddForm);
-  document.getElementById("btn-add-confirm").addEventListener("click", submitAddWorkspace);
   document.getElementById("btn-add-cancel").addEventListener("click", closeAddForm);
-  document.getElementById("add-name").addEventListener("keydown", (e) => {
-    if (e.key === "Enter") document.getElementById("add-path").focus();
+  document.getElementById("btn-add-newrepo").addEventListener("click", () => showAddStep("newrepo"));
+  document.getElementById("btn-add-backfromnewrepo").addEventListener("click", () => showAddStep("repo"));
+  document.getElementById("btn-add-createrepo").addEventListener("click", submitCreateRepo);
+  document.getElementById("btn-add-backtorepo").addEventListener("click", () => showAddStep("repo"));
+  document.getElementById("btn-add-start").addEventListener("click", submitStartSession);
+  document.getElementById("add-repo-q").addEventListener("input", filterAddRepos);
+  document.getElementById("add-repo-q").addEventListener("keydown", (e) => {
+    if (e.key === "Escape") closeAddForm();
+    if (e.key === "Enter") document.querySelector(".add-repo-item")?.click();
+  });
+  document.getElementById("add-branch-input").addEventListener("keydown", (e) => {
+    if (e.key === "Enter") submitStartSession();
     if (e.key === "Escape") closeAddForm();
   });
-  document.getElementById("add-path").addEventListener("keydown", (e) => {
-    if (e.key === "Enter") submitAddWorkspace();
+  document.getElementById("add-newrepo-name").addEventListener("keydown", (e) => {
+    if (e.key === "Enter") document.getElementById("add-newrepo-remote").focus();
+    if (e.key === "Escape") closeAddForm();
+  });
+  document.getElementById("add-newrepo-remote").addEventListener("keydown", (e) => {
+    if (e.key === "Enter") submitCreateRepo();
     if (e.key === "Escape") closeAddForm();
   });
   document.getElementById("btn-dashboard").addEventListener("click", openDashboard);
   document.getElementById("btn-refresh").addEventListener("click", refresh);
   document.getElementById("btn-settings").addEventListener("click", openSettings);
   document.getElementById("btn-configure").addEventListener("click", openSettings);
+
+  const btnAutoApprove = document.getElementById("btn-auto-approve");
+  btnAutoApprove.classList.toggle("active", autoApprove);
+  btnAutoApprove.addEventListener("click", () => {
+    autoApprove = !autoApprove;
+    btnAutoApprove.classList.toggle("active", autoApprove);
+    chrome.storage.sync.set({ autoApprove });
+  });
 
   // Sort toggle
   document.querySelectorAll(".sort-btn").forEach((btn) => {
@@ -111,7 +140,8 @@ function setConnected(ok) {
 // --- Approval detection ---
 
 // For each running session that has an open tab, inject a tiny script to check
-// whether the claude.ai page is currently showing an "Allow once" approval button.
+// whether the claude.ai page is currently showing an approval button.
+// Detects "Allow …" (any variant) and "Skip" buttons.
 // Re-renders cards only when the set of sessions needing input changes.
 async function checkApprovalStates(sessions) {
   const newStates = {};
@@ -124,11 +154,30 @@ async function checkApprovalStates(sessions) {
     try {
       const results = await chrome.scripting.executeScript({
         target: { tabId },
-        func: () => Array.from(document.querySelectorAll("button")).some(
-          (b) => b.textContent.includes("Allow once") && b.querySelector("kbd")
-        ),
+        func: (shouldAutoApprove) => {
+          const btn = Array.from(document.querySelectorAll("button")).find((b) => {
+            const text = b.textContent.trim();
+            return text.includes("Allow") || text.includes("Approve") || text === "Skip";
+          });
+          if (!btn) return { found: false, clicked: false };
+          const isApprovable = btn.textContent.trim().includes("Allow") || btn.textContent.trim().includes("Approve");
+          if (shouldAutoApprove && isApprovable) { btn.click(); return { found: true, clicked: true }; }
+          return { found: true, clicked: false };
+        },
+        args: [autoApprove],
       });
-      if (results?.[0]?.result === true) newStates[s.project] = true;
+      const result = results?.[0]?.result;
+      if (result?.clicked) {
+        if (!sessionAutoApproved[s.project]) {
+          sessionAutoApproved[s.project] = true;
+          // Re-render immediately so green class is applied right now
+          renderSessions(lastSessions, lastProcs);
+          // Clean up state after 5s; next refresh() will render without the class
+          setTimeout(() => { delete sessionAutoApproved[s.project]; }, 5000);
+        }
+      } else if (result?.found) {
+        newStates[s.project] = true;
+      }
     } catch {
       // Tab not injectable (loading, navigating, wrong origin, etc.)
     }
@@ -136,6 +185,15 @@ async function checkApprovalStates(sessions) {
   const changed = sessions.some((s) => !!newStates[s.project] !== !!sessionNeedsInput[s.project]);
   sessionNeedsInput = newStates;
   if (changed) renderSessions(lastSessions, lastProcs);
+
+  // Run a fast poll while any session is waiting for input; cancel when clear
+  const anyNeedsInput = Object.values(sessionNeedsInput).some(Boolean) || Object.values(sessionAutoApproved).some(Boolean);
+  if (anyNeedsInput && !approvalFastPollTimer) {
+    approvalFastPollTimer = setInterval(() => checkApprovalStates(lastSessions), 750);
+  } else if (!anyNeedsInput && approvalFastPollTimer) {
+    clearInterval(approvalFastPollTimer);
+    approvalFastPollTimer = null;
+  }
 }
 
 // --- Track which claude.ai tab is active ---
@@ -274,33 +332,28 @@ function renderCard(s, proc) {
 
   const displayTitle = gitBranch ? `${repo} (${gitBranch})` : repo;
   const needsInput = sessionNeedsInput[s.project] === true;
-  const inputDot = needsInput ? `<span class="needs-input-dot" title="Waiting for your approval"></span>` : "";
+  const wasAutoApproved = sessionAutoApproved[s.project] === true;
+  const showDot = needsInput && !attentionFlash;
+  const inputDot = showDot ? `<span class="needs-input-dot" title="Waiting for your approval"></span>` : "";
+  const attentionClass = wasAutoApproved ? " auto-approved"
+    : (needsInput && attentionFlash ? " needs-attention" : "");
 
-  let actions = "";
+  let menuItems = "";
   if (isRunning) {
-    let openBtn = "";
-    if (s.claudeUrl) {
-      const sessionUrlPath = s.claudeUrl.split("?")[0];
-      const tabIsOpen = openMode === "tabs" &&
-        [...openTabs.keys()].some((u) => u.startsWith(sessionUrlPath));
-      openBtn = `<button class="btn ${tabIsOpen ? "" : "success"}" data-action="open" data-url="${esc(s.claudeUrl)}" data-title="${esc(displayTitle)}">${tabIsOpen ? "Switch" : "Open"}</button>`;
-    }
-    actions = `
-      ${openBtn}
-      <button class="btn danger btn-sm" data-action="stop" data-project="${esc(s.project)}">Stop</button>
-      <button class="btn btn-sm" data-action="restart" data-project="${esc(s.project)}">Restart</button>
-      ${s.ttyd ? `<button class="btn btn-sm" data-action="terminal" data-port="${s.ttyd.port}">Term</button>` : ""}
-      <button class="btn btn-sm" data-action="history" data-project="${esc(s.project)}">History</button>`;
+    menuItems = `
+      <button class="menu-item danger" data-action="stop" data-project="${esc(s.project)}">Stop</button>
+      <button class="menu-item" data-action="restart" data-project="${esc(s.project)}">Restart</button>
+      ${s.ttyd ? `<button class="menu-item" data-action="terminal" data-port="${s.ttyd.port}">Terminal</button>` : ""}
+      <button class="menu-item" data-action="history" data-project="${esc(s.project)}">History</button>`;
   } else {
-    actions = `
-      <button class="btn primary" data-action="continue" data-project="${esc(s.project)}">Continue</button>
-      <button class="btn btn-sm" data-action="start" data-project="${esc(s.project)}">New</button>
-      <button class="btn btn-sm" data-action="history" data-project="${esc(s.project)}">History</button>
-      <button class="btn btn-sm danger" data-action="remove" data-project="${esc(s.project)}">Remove</button>`;
+    menuItems = `
+      <button class="menu-item" data-action="start" data-project="${esc(s.project)}">New Session</button>
+      <button class="menu-item" data-action="history" data-project="${esc(s.project)}">History</button>
+      <button class="menu-item danger" data-action="remove" data-project="${esc(s.project)}">Remove</button>`;
   }
 
   return `
-    <div class="card" data-project="${esc(s.project)}" data-claude-url="${esc(s.claudeUrl || "")}">
+    <div class="card${attentionClass}" data-project="${esc(s.project)}" data-claude-url="${esc(s.claudeUrl || "")}" data-status="${status}" data-open-title="${esc(displayTitle)}">
       <div class="card-header">
         ${repoGitLink}<span class="card-title">${esc(repo)}</span>
         ${inputDot}
@@ -308,11 +361,14 @@ function renderCard(s, proc) {
           ${permBadge}
           <span class="card-status ${status}">${status}</span>
         </div>
+        <button class="card-menu-btn icon-btn" data-action="toggle-menu" data-project="${esc(s.project)}" title="Actions">···</button>
       </div>
       ${gitBar}
       ${stats}
       ${permToggle}
-      <div class="card-actions">${actions}</div>
+      <div class="card-menu hidden">
+        ${menuItems}
+      </div>
       <div class="history-list hidden" id="history-${esc(s.project)}"></div>
     </div>`;
 }
@@ -346,6 +402,15 @@ function renderUnmanaged(procs) {
 // --- Actions (event delegation) ---
 
 document.addEventListener("click", async (e) => {
+  // Repo list item click in add-workspace flow
+  const repoItem = e.target.closest("[data-add-repo]");
+  if (repoItem) { selectAddRepo(repoItem.dataset.addRepo); return; }
+
+  // Close open card menus when clicking outside them
+  if (!e.target.closest(".card-menu") && !e.target.closest("[data-action='toggle-menu']")) {
+    document.querySelectorAll(".card-menu:not(.hidden)").forEach((m) => m.classList.add("hidden"));
+  }
+
   const btn = e.target.closest("[data-action]");
   if (!btn) return;
 
@@ -360,6 +425,7 @@ document.addEventListener("click", async (e) => {
           url: btn.dataset.url,
           title: btn.dataset.title,
           windowId: win?.id,
+          needsInput: !!sessionNeedsInput[project],
         });
       });
       break;
@@ -520,6 +586,43 @@ document.addEventListener("click", async (e) => {
         }, 3000);
       }
       break;
+
+    case "toggle-menu": {
+      const card = btn.closest(".card");
+      const menu = card?.querySelector(".card-menu");
+      if (menu) menu.classList.toggle("hidden");
+      break;
+    }
+  }
+});
+
+// --- Card body click → primary action ---
+
+document.addEventListener("click", async (e) => {
+  if (e.target.closest("button, a, input")) return;
+  const card = e.target.closest(".card");
+  if (!card) return;
+
+  const status = card.dataset.status;
+  const url = card.dataset.claudeUrl;
+  const project = card.dataset.project;
+  const title = card.dataset.openTitle;
+
+  if (url && (status === "running" || status === "exited")) {
+    chrome.windows.getCurrent((win) => {
+      chrome.runtime.sendMessage({
+        action: openMode === "tabs" ? "switchTab" : "navigateAndRename",
+        url, title, windowId: win?.id,
+        needsInput: !!sessionNeedsInput[project],
+      });
+    });
+  } else if (status === "stopped") {
+    try {
+      await api("/api/sessions/start", { method: "POST", body: { project, continueSession: true } });
+    } catch (err) {
+      showToast("Error: " + err.message);
+    }
+    setTimeout(refresh, 1000);
   }
 });
 
@@ -563,23 +666,100 @@ function toggleAddForm() {
   const form = document.getElementById("add-workspace-form");
   const isHidden = form.classList.contains("hidden");
   form.classList.toggle("hidden");
-  if (isHidden) document.getElementById("add-name").focus();
+  if (isHidden) {
+    addSelectedRepo = null;
+    addRepos = [];
+    showAddStep("repo");
+    document.getElementById("add-repo-q").value = "";
+    document.getElementById("add-repo-q").focus();
+    loadAddRepos();
+  }
+}
+
+function showAddStep(step) {
+  document.getElementById("add-step-repo").classList.toggle("hidden", step !== "repo");
+  document.getElementById("add-step-branch").classList.toggle("hidden", step !== "branch");
+  document.getElementById("add-step-newrepo").classList.toggle("hidden", step !== "newrepo");
 }
 
 function closeAddForm() {
   document.getElementById("add-workspace-form").classList.add("hidden");
-  document.getElementById("add-name").value = "";
-  document.getElementById("add-path").value = "";
+  document.getElementById("add-repo-q").value = "";
+  document.getElementById("add-branch-input").value = "";
+  document.getElementById("add-newrepo-name").value = "";
+  document.getElementById("add-newrepo-remote").value = "";
+  addSelectedRepo = null;
+  addRepos = [];
 }
 
-async function submitAddWorkspace() {
-  const name = document.getElementById("add-name").value.trim();
-  const path = document.getElementById("add-path").value.trim();
-  if (!name || !path) { showToast("Name and path are required."); return; }
-  const btn = document.getElementById("btn-add-confirm");
+async function loadAddRepos() {
+  const list = document.getElementById("add-repo-list");
+  list.innerHTML = '<div class="add-loading">Loading...</div>';
+  try {
+    addRepos = await api("/api/github/repos");
+    renderAddRepos(addRepos);
+  } catch {
+    addRepos = [];
+    list.innerHTML = '<div class="add-loading">Type a repo name and press Enter.</div>';
+  }
+}
+
+function filterAddRepos() {
+  const q = document.getElementById("add-repo-q").value.toLowerCase();
+  const filtered = q ? addRepos.filter((r) => r.name.toLowerCase().includes(q)) : addRepos;
+  renderAddRepos(filtered, q);
+}
+
+function renderAddRepos(repos, q = "") {
+  const list = document.getElementById("add-repo-list");
+  if (!repos.length) {
+    if (q) {
+      list.innerHTML = `<div class="add-repo-item" data-add-repo="${esc(q)}"><span class="add-repo-name">${esc(q)}</span><span class="add-repo-badge new">use</span></div>`;
+    } else {
+      list.innerHTML = '<div class="add-loading">No repos found.</div>';
+    }
+    return;
+  }
+  list.innerHTML = repos.map((r) =>
+    `<div class="add-repo-item" data-add-repo="${esc(r.name)}">
+      <span class="add-repo-name">${esc(r.name)}</span>
+      ${r.cloned ? '<span class="add-repo-badge">cloned</span>' : ""}
+    </div>`
+  ).join("");
+}
+
+function selectAddRepo(name) {
+  addSelectedRepo = name;
+  document.getElementById("add-repo-label").textContent = name + "  /";
+  document.getElementById("add-branch-input").value = "";
+  showAddStep("branch");
+  document.getElementById("add-branch-input").focus();
+}
+
+async function submitStartSession() {
+  const branch = document.getElementById("add-branch-input").value.trim();
+  if (!branch) { showToast("Branch name required."); return; }
+  const btn = document.getElementById("btn-add-start");
   btn.disabled = true;
   try {
-    await api("/api/projects", { method: "POST", body: { name, path } });
+    await api("/api/sessions/new", { method: "POST", body: { repo: addSelectedRepo, branch } });
+    closeAddForm();
+    await refresh();
+  } catch (err) {
+    showToast("Error: " + err.message);
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+async function submitCreateRepo() {
+  const name = document.getElementById("add-newrepo-name").value.trim();
+  if (!name) { showToast("Repo name required."); return; }
+  const remoteUrl = document.getElementById("add-newrepo-remote").value.trim();
+  const btn = document.getElementById("btn-add-createrepo");
+  btn.disabled = true;
+  try {
+    await api("/api/repos/create", { method: "POST", body: { name, remoteUrl: remoteUrl || undefined } });
     closeAddForm();
     await refresh();
   } catch (err) {

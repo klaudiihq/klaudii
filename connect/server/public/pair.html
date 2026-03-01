@@ -133,14 +133,13 @@
 <body>
   <div class="pair-card">
     <h2>Pair this Browser</h2>
-    <p class="subtitle">
-      Scan the QR code shown on your Klaudii server's Cloud panel,
-      or enter the Connection Key manually.
+    <p class="subtitle" id="pair-subtitle">
+      Scan the QR code shown in your local Klaudii's Kloud Konnect panel, or paste the Konnection Key.
     </p>
 
     <div id="pair-content">
-      <!-- QR Scanner -->
-      <div id="scanner-section">
+      <!-- QR Scanner (shown when camera API is available) -->
+      <div id="scanner-section" style="display:none">
         <button class="btn" onclick="startScanner()" id="scan-btn">Scan QR Code</button>
         <div id="scanner-container" style="display:none">
           <video id="scanner-video" autoplay playsinline></video>
@@ -150,34 +149,50 @@
         <p class="scanner-status" id="scanner-status"></p>
       </div>
 
-      <div class="divider">or</div>
+      <div id="divider-el" class="divider" style="display:none">or</div>
 
-      <!-- Manual entry -->
-      <details id="manual-section">
-        <summary style="cursor:pointer; color:#888; font-size:0.85rem; padding:0.5rem 0">Enter key manually</summary>
-        <div style="margin-top: 0.75rem">
-          <label>Connection Key</label>
-          <input id="key-input" type="text" placeholder="xxxx-xxxx-xxxx-xxxx-xxxx-xxxx-xxxx-xxxx" />
-          <p class="hint">Paste the full key from your Klaudii dashboard's Cloud panel.</p>
-          <button class="btn" onclick="saveKey()">Save Key</button>
-        </div>
-      </details>
+      <!-- Paste / manual entry — always visible, primary on unsupported browsers -->
+      <div id="manual-section">
+        <label>Konnection Key</label>
+        <textarea id="key-input" rows="3"
+          placeholder="Paste the key from your local Klaudii's Kloud Konnect panel"
+          style="width:100%; background:#0f1117; color:#fbbf24; border:1px solid #3a3d45; border-radius:8px; padding:0.75rem; font-size:0.85rem; font-family:ui-monospace,monospace; letter-spacing:1px; resize:none; margin-bottom:0.5rem"
+        ></textarea>
+        <p class="hint">Open <strong>Kloud Konnect</strong> on your local Klaudii, copy the Konnection Key, and paste it above.</p>
+        <button class="btn" onclick="saveKey()" style="margin-top:0.25rem">Save Key</button>
+      </div>
 
       <p id="error-msg" class="error" style="display:none"></p>
     </div>
 
     <div id="success-msg" class="success" style="display:none">
-      Paired! <a href="/" style="color:#4ade80; font-weight:500">Go to dashboard</a>
+      Konnected! <a href="/" style="color:#4ade80; font-weight:500">Go to dashboard →</a>
     </div>
   </div>
 
+  <script src="https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.min.js"></script>
   <script>
     const params = new URLSearchParams(window.location.search);
     let targetServerId = params.get("serverId");
     let scannerStream = null;
     let scannerInterval = null;
 
-    // --- QR Scanner using camera + canvas ---
+    // Auto-pair if key is in the URL (QR scan opened this page directly)
+    const prefilledKey = params.get("key");
+    if (prefilledKey && targetServerId) {
+      const clean = prefilledKey.replace(/-/g, "").replace(/\s/g, "");
+      if (/^[0-9a-fA-F]{64}$/.test(clean)) {
+        saveKeyForServer(targetServerId, clean);
+      }
+    }
+
+    // Show scanner section if getUserMedia is available (all modern browsers incl. iOS Safari)
+    if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
+      document.getElementById("scanner-section").style.display = "block";
+      document.getElementById("divider-el").style.display = "block";
+    }
+
+    // --- QR Scanner using camera + canvas + jsQR ---
 
     async function startScanner() {
       const btn = document.getElementById("scan-btn");
@@ -195,10 +210,9 @@
         status.textContent = "Point your camera at the QR code...";
 
         // Start scanning frames
-        scannerInterval = setInterval(() => scanFrame(), 300);
+        scannerInterval = setInterval(() => scanFrame(), 250);
       } catch (err) {
-        status.textContent = "Camera access denied. Use manual entry instead.";
-        document.getElementById("manual-section").open = true;
+        status.textContent = "Camera access denied. Paste the key below instead.";
       }
     }
 
@@ -213,32 +227,35 @@
       const ctx = canvas.getContext("2d", { willReadFrequently: true });
       ctx.drawImage(video, 0, 0);
 
-      // Use BarcodeDetector API if available (Chrome, Safari)
-      if ("BarcodeDetector" in window) {
-        const detector = new BarcodeDetector({ formats: ["qr_code"] });
-        detector
-          .detect(canvas)
-          .then((barcodes) => {
-            for (const barcode of barcodes) {
-              handleQRResult(barcode.rawValue);
-            }
-          })
-          .catch(() => {});
+      // Use jsQR — works on all browsers including iOS Safari
+      const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+      const code = jsQR(imageData.data, imageData.width, imageData.height);
+      if (code) {
+        handleQRResult(code.data);
       }
     }
 
     function handleQRResult(text) {
-      // Expected format: klaudii://<serverId>/<connectionKeyHex>
+      // New format: https://<relay>/pair.html?serverId=<id>&key=<hex>
+      try {
+        const u = new URL(text);
+        if (u.pathname.endsWith("/pair.html")) {
+          const sid = u.searchParams.get("serverId");
+          const k = u.searchParams.get("key");
+          if (sid && k && /^[0-9a-fA-F]{64}$/.test(k)) {
+            stopScanner();
+            saveKeyForServer(targetServerId || sid, k);
+            return;
+          }
+        }
+      } catch {}
+
+      // Legacy format: klaudii://<serverId>/<connectionKeyHex>
       const match = text.match(/^klaudii:\/\/([^/]+)\/([0-9a-fA-F]{64})$/);
       if (!match) return;
-
       const [, scannedServerId, connectionKey] = match;
-
-      // Use the scanned serverId if we don't have one from URL
-      const effectiveServerId = targetServerId || scannedServerId;
-
       stopScanner();
-      saveKeyForServer(effectiveServerId, connectionKey);
+      saveKeyForServer(targetServerId || scannedServerId, connectionKey);
     }
 
     function stopScanner() {
@@ -256,7 +273,7 @@
     // --- Manual entry ---
 
     function saveKey() {
-      const key = document.getElementById("key-input").value.trim();
+      const key = document.getElementById("key-input").value.replace(/\s/g, "").trim();
       if (!key) {
         showError("Please enter the connection key");
         return;
