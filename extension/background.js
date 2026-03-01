@@ -56,6 +56,22 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     });
     return true;
   }
+
+  // connect-bridge.js: store E2E connection keys read from connect.klaudii.com localStorage
+  if (message.action === "storeConnectionKeys") {
+    chrome.storage.local.get("konnectConnectionKeys", (existing) => {
+      const merged = { ...(existing.konnectConnectionKeys || {}), ...message.keys };
+      chrome.storage.local.set({ konnectConnectionKeys: merged });
+    });
+    return;
+  }
+
+  // Side panel: open connect.klaudii.com briefly to trigger connect-bridge.js,
+  // wait for the keys to land in local storage, then close the tab.
+  if (message.action === "fetchConnectionKeys") {
+    fetchConnectionKeys().then(sendResponse);
+    return true;
+  }
 });
 
 // Navigate the current active tab to a URL
@@ -176,6 +192,26 @@ function waitForTabLoad(tabId) {
       resolve();
     }, 15000);
   });
+}
+
+// Open connect.klaudii.com in a background tab, let connect-bridge.js run and
+// store the connection keys, then close the tab.  Returns when keys are stored
+// (or after a 6-second timeout).
+async function fetchConnectionKeys() {
+  const tab = await chrome.tabs.create({ url: "https://connect.klaudii.com/", active: false });
+  await waitForTabLoad(tab.id);
+
+  // Poll local storage for up to 5 seconds waiting for the bridge script to fire
+  const start = Date.now();
+  while (Date.now() - start < 5000) {
+    await new Promise((r) => setTimeout(r, 300));
+    const { konnectConnectionKeys } = await chrome.storage.local.get("konnectConnectionKeys");
+    if (konnectConnectionKeys && Object.keys(konnectConnectionKeys).length > 0) break;
+  }
+
+  chrome.tabs.remove(tab.id).catch(() => {});
+  const { konnectConnectionKeys = {} } = await chrome.storage.local.get("konnectConnectionKeys");
+  return konnectConnectionKeys;
 }
 
 // This function is injected into the claude.ai page context (MAIN world).

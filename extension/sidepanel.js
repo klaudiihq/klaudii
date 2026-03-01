@@ -1,4 +1,5 @@
 const DEFAULT_KLAUDII_URL = "http://localhost:9876";
+const KONNECT_ORIGIN = "https://connect.klaudii.com";
 
 const THEME_ICONS = {
   auto: `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>`,
@@ -7,9 +8,23 @@ const THEME_ICONS = {
 };
 let themeMode = "auto"; // "auto" | "light" | "dark"
 
+const CLOUD_SVG = `<svg width="10" height="10" viewBox="0 0 24 24" fill="currentColor"><path d="M18 10h-1.26A8 8 0 1 0 9 20h9a5 5 0 0 0 0-10z"/></svg>`;
+
 const GIT_PATH = "M23.546 10.93L13.067.452c-.604-.603-1.582-.603-2.188 0L8.708 2.627l2.76 2.76c.645-.215 1.379-.07 1.889.441.516.515.658 1.258.438 1.9l2.658 2.66c.645-.223 1.387-.078 1.9.435.721.72.721 1.884 0 2.604-.719.719-1.881.719-2.6 0-.539-.541-.674-1.337-.404-1.996L12.86 8.955v6.525c.176.086.342.203.488.348.713.721.713 1.883 0 2.6-.719.721-1.889.721-2.609 0-.719-.719-.719-1.879 0-2.598.182-.18.387-.316.605-.406V8.835c-.217-.091-.424-.222-.6-.401-.545-.545-.676-1.342-.396-2.009L7.636 3.7.45 10.881c-.6.605-.6 1.584 0 2.189l10.48 10.477c.604.604 1.582.604 2.186 0l10.43-10.43c.605-.603.605-1.582 0-2.187";
 const gitSvg = (size) => `<svg width="${size}" height="${size}" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="${GIT_PATH}"/></svg>`;
+
+// Legacy single-URL compat (kept for backward compat; klaudiiUrls[0] is the primary)
 let klaudiiUrl = DEFAULT_KLAUDII_URL;
+// All configured local server URLs
+let klaudiiUrls = [DEFAULT_KLAUDII_URL];
+
+// Konnect / multi-server state
+let konnectUser = null;         // { id, email, name } if logged into connect.klaudii.com
+let konnectServers = [];        // [{ id, name, online, lastSeen }] from Konnect API
+let konnectTunnels = new Map(); // serverId → KonnectTunnel
+let selectedServer = "all";     // "all" | { type:"local", url } | { type:"konnect", id, name }
+let sessionsByProject = {};     // project → session (with _serverUrl or _konnectId)
+
 let pollTimer = null;
 let approvalFastPollTimer = null;
 let lastSessions = [];
@@ -28,13 +43,29 @@ let addRepos = [];          // cached list from /api/github/repos
 // --- Init ---
 
 async function init() {
-  const config = await chrome.storage.sync.get(["klaudiiUrl", "openMode", "attentionFlash", "autoApprove", "themeMode"]);
-  klaudiiUrl = (config.klaudiiUrl || DEFAULT_KLAUDII_URL).replace(/\/+$/, "");
+  const config = await chrome.storage.sync.get(["klaudiiUrl", "klaudiiUrls", "openMode", "attentionFlash", "autoApprove", "themeMode"]);
+
+  // Migrate from single klaudiiUrl to klaudiiUrls list
+  if (config.klaudiiUrls && config.klaudiiUrls.length) {
+    klaudiiUrls = config.klaudiiUrls;
+  } else {
+    klaudiiUrls = [(config.klaudiiUrl || DEFAULT_KLAUDII_URL).replace(/\/+$/, "")];
+  }
+  klaudiiUrl = klaudiiUrls[0];
+
   openMode = config.openMode || "inplace";
   attentionFlash = config.attentionFlash === true;
   autoApprove = config.autoApprove === true;
   themeMode = config.themeMode || "auto";
   applyTheme();
+
+  // Restore selected server from last session
+  try {
+    const stored = localStorage.getItem("selectedServer");
+    selectedServer = stored ? JSON.parse(stored) : "all";
+  } catch {
+    selectedServer = "all";
+  }
 
   document.getElementById("btn-add").addEventListener("click", toggleAddForm);
   document.getElementById("btn-add-cancel").addEventListener("click", closeAddForm);
@@ -74,7 +105,6 @@ async function init() {
   });
 
   document.getElementById("btn-theme").addEventListener("click", () => {
-    // cycle: auto → dark → light → auto
     themeMode = themeMode === "auto" ? "dark" : themeMode === "dark" ? "light" : "auto";
     chrome.storage.sync.set({ themeMode });
     applyTheme();
@@ -91,20 +121,55 @@ async function init() {
       renderSessions(lastSessions, lastProcs);
     });
   });
-  // Set initial active state
   document.querySelectorAll(".sort-btn").forEach((b) =>
     b.classList.toggle("active", b.dataset.sort === sortMode)
   );
 
+  // Server picker toggle
+  document.getElementById("btn-server-picker").addEventListener("click", (e) => {
+    e.stopPropagation();
+    const menu = document.getElementById("server-picker-menu");
+    const isOpen = !menu.classList.contains("hidden");
+    menu.classList.toggle("hidden", isOpen);
+    e.currentTarget.classList.toggle("open", !isOpen);
+  });
+
+  // Server picker menu item clicks
+  document.getElementById("server-picker-menu").addEventListener("click", (e) => {
+    const item = e.target.closest("[data-server-key]");
+    if (!item || item.disabled) return;
+    const key = item.dataset.serverKey;
+    if (key === "all") {
+      selectedServer = "all";
+    } else if (key.startsWith("local:")) {
+      const url = klaudiiUrls[parseInt(key.slice(6))];
+      selectedServer = { type: "local", url };
+    } else if (key.startsWith("konnect:")) {
+      const id = key.slice(8);
+      const srv = konnectServers.find((s) => s.id === id);
+      if (srv) selectedServer = { type: "konnect", id: srv.id, name: srv.name };
+    }
+    localStorage.setItem("selectedServer", JSON.stringify(selectedServer));
+    document.getElementById("server-picker-menu").classList.add("hidden");
+    document.getElementById("btn-server-picker").classList.remove("open");
+    renderServerPicker();
+    refresh();
+  });
+
+  renderServerPicker();
   trackActiveTab();
   await refresh();
   pollTimer = setInterval(refresh, 5000);
+
+  // Non-blocking: discover Konnect servers after initial load
+  fetchKonnectData();
 }
 
 // --- API ---
 
-async function api(path, opts = {}) {
-  const res = await fetch(klaudiiUrl + path, {
+async function api(path, opts = {}, serverUrl) {
+  const base = (serverUrl || klaudiiUrls[0] || DEFAULT_KLAUDII_URL).replace(/\/+$/, "");
+  const res = await fetch(base + path, {
     headers: { "Content-Type": "application/json" },
     ...opts,
     body: opts.body ? JSON.stringify(opts.body) : undefined,
@@ -119,23 +184,304 @@ async function api(path, opts = {}) {
   return res.json();
 }
 
+// Route an API call to the server that owns the given project
+async function sessionApiCall(project, path, opts = {}) {
+  const s = sessionsByProject[project];
+  if (s?._konnectId) return konnectApi(s._konnectId, path, opts);
+  return api(path, opts, s?._serverUrl);
+}
+
+// --- Konnect tunnel API ---
+
+async function konnectApi(serverId, path, opts = {}) {
+  let tunnel = konnectTunnels.get(serverId);
+  if (!tunnel || !tunnel.isConnected) {
+    // Try stored connection keys first
+    let { konnectConnectionKeys = {} } = await chrome.storage.local.get("konnectConnectionKeys");
+
+    if (!konnectConnectionKeys[serverId]) {
+      // Auto-open connect.klaudii.com briefly to let the bridge script read localStorage
+      konnectConnectionKeys = await chrome.runtime.sendMessage({ action: "fetchConnectionKeys" }) || {};
+    }
+
+    const key = konnectConnectionKeys[serverId];
+    if (!key) throw new Error("no_connection_key");
+    if (!konnectUser) throw new Error("not_logged_in");
+
+    tunnel = new KonnectTunnel(serverId, key, konnectUser.id);
+    konnectTunnels.set(serverId, tunnel);
+    await tunnel.connect();
+  }
+  return tunnel.request(path, opts);
+}
+
+// --- E2E WebSocket tunnel (mirrors connect/server/public/cloud.js) ---
+
+class KonnectTunnel {
+  constructor(serverId, connectionKeyHex, userId) {
+    this.serverId = serverId;
+    this.connectionKeyHex = connectionKeyHex;
+    this.userId = userId;
+    this.ws = null;
+    this.pending = new Map(); // requestId → { resolve, reject }
+    this.isConnected = false;
+    this._connectPromise = null;
+  }
+
+  connect() {
+    if (this._connectPromise) return this._connectPromise;
+    this._connectPromise = new Promise((resolve, reject) => {
+      const url = `wss://connect.klaudii.com/ws?role=browser&serverId=${this.serverId}&userId=${this.userId}`;
+      this.ws = new WebSocket(url);
+      const timeout = setTimeout(() => {
+        this.ws.close();
+        reject(new Error("tunnel_timeout"));
+      }, 10000);
+
+      this.ws.onmessage = (evt) => {
+        try {
+          const msg = JSON.parse(evt.data);
+          if (msg.type === "server_status") {
+            clearTimeout(timeout);
+            if (!msg.online) { this.ws.close(); reject(new Error("server_offline")); return; }
+            this.isConnected = true;
+            resolve();
+          } else if (msg.type === "api_response") {
+            this._handleResponse(msg);
+          }
+        } catch {}
+      };
+
+      this.ws.onerror = () => { clearTimeout(timeout); reject(new Error("tunnel_error")); };
+      this.ws.onclose = () => {
+        this.isConnected = false;
+        this._connectPromise = null;
+        for (const [, { reject: rej }] of this.pending) rej(new Error("tunnel_closed"));
+        this.pending.clear();
+      };
+    });
+    return this._connectPromise;
+  }
+
+  async _handleResponse(msg) {
+    const p = this.pending.get(msg.requestId);
+    if (!p) return;
+    this.pending.delete(msg.requestId);
+    try {
+      const plain = await this._decrypt(msg.encrypted);
+      const response = JSON.parse(new TextDecoder().decode(plain));
+      if (response.status >= 400) {
+        const err = new Error(response.body?.error || `HTTP ${response.status}`);
+        err.status = response.status;
+        p.reject(err);
+      } else {
+        p.resolve(response.body);
+      }
+    } catch (e) { p.reject(e); }
+  }
+
+  async request(path, opts = {}) {
+    if (!this.isConnected) await this.connect();
+    const requestId = crypto.randomUUID();
+    const payload = JSON.stringify({ method: opts.method || "GET", path, body: opts.body || null });
+    const encrypted = await this._encrypt(new TextEncoder().encode(payload));
+    this.ws.send(JSON.stringify({ type: "api_request", requestId, encrypted }));
+    return new Promise((resolve, reject) => {
+      const t = setTimeout(() => { this.pending.delete(requestId); reject(new Error("request_timeout")); }, 15000);
+      this.pending.set(requestId, {
+        resolve: (v) => { clearTimeout(t); resolve(v); },
+        reject: (e) => { clearTimeout(t); reject(e); },
+      });
+    });
+  }
+
+  disconnect() { this.ws?.close(); this.isConnected = false; }
+
+  async _encrypt(data) {
+    const salt = crypto.getRandomValues(new Uint8Array(16));
+    const key = await this._deriveKey(salt);
+    const iv = crypto.getRandomValues(new Uint8Array(12));
+    const cipher = await crypto.subtle.encrypt({ name: "AES-GCM", iv }, key, data);
+    const combined = new Uint8Array(12 + cipher.byteLength);
+    combined.set(iv, 0);
+    combined.set(new Uint8Array(cipher), 12);
+    return { salt: _b64(salt), data: _b64(combined) };
+  }
+
+  async _decrypt({ salt, data }) {
+    const saltBytes = _unb64(salt);
+    const combined = _unb64(data);
+    const key = await this._deriveKey(saltBytes);
+    return crypto.subtle.decrypt({ name: "AES-GCM", iv: combined.slice(0, 12) }, key, combined.slice(12));
+  }
+
+  async _deriveKey(salt) {
+    const keyMaterial = await crypto.subtle.importKey("raw", _hexToBytes(this.connectionKeyHex), "HKDF", false, ["deriveKey"]);
+    return crypto.subtle.deriveKey(
+      { name: "HKDF", hash: "SHA-256", salt, info: new TextEncoder().encode("klaudii-e2e") },
+      keyMaterial, { name: "AES-GCM", length: 256 }, false, ["encrypt", "decrypt"]
+    );
+  }
+}
+
+function _b64(bytes) { return btoa(String.fromCharCode(...bytes)); }
+function _unb64(str) { return new Uint8Array(atob(str).split("").map((c) => c.charCodeAt(0))); }
+function _hexToBytes(hex) {
+  const arr = new Uint8Array(hex.length / 2);
+  for (let i = 0; i < arr.length; i++) arr[i] = parseInt(hex.slice(i * 2, i * 2 + 2), 16);
+  return arr;
+}
+
+// --- Konnect discovery ---
+
+async function fetchKonnectData() {
+  try {
+    const meRes = await fetch(`${KONNECT_ORIGIN}/auth/me`, { credentials: "include" });
+    if (!meRes.ok) { konnectUser = null; renderServerPicker(); return; }
+    konnectUser = await meRes.json();
+
+    const serversRes = await fetch(`${KONNECT_ORIGIN}/api/servers`, { credentials: "include" });
+    if (serversRes.ok) konnectServers = await serversRes.json();
+  } catch {
+    konnectUser = null;
+  }
+  renderServerPicker();
+}
+
+// --- Server picker ---
+
+function renderServerPicker() {
+  const menu = document.getElementById("server-picker-menu");
+  const label = document.getElementById("server-picker-label");
+
+  // Update button label
+  if (selectedServer === "all") {
+    label.textContent = "All";
+  } else if (selectedServer.type === "local") {
+    label.textContent = selectedServer.url.replace(/^https?:\/\//, "").replace(/\/+$/, "");
+  } else if (selectedServer.type === "konnect") {
+    label.textContent = selectedServer.name;
+  }
+
+  const isSelAll = selectedServer === "all";
+  let html = `
+    <div class="server-picker-section">
+      <button class="server-picker-item${isSelAll ? " selected" : ""}" data-server-key="all">
+        <span class="sp-name">All Servers</span>
+      </button>
+    </div>`;
+
+  if (klaudiiUrls.length) {
+    const items = klaudiiUrls.map((url, i) => {
+      const short = url.replace(/^https?:\/\//, "").replace(/\/+$/, "");
+      const isSel = selectedServer.type === "local" && selectedServer.url === url;
+      return `<button class="server-picker-item${isSel ? " selected" : ""}" data-server-key="local:${i}">
+        <span class="sp-name">${esc(short)}</span>
+      </button>`;
+    }).join("");
+    html += `<div class="server-picker-section"><div class="server-picker-heading">Local</div>${items}</div>`;
+  }
+
+  if (konnectServers.length) {
+    const items = konnectServers.map((srv) => {
+      const isSel = selectedServer.type === "konnect" && selectedServer.id === srv.id;
+      return `<button class="server-picker-item${isSel ? " selected" : ""}"
+        data-server-key="konnect:${esc(srv.id)}"
+        ${!srv.online ? "disabled" : ""}>
+        ${CLOUD_SVG}
+        <span class="sp-name">${esc(srv.name)}</span>
+        <span class="sp-dot ${srv.online ? "online" : "offline"}"></span>
+      </button>`;
+    }).join("");
+    html += `<div class="server-picker-section"><div class="server-picker-heading">Kloud Konnect</div>${items}</div>`;
+  } else if (konnectUser) {
+    html += `<div class="server-picker-section"><div class="server-picker-heading">Kloud Konnect</div>
+      <div class="server-picker-item" style="cursor:default;color:var(--text-dimmer)">No servers paired</div>
+    </div>`;
+  }
+
+  menu.innerHTML = html;
+}
+
 // --- Data loading ---
 
 async function refresh() {
-  try {
+  const allSessions = [];
+  const allProcs = [];
+  const seen = new Set(); // session IDs to deduplicate (same session reachable via local + Konnect)
+  let anyOk = false;
+
+  const fetchLocal = async (url) => {
     const [sessions, procs] = await Promise.all([
-      api("/api/sessions"),
-      api("/api/processes"),
+      api("/api/sessions", {}, url),
+      api("/api/processes", {}, url),
     ]);
-    lastSessions = sessions;
-    lastProcs = procs;
-    setConnected(true);
-    renderSessions(sessions, procs);
-    renderUnmanaged(procs);
-    checkApprovalStates(sessions); // async, re-renders only if state changes
-  } catch {
-    setConnected(false);
+    for (const s of sessions) {
+      const key = s.id || s.project;
+      if (!seen.has(key)) {
+        seen.add(key);
+        allSessions.push({ ...s, _serverUrl: url });
+      }
+    }
+    allProcs.push(...procs.map((p) => ({ ...p, _serverUrl: url })));
+    anyOk = true;
+  };
+
+  const fetchKonnect = async (kSrv) => {
+    const [sessions, procs] = await Promise.all([
+      konnectApi(kSrv.id, "/api/sessions"),
+      konnectApi(kSrv.id, "/api/processes"),
+    ]);
+    for (const s of sessions) {
+      const key = s.id || s.project;
+      if (!seen.has(key)) {
+        seen.add(key);
+        allSessions.push({ ...s, _konnectId: kSrv.id, _konnectName: kSrv.name });
+      }
+    }
+    allProcs.push(...procs.map((p) => ({ ...p, _konnectId: kSrv.id, _konnectName: kSrv.name })));
+    anyOk = true;
+  };
+
+  const tasks = [];
+  if (selectedServer === "all") {
+    for (const url of klaudiiUrls) tasks.push(fetchLocal(url));
+    for (const kSrv of konnectServers.filter((s) => s.online)) tasks.push(fetchKonnect(kSrv));
+  } else if (selectedServer.type === "local") {
+    tasks.push(fetchLocal(selectedServer.url));
+  } else if (selectedServer.type === "konnect") {
+    const kSrv = konnectServers.find((s) => s.id === selectedServer.id);
+    if (kSrv) tasks.push(fetchKonnect(kSrv));
   }
+
+  if (tasks.length === 0) {
+    // No servers configured yet
+    setConnected(true);
+    lastSessions = [];
+    lastProcs = [];
+    renderSessions([], [], false);
+    renderUnmanaged([]);
+    return;
+  }
+
+  await Promise.allSettled(tasks);
+
+  if (!anyOk) {
+    setConnected(false);
+    return;
+  }
+
+  // Update project → session lookup for action routing
+  sessionsByProject = {};
+  for (const s of allSessions) sessionsByProject[s.project] = s;
+
+  lastSessions = allSessions;
+  lastProcs = allProcs;
+  setConnected(true);
+  const showServerBadge = allSessions.some((s) => s._konnectId) || klaudiiUrls.length > 1;
+  renderSessions(allSessions, allProcs, showServerBadge);
+  renderUnmanaged(allProcs);
+  checkApprovalStates(allSessions);
 }
 
 function applyTheme() {
@@ -164,10 +510,6 @@ function setConnected(ok) {
 
 // --- Approval detection ---
 
-// For each running session that has an open tab, inject a tiny script to check
-// whether the claude.ai page is currently showing an approval button.
-// Detects "Allow …" (any variant) and "Skip" buttons.
-// Re-renders cards only when the set of sessions needing input changes.
 async function checkApprovalStates(sessions) {
   const newStates = {};
   for (const s of sessions) {
@@ -195,9 +537,7 @@ async function checkApprovalStates(sessions) {
       if (result?.clicked) {
         if (!sessionAutoApproved[s.project]) {
           sessionAutoApproved[s.project] = true;
-          // Re-render immediately so green class is applied right now
           renderSessions(lastSessions, lastProcs);
-          // Clean up state after 5s; next refresh() will render without the class
           setTimeout(() => { delete sessionAutoApproved[s.project]; }, 5000);
         }
       } else if (result?.found) {
@@ -211,7 +551,6 @@ async function checkApprovalStates(sessions) {
   sessionNeedsInput = newStates;
   if (changed) renderSessions(lastSessions, lastProcs);
 
-  // Run a fast poll while any session is waiting for input; cancel when clear
   const anyNeedsInput = Object.values(sessionNeedsInput).some(Boolean) || Object.values(sessionAutoApproved).some(Boolean);
   if (anyNeedsInput && !approvalFastPollTimer) {
     approvalFastPollTimer = setInterval(() => checkApprovalStates(lastSessions), 750);
@@ -242,7 +581,6 @@ function updateOpenTabs() {
     if (win?.id) query.windowId = win.id;
     chrome.tabs.query(query, (tabs) => {
       openTabs = new Map((tabs || []).filter((t) => t.url).map((t) => [t.url.split("?")[0], t.id]));
-      // Re-render cards so Switch/Open labels stay current
       if (lastSessions.length) renderSessions(lastSessions, lastProcs);
     });
   });
@@ -285,7 +623,11 @@ function sortSessions(sessions) {
 
 // --- Render sessions ---
 
-function renderSessions(sessions, procs) {
+function renderSessions(sessions, procs, showServerBadge) {
+  // Determine badge visibility: use last known value if not explicitly passed
+  if (showServerBadge === undefined) {
+    showServerBadge = sessions.some((s) => s._konnectId) || klaudiiUrls.length > 1;
+  }
   const container = document.getElementById("sessions-container");
 
   if (!sessions.length) {
@@ -305,12 +647,12 @@ function renderSessions(sessions, procs) {
   }
 
   container.innerHTML = sortSessions(sessions)
-    .map((s) => renderCard(s, procByProject[s.project]))
+    .map((s) => renderCard(s, procByProject[s.project], showServerBadge))
     .join("");
   highlightActiveSession();
 }
 
-function renderCard(s, proc) {
+function renderCard(s, proc, showServerBadge = false) {
   const parts = s.project.split("--");
   const repo = parts[0];
   const branch = parts.length > 1 ? parts.slice(1).join("--") : null;
@@ -346,7 +688,6 @@ function renderCard(s, proc) {
     stats = `<div class="proc-stats">${statParts.join(" · ")}</div>`;
   }
 
-  // Permission mode display
   const permBadge = `<span class="perm-badge perm-${mode}">${mode}</span>`;
   const permToggle = !isRunning ? `
     <div class="perm-toggle">
@@ -362,6 +703,17 @@ function renderCard(s, proc) {
   const inputDot = showDot ? `<span class="needs-input-dot" title="Waiting for your approval"></span>` : "";
   const attentionClass = wasAutoApproved ? " auto-approved"
     : (needsInput && attentionFlash ? " needs-attention" : "");
+
+  // Server badge when viewing "All" or multiple sources
+  let serverBadge = "";
+  if (showServerBadge) {
+    if (s._konnectName) {
+      serverBadge = `<span class="server-badge">${CLOUD_SVG}${esc(s._konnectName)}</span>`;
+    } else if (s._serverUrl) {
+      const short = s._serverUrl.replace(/^https?:\/\//, "").replace(/\/+$/, "");
+      serverBadge = `<span class="server-badge">${esc(short)}</span>`;
+    }
+  }
 
   let menuItems = "";
   if (isRunning) {
@@ -380,7 +732,7 @@ function renderCard(s, proc) {
   return `
     <div class="card${attentionClass}" data-project="${esc(s.project)}" data-claude-url="${esc(s.claudeUrl || "")}" data-status="${status}" data-open-title="${esc(displayTitle)}">
       <div class="card-header">
-        ${repoGitLink}<span class="card-title">${esc(repo)}</span>
+        ${repoGitLink}<span class="card-title">${esc(repo)}</span>${serverBadge}
         ${inputDot}
         <div class="card-badges">
           ${permBadge}
@@ -412,7 +764,9 @@ function renderUnmanaged(procs) {
 
   section.classList.remove("hidden");
   container.innerHTML = unmanaged.map((p) => `
-    <div class="card freerange-card">
+    <div class="card freerange-card"
+      data-server-url="${esc(p._serverUrl || "")}"
+      data-konnect-id="${esc(p._konnectId || "")}">
       <div class="freerange-top">
         <span class="freerange-pid">pid ${p.pid}${p.launchedBy ? ` <span class="freerange-from">via ${esc(p.launchedBy)}</span>` : ""}</span>
         <span class="freerange-stats">${p.cpu}% · ${p.memMB} MB${p.uptime ? ` · ${esc(p.uptime)}` : ""}</span>
@@ -430,6 +784,12 @@ document.addEventListener("click", async (e) => {
   // Repo list item click in add-workspace flow
   const repoItem = e.target.closest("[data-add-repo]");
   if (repoItem) { selectAddRepo(repoItem.dataset.addRepo); return; }
+
+  // Close server picker menu on outside click
+  if (!e.target.closest("#server-picker")) {
+    document.getElementById("server-picker-menu").classList.add("hidden");
+    document.getElementById("btn-server-picker").classList.remove("open");
+  }
 
   // Close open card menus when clicking outside them
   if (!e.target.closest(".card-menu") && !e.target.closest("[data-action='toggle-menu']")) {
@@ -458,7 +818,7 @@ document.addEventListener("click", async (e) => {
     case "start":
       btn.disabled = true;
       try {
-        await api("/api/sessions/start", { method: "POST", body: { project } });
+        await sessionApiCall(project, "/api/sessions/start", { method: "POST", body: { project } });
       } catch (err) {
         showToast("Error: " + err.message);
       }
@@ -468,7 +828,7 @@ document.addEventListener("click", async (e) => {
     case "continue":
       btn.disabled = true;
       try {
-        await api("/api/sessions/start", { method: "POST", body: { project, continueSession: true } });
+        await sessionApiCall(project, "/api/sessions/start", { method: "POST", body: { project, continueSession: true } });
       } catch (err) {
         showToast("Error: " + err.message);
       }
@@ -478,7 +838,7 @@ document.addEventListener("click", async (e) => {
     case "stop":
       btn.disabled = true;
       try {
-        await api("/api/sessions/stop", { method: "POST", body: { project } });
+        await sessionApiCall(project, "/api/sessions/stop", { method: "POST", body: { project } });
       } catch (err) {
         showToast("Error: " + err.message);
       }
@@ -488,7 +848,7 @@ document.addEventListener("click", async (e) => {
     case "restart":
       btn.disabled = true;
       try {
-        await api("/api/sessions/restart", { method: "POST", body: { project } });
+        await sessionApiCall(project, "/api/sessions/restart", { method: "POST", body: { project } });
       } catch (err) {
         showToast("Error: " + err.message);
       }
@@ -509,7 +869,7 @@ document.addEventListener("click", async (e) => {
     case "resume":
       btn.disabled = true;
       try {
-        await api("/api/sessions/start", {
+        await sessionApiCall(project, "/api/sessions/start", {
           method: "POST",
           body: { project, resumeSessionId: btn.dataset.sessionId },
         });
@@ -521,7 +881,6 @@ document.addEventListener("click", async (e) => {
 
     case "set-perm": {
       const mode = btn.dataset.mode;
-      // Update UI immediately for responsiveness
       btn.closest(".perm-toggle").querySelectorAll(".perm-btn").forEach((b) => {
         b.classList.remove("active", "perm-yolo", "perm-ask", "perm-strict");
         if (b.dataset.mode === mode) b.classList.add("active", `perm-${mode}`);
@@ -529,10 +888,10 @@ document.addEventListener("click", async (e) => {
       btn.closest(".card").querySelector(".perm-badge").className = `perm-badge perm-${mode}`;
       btn.closest(".card").querySelector(".perm-badge").textContent = mode;
       try {
-        await api("/api/projects/permission", { method: "POST", body: { project, mode } });
+        await sessionApiCall(project, "/api/projects/permission", { method: "POST", body: { project, mode } });
       } catch (err) {
         showToast("Error: " + err.message);
-        refresh(); // revert on error
+        refresh();
       }
       break;
     }
@@ -541,7 +900,7 @@ document.addEventListener("click", async (e) => {
       if (btn.dataset.armed === "force") {
         btn.disabled = true;
         try {
-          await api("/api/projects/remove", { method: "POST", body: { project, force: true } });
+          await sessionApiCall(project, "/api/projects/remove", { method: "POST", body: { project, force: true } });
           refresh();
         } catch (err) {
           showToast("Error: " + err.message);
@@ -550,11 +909,10 @@ document.addEventListener("click", async (e) => {
       } else if (btn.dataset.armed) {
         btn.disabled = true;
         try {
-          await api("/api/projects/remove", { method: "POST", body: { project } });
+          await sessionApiCall(project, "/api/projects/remove", { method: "POST", body: { project } });
           refresh();
         } catch (err) {
           if (err.status === 409) {
-            // Dirty repo — offer force
             const g = err.data?.git;
             const detail = g
               ? `${g.dirtyFiles || 0} changed, ${g.unpushed || 0} unpushed`
@@ -592,10 +950,17 @@ document.addEventListener("click", async (e) => {
       }
       break;
 
-    case "kill":
+    case "kill": {
+      const card = btn.closest(".freerange-card");
+      const konnectId = card?.dataset.konnectId;
+      const serverUrl = card?.dataset.serverUrl;
+      const killApi = (path, opts) => konnectId
+        ? konnectApi(konnectId, path, opts)
+        : api(path, opts, serverUrl || undefined);
+
       if (btn.dataset.armed) {
         try {
-          await api("/api/processes/kill", { method: "POST", body: { pid: parseInt(btn.dataset.pid) } });
+          await killApi("/api/processes/kill", { method: "POST", body: { pid: parseInt(btn.dataset.pid) } });
         } catch {}
         refresh();
       } else {
@@ -611,6 +976,7 @@ document.addEventListener("click", async (e) => {
         }, 3000);
       }
       break;
+    }
 
     case "toggle-menu": {
       const card = btn.closest(".card");
@@ -643,7 +1009,7 @@ document.addEventListener("click", async (e) => {
     });
   } else if (status === "stopped") {
     try {
-      await api("/api/sessions/start", { method: "POST", body: { project, continueSession: true } });
+      await sessionApiCall(project, "/api/sessions/start", { method: "POST", body: { project, continueSession: true } });
     } catch (err) {
       showToast("Error: " + err.message);
     }
@@ -666,7 +1032,7 @@ async function toggleHistory(project) {
   container.classList.remove("hidden");
 
   try {
-    const sessions = await api(`/api/history?project=${encodeURIComponent(project)}`);
+    const sessions = await sessionApiCall(project, `/api/history?project=${encodeURIComponent(project)}`);
     if (!sessions.length) {
       container.innerHTML = '<div style="padding:4px 0;color:#555;font-size:11px">No sessions found.</div>';
       return;
@@ -797,7 +1163,7 @@ async function submitCreateRepo() {
 // --- Navigation ---
 
 function openDashboard() {
-  chrome.runtime.sendMessage({ action: "openUrl", url: klaudiiUrl });
+  chrome.runtime.sendMessage({ action: "openUrl", url: klaudiiUrls[0] || DEFAULT_KLAUDII_URL });
 }
 
 function openSettings() {

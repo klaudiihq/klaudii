@@ -28,10 +28,10 @@
 /* Light — OS preference */
 @media (prefers-color-scheme: light) {
   :root {
-    --bg:               #f5f7fa;
-    --bg-sunken:        #edf0f5;
-    --bg-raised:        #ffffff;
-    --bg-overlay:       #ffffff;
+    --bg:               #edf0f5;
+    --bg-sunken:        #e4e7ec;
+    --bg-raised:        #f5f7fa;
+    --bg-overlay:       #f5f7fa;
     --border:           #dce0ea;
     --border-strong:    #b8bfc9;
     --text:             #1e2433;
@@ -78,10 +78,10 @@ html.theme-dark {
 }
 
 html.theme-light {
-  --bg:               #f5f7fa;
-  --bg-sunken:        #edf0f5;
-  --bg-raised:        #ffffff;
-  --bg-overlay:       #ffffff;
+  --bg:               #edf0f5;
+  --bg-sunken:        #e4e7ec;
+  --bg-raised:        #f5f7fa;
+  --bg-overlay:       #f5f7fa;
   --border:           #dce0ea;
   --border-strong:    #b8bfc9;
   --text:             #1e2433;
@@ -193,10 +193,22 @@ h1 {
 .sort-bar {
   display: flex;
   align-items: center;
-  gap: 4px;
+  justify-content: space-between;
   padding: 5px 12px;
   border-bottom: 1px solid var(--border);
   background: var(--bg);
+}
+
+.sort-left {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.sort-right {
+  display: flex;
+  align-items: center;
+  position: relative;
 }
 
 .sort-label {
@@ -220,6 +232,107 @@ h1 {
 
 .sort-btn:hover  { color: var(--text-tertiary); border-color: var(--border-strong); }
 .sort-btn.active { background: var(--border); color: var(--text); border-color: var(--border-strong); }
+
+/* Server picker */
+.server-picker {
+  position: relative;
+}
+
+.server-picker-btn {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 10px;
+  padding: 2px 6px 2px 7px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: transparent;
+  color: var(--text-dim);
+  cursor: pointer;
+  transition: all 0.15s;
+  max-width: 120px;
+}
+
+.server-picker-btn:hover  { color: var(--text-tertiary); border-color: var(--border-strong); }
+.server-picker-btn.open   { background: var(--border); color: var(--text); border-color: var(--border-strong); }
+
+#server-picker-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 90px;
+}
+
+.server-picker-chevron { flex-shrink: 0; opacity: 0.6; }
+
+.server-picker-menu {
+  position: absolute;
+  right: 0;
+  top: calc(100% + 4px);
+  background: var(--bg-overlay);
+  border: 1px solid var(--border-strong);
+  border-radius: 6px;
+  box-shadow: 0 4px 16px var(--shadow-overlay);
+  min-width: 180px;
+  max-width: 240px;
+  z-index: 100;
+  overflow: hidden;
+}
+
+.server-picker-section {
+  padding: 4px 0;
+}
+
+.server-picker-section + .server-picker-section {
+  border-top: 1px solid var(--border);
+}
+
+.server-picker-heading {
+  font-size: 9px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-dimmer);
+  padding: 5px 10px 3px;
+}
+
+.server-picker-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  padding: 5px 10px;
+  font-size: 11px;
+  color: var(--text-secondary);
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  text-align: left;
+  transition: background 0.1s;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.server-picker-item:hover:not(:disabled) { background: var(--bg-raised); color: var(--text); }
+.server-picker-item.selected { color: var(--text); font-weight: 600; }
+.server-picker-item:disabled { color: var(--text-dimmer); cursor: default; opacity: 0.6; }
+
+.server-picker-item .sp-name {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.sp-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+.sp-dot.online  { background: var(--ok-fg); }
+.sp-dot.offline { background: var(--text-dimmer); }
+
+.sp-cloud-icon { flex-shrink: 0; opacity: 0.7; }
 
 /* Add workspace form */
 .add-form {
@@ -480,6 +593,23 @@ h1 {
 
 .card-title .git-link { margin-right: 4px; }
 .git-bar .git-link    { margin-right: 1px; }
+
+/* Server source badge (shown when "All" is selected) */
+.server-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  font-size: 9px;
+  color: var(--text-dimmer);
+  background: var(--bg-sunken);
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  padding: 1px 4px;
+  margin-left: 4px;
+  vertical-align: middle;
+  line-height: 1.4;
+  flex-shrink: 0;
+}
 
 /* Git status bar */
 .git-bar {

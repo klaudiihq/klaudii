@@ -42,9 +42,22 @@
   </div>
 
   <div class="sort-bar">
-    <span class="sort-label">Sort</span>
-    <button class="sort-btn active" id="sort-activity" data-sort="activity">Activity</button>
-    <button class="sort-btn" id="sort-alpha" data-sort="alpha">A–Z</button>
+    <div class="sort-left">
+      <span class="sort-label">Sort</span>
+      <button class="sort-btn active" id="sort-activity" data-sort="activity">Activity</button>
+      <button class="sort-btn" id="sort-alpha" data-sort="alpha">A–Z</button>
+    </div>
+    <div class="sort-right">
+      <div id="server-picker" class="server-picker">
+        <button id="btn-server-picker" class="server-picker-btn" title="Select server">
+          <span id="server-picker-label">local</span>
+          <svg class="server-picker-chevron" width="10" height="10" viewBox="0 0 10 10" fill="none">
+            <path d="M2 3.5l3 3 3-3" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+          </svg>
+        </button>
+        <div id="server-picker-menu" class="server-picker-menu hidden"></div>
+      </div>
+    </div>
   </div>
 
   <div id="add-workspace-form" class="add-form hidden">
