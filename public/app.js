@@ -528,9 +528,11 @@ async function refresh() {
 
 let allRepos = [];
 let selectedRepo = null;
+let selectedRepoOwner = null;
 
 async function openNewSessionModal() {
   selectedRepo = null;
+  selectedRepoOwner = null;
   document.getElementById("branch-form").classList.add("hidden");
   document.getElementById("repo-search").value = "";
   document.getElementById("branch-input").value = "";
@@ -570,7 +572,7 @@ function closeModal(event) {
 function filterRepos() {
   const q = document.getElementById("repo-search").value.toLowerCase();
   const filtered = allRepos.filter((r) =>
-    r.name.toLowerCase().includes(q) || (r.description || "").toLowerCase().includes(q)
+    r.name.toLowerCase().includes(q) || (r.owner || "").toLowerCase().includes(q) || (r.description || "").toLowerCase().includes(q)
   );
   renderRepoList(filtered);
 }
@@ -585,9 +587,9 @@ function renderRepoList(repos) {
   container.innerHTML = repos
     .map(
       (r) => `
-    <div class="repo-item ${selectedRepo === r.name ? "selected" : ""}" onclick="selectRepo('${esc(r.name)}')">
+    <div class="repo-item ${selectedRepo === r.name && selectedRepoOwner === r.owner ? "selected" : ""}" onclick="selectRepo('${esc(r.name)}', '${esc(r.owner || "")}')">
       <div>
-        <div class="repo-name">${esc(r.name)}</div>
+        <div class="repo-name">${r.owner ? `<span class="repo-owner">${esc(r.owner)}/</span>` : ""}${esc(r.name)}</div>
         ${r.description ? `<div class="repo-desc">${esc(r.description)}</div>` : ""}
       </div>
       <div class="repo-badges">
@@ -600,8 +602,9 @@ function renderRepoList(repos) {
     .join("");
 }
 
-function selectRepo(name) {
+function selectRepo(name, owner) {
   selectedRepo = name;
+  selectedRepoOwner = owner || null;
   renderRepoList(allRepos.filter((r) => {
     const q = document.getElementById("repo-search").value.toLowerCase();
     return r.name.toLowerCase().includes(q) || (r.description || "").toLowerCase().includes(q);
@@ -626,7 +629,7 @@ async function createNewSession() {
   try {
     const result = await api("/api/sessions/new", {
       method: "POST",
-      body: { repo: selectedRepo, branch },
+      body: { repo: selectedRepo, owner: selectedRepoOwner, branch },
     });
 
     if (result.error) {

@@ -478,7 +478,7 @@ app.post("/api/repos/create", (req, res) => {
 // --- New session (clone + worktree + start) ---
 
 app.post("/api/sessions/new", (req, res) => {
-  const { repo, branch } = req.body;
+  const { repo, owner, branch } = req.body;
   if (!repo) {
     return res.status(400).json({ error: "repo required" });
   }
@@ -498,9 +498,11 @@ app.post("/api/sessions/new", (req, res) => {
       let sshUrl;
       try {
         const repos = github.listRepos();
-        const ghRepo = repos.find((r) => r.name === repo);
+        const ghRepo = owner
+          ? repos.find((r) => r.name === repo && r.owner === owner)
+          : repos.find((r) => r.name === repo);
         if (!ghRepo) {
-          return res.status(404).json({ error: `repo "${repo}" not found on GitHub` });
+          return res.status(404).json({ error: `repo "${owner ? owner + "/" : ""}${repo}" not found on GitHub` });
         }
         sshUrl = ghRepo.sshUrl;
       } catch (err) {

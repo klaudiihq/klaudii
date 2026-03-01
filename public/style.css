@@ -548,6 +548,11 @@ h2 {
   font-weight: 500;
 }
 
+.repo-owner {
+  color: #888;
+  font-weight: 400;
+}
+
 .repo-desc {
   font-size: 0.75rem;
   color: #666;
