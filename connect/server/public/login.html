@@ -7,21 +7,26 @@
   <link rel="stylesheet" href="/konnect.css">
 </head>
 <body class="centered-page">
-  <div class="konnect-card" style="text-align:center">
-    <div class="konnect-logo" style="justify-content:center">
-      <svg viewBox="0 0 512 512" xmlns="http://www.w3.org/2000/svg" width="36" height="36">
-        <defs><linearGradient id="kg" x1="256" y1="80" x2="256" y2="432" gradientUnits="userSpaceOnUse">
-          <stop offset="0%" stop-color="#86efac"/><stop offset="50%" stop-color="#4ade80"/><stop offset="100%" stop-color="#22c55e"/>
-        </linearGradient></defs>
-        <path d="M176 80 L176 432 L224 432 L224 288 L336 432 L400 432 L272 268 L384 80 L320 80 L224 244 L224 80 Z" fill="url(#kg)"/>
-      </svg>
-      <div>
-        <span class="konnect-logo-text">Klaudii</span>
-        <span class="konnect-logo-sub">Kloud Konnect</span>
+  <nav class="nav">
+    <div class="nav-inner">
+      <a href="https://www.klaudii.com" class="nav-logo">
+        <svg class="nav-logo-icon" viewBox="0 0 512 512" xmlns="http://www.w3.org/2000/svg">
+          <defs><linearGradient id="lg" x1="256" y1="80" x2="256" y2="432" gradientUnits="userSpaceOnUse"><stop offset="0%" stop-color="#86efac"/><stop offset="50%" stop-color="#4ade80"/><stop offset="100%" stop-color="#22c55e"/></linearGradient></defs>
+          <rect x="132" y="100" width="40" height="312" rx="20" fill="url(#lg)"/>
+          <line x1="188" y1="256" x2="362" y2="120" stroke="url(#lg)" stroke-width="40" stroke-linecap="round"/>
+          <line x1="188" y1="256" x2="362" y2="392" stroke="url(#lg)" stroke-width="40" stroke-linecap="round"/>
+        </svg>
+        <span>Klaudii</span>
+      </a>
+      <div class="nav-right">
+        <a href="https://www.klaudii.com/docs" class="btn btn-ghost btn-sm">Docs</a>
       </div>
     </div>
+  </nav>
 
-    <p class="subtitle" style="margin-top:0.75rem">Access your servers from anywhere</p>
+  <div class="konnect-card" style="text-align:center">
+    <h2 style="font-size:1.5rem; margin-bottom:0.25rem">Kloud Konnect</h2>
+    <p class="subtitle" style="margin-top:0.5rem">Access your servers from anywhere</p>
 
     <a href="/auth/google" class="btn-google" style="display:inline-flex; align-items:center; gap:0.75rem">
       <svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
@@ -38,5 +43,12 @@
       This relay cannot read your dashboard data — it just forwards encrypted packets.
     </p>
   </div>
+
+  <footer class="konnect-footer">
+    <span class="copyright">&copy; 2025 Klaudii</span>
+    <a href="https://www.klaudii.com">Home</a>
+    <a href="https://www.klaudii.com/docs">Docs</a>
+    <a href="https://github.com/klaudiihq/klaudii">GitHub</a>
+  </footer>
 </body>
 </html>

@@ -29,20 +29,27 @@
     </div>
   </div>
 
+  <!-- Nav bar (same as klaudii.com) -->
+  <nav class="nav">
+    <div class="nav-inner">
+      <a href="https://www.klaudii.com" class="nav-logo">
+        <svg class="nav-logo-icon" viewBox="0 0 512 512" xmlns="http://www.w3.org/2000/svg">
+          <defs><linearGradient id="lg" x1="256" y1="80" x2="256" y2="432" gradientUnits="userSpaceOnUse"><stop offset="0%" stop-color="#86efac"/><stop offset="50%" stop-color="#4ade80"/><stop offset="100%" stop-color="#22c55e"/></linearGradient></defs>
+          <rect x="132" y="100" width="40" height="312" rx="20" fill="url(#lg)"/>
+          <line x1="188" y1="256" x2="362" y2="120" stroke="url(#lg)" stroke-width="40" stroke-linecap="round"/>
+          <line x1="188" y1="256" x2="362" y2="392" stroke="url(#lg)" stroke-width="40" stroke-linecap="round"/>
+        </svg>
+        <span>Klaudii</span>
+      </a>
+      <div class="nav-right">
+        <span id="user-name" class="badge">...</span>
+        <button class="btn btn-sm btn-ghost" onclick="logout()">Sign Out</button>
+      </div>
+    </div>
+  </nav>
+
   <!-- Server picker view -->
   <div id="picker-view">
-    <header>
-      <svg viewBox="0 0 512 512" xmlns="http://www.w3.org/2000/svg" width="28" height="28">
-        <defs><linearGradient id="kg" x1="256" y1="80" x2="256" y2="432" gradientUnits="userSpaceOnUse">
-          <stop offset="0%" stop-color="#86efac"/><stop offset="50%" stop-color="#4ade80"/><stop offset="100%" stop-color="#22c55e"/>
-        </linearGradient></defs>
-        <path d="M176 80 L176 432 L224 432 L224 288 L336 432 L400 432 L272 268 L384 80 L320 80 L224 244 L224 80 Z" fill="url(#kg)"/>
-      </svg>
-      <h1>Klaudii</h1>
-      <span id="user-name" class="badge">...</span>
-      <button class="btn btn-sm btn-ghost" onclick="logout()" style="margin-left:auto">Sign Out</button>
-    </header>
-
     <div class="server-picker">
       <h2>
         Your Servers
@@ -50,6 +57,13 @@
       </h2>
       <div id="server-list"></div>
     </div>
+
+    <footer class="konnect-footer">
+      <span class="copyright">&copy; 2025 Klaudii</span>
+      <a href="https://www.klaudii.com">Home</a>
+      <a href="https://www.klaudii.com/docs">Docs</a>
+      <a href="https://github.com/klaudiihq/klaudii">GitHub</a>
+    </footer>
   </div>
 
   <!-- Dashboard view (when a server is selected) -->
@@ -70,16 +84,11 @@
     async function init() {
       try {
         const resp = await fetch("/auth/me");
-        if (!resp.ok) {
-          window.location.href = "/";
-          return;
-        }
+        if (!resp.ok) { window.location.href = "/"; return; }
         currentUser = await resp.json();
         document.getElementById("user-name").textContent = currentUser.name || currentUser.email;
         loadServers();
-      } catch {
-        window.location.href = "/";
-      }
+      } catch { window.location.href = "/"; }
     }
 
     async function loadServers() {
@@ -122,7 +131,6 @@
 
     async function deleteServer(id, name) {
       if (!confirm(`Remove "${name}"? This cannot be undone.`)) return;
-      // Also remove stored connection key
       const keys = JSON.parse(localStorage.getItem("klaudii-connection-keys") || "{}");
       delete keys[id];
       localStorage.setItem("klaudii-connection-keys", JSON.stringify(keys));
@@ -160,26 +168,18 @@
       loadServers();
     }
 
-    function enterKey(serverId) {
-      window.location.href = `/pair.html?serverId=${serverId}`;
-    }
+    function enterKey(serverId) { window.location.href = `/pair.html?serverId=${serverId}`; }
 
     function selectServer(serverId, serverName) {
       currentServerId = serverId;
       document.getElementById("active-server-name").textContent = serverName;
       document.getElementById("active-user-name").textContent = currentUser.name || currentUser.email;
 
-      // Initialize the encrypted WebSocket tunnel
       const key = getConnectionKey(serverId);
-      if (!key) {
-        enterKey(serverId);
-        return;
-      }
+      if (!key) { enterKey(serverId); return; }
 
       document.getElementById("picker-view").style.display = "none";
       document.getElementById("dashboard-view").style.display = "block";
-
-      // Start the cloud tunnel and load the dashboard
       initCloudTunnel(serverId, key, currentUser.id);
     }
 

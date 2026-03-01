@@ -7,6 +7,23 @@
   <link rel="stylesheet" href="/konnect.css">
 </head>
 <body class="centered-page">
+  <nav class="nav">
+    <div class="nav-inner">
+      <a href="/" class="nav-logo">
+        <svg class="nav-logo-icon" viewBox="0 0 512 512" xmlns="http://www.w3.org/2000/svg">
+          <defs><linearGradient id="lg" x1="256" y1="80" x2="256" y2="432" gradientUnits="userSpaceOnUse"><stop offset="0%" stop-color="#86efac"/><stop offset="50%" stop-color="#4ade80"/><stop offset="100%" stop-color="#22c55e"/></linearGradient></defs>
+          <rect x="132" y="100" width="40" height="312" rx="20" fill="url(#lg)"/>
+          <line x1="188" y1="256" x2="362" y2="120" stroke="url(#lg)" stroke-width="40" stroke-linecap="round"/>
+          <line x1="188" y1="256" x2="362" y2="392" stroke="url(#lg)" stroke-width="40" stroke-linecap="round"/>
+        </svg>
+        <span>Klaudii</span>
+      </a>
+      <div class="nav-right">
+        <a href="https://www.klaudii.com/docs" class="btn btn-ghost btn-sm">Docs</a>
+      </div>
+    </div>
+  </nav>
+
   <div class="konnect-card wide">
     <h2>Pair this Browser</h2>
     <p class="subtitle" id="pair-subtitle">
@@ -46,6 +63,13 @@
     </div>
   </div>
 
+  <footer class="konnect-footer">
+    <span class="copyright">&copy; 2025 Klaudii</span>
+    <a href="https://www.klaudii.com">Home</a>
+    <a href="https://www.klaudii.com/docs">Docs</a>
+    <a href="https://github.com/klaudiihq/klaudii">GitHub</a>
+  </footer>
+
   <script src="https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.min.js"></script>
   <script>
     const params = new URLSearchParams(window.location.search);
@@ -68,8 +92,6 @@
       document.getElementById("divider-el").style.display = "block";
     }
 
-    // --- QR Scanner using camera + canvas + jsQR ---
-
     async function startScanner() {
       const btn = document.getElementById("scan-btn");
       const container = document.getElementById("scanner-container");
@@ -84,8 +106,6 @@
         container.style.display = "block";
         btn.style.display = "none";
         status.textContent = "Point your camera at the QR code...";
-
-        // Start scanning frames
         scannerInterval = setInterval(() => scanFrame(), 250);
       } catch (err) {
         status.textContent = "Camera access denied. Paste the key below instead.";
@@ -95,77 +115,38 @@
     function scanFrame() {
       const video = document.getElementById("scanner-video");
       const canvas = document.getElementById("scanner-canvas");
-
       if (video.readyState !== video.HAVE_ENOUGH_DATA) return;
-
       canvas.width = video.videoWidth;
       canvas.height = video.videoHeight;
       const ctx = canvas.getContext("2d", { willReadFrequently: true });
       ctx.drawImage(video, 0, 0);
-
-      // Use jsQR — works on all browsers including iOS Safari
       const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
       const code = jsQR(imageData.data, imageData.width, imageData.height);
-      if (code) {
-        handleQRResult(code.data);
-      }
+      if (code) handleQRResult(code.data);
     }
 
     function handleQRResult(text) {
-      // Expected format: klaudii://<serverId>/<connectionKeyHex>
       const match = text.match(/^klaudii:\/\/([^/]+)\/([0-9a-fA-F]{64})$/);
       if (!match) return;
-
       const [, scannedServerId, connectionKey] = match;
-
-      // Use the scanned serverId if we don't have one from URL
-      const effectiveServerId = targetServerId || scannedServerId;
-
       stopScanner();
-      saveKeyForServer(effectiveServerId, connectionKey);
+      saveKeyForServer(targetServerId || scannedServerId, connectionKey);
     }
 
     function stopScanner() {
-      if (scannerInterval) {
-        clearInterval(scannerInterval);
-        scannerInterval = null;
-      }
-      if (scannerStream) {
-        scannerStream.getTracks().forEach((t) => t.stop());
-        scannerStream = null;
-      }
+      if (scannerInterval) { clearInterval(scannerInterval); scannerInterval = null; }
+      if (scannerStream) { scannerStream.getTracks().forEach((t) => t.stop()); scannerStream = null; }
       document.getElementById("scanner-container").style.display = "none";
     }
 
-    // --- Manual entry ---
-
     function saveKey() {
       const key = document.getElementById("key-input").value.replace(/\s/g, "").trim();
-      if (!key) {
-        showError("Please enter the connection key");
-        return;
-      }
-
-      // Try to parse as klaudii:// URL (if they pasted the full QR content)
+      if (!key) { showError("Please enter the connection key"); return; }
       const match = key.match(/^klaudii:\/\/([^/]+)\/([0-9a-fA-F]{64})$/);
-      if (match) {
-        const [, scannedServerId, connectionKey] = match;
-        saveKeyForServer(targetServerId || scannedServerId, connectionKey);
-        return;
-      }
-
-      // Otherwise treat as raw hex key
+      if (match) { saveKeyForServer(targetServerId || match[1], match[2]); return; }
       const clean = key.replace(/-/g, "").replace(/\s/g, "");
-      if (!/^[0-9a-fA-F]{64}$/.test(clean)) {
-        showError("Invalid key format. Should be 64 hex characters (with optional dashes).");
-        return;
-      }
-
-      if (!targetServerId) {
-        showError("Missing server ID. Go back to the dashboard and try again.");
-        return;
-      }
-
+      if (!/^[0-9a-fA-F]{64}$/.test(clean)) { showError("Invalid key format. Should be 64 hex characters (with optional dashes)."); return; }
+      if (!targetServerId) { showError("Missing server ID. Go back to the dashboard and try again."); return; }
       saveKeyForServer(targetServerId, clean);
     }
 
@@ -173,7 +154,6 @@
       const keys = JSON.parse(localStorage.getItem("klaudii-connection-keys") || "{}");
       keys[serverId] = keyHex;
       localStorage.setItem("klaudii-connection-keys", JSON.stringify(keys));
-
       document.getElementById("pair-content").style.display = "none";
       document.getElementById("success-msg").style.display = "block";
     }
