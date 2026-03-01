@@ -10,7 +10,11 @@ const proxy = require("./lib/proxy");
 
 // --- Config from environment ---
 const PORT = process.env.PORT || 3000;
-const SESSION_SECRET = process.env.SESSION_SECRET || "klaudii-dev-secret-change-in-prod";
+const SESSION_SECRET = process.env.SESSION_SECRET;
+if (!SESSION_SECRET) {
+  console.error("FATAL: SESSION_SECRET environment variable is required");
+  process.exit(1);
+}
 const DB_PATH = process.env.DB_PATH || path.join(__dirname, "relay.db");
 
 // --- Initialize ---
