@@ -4,71 +4,26 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Klaudii — Kloud Konnect</title>
-  <style>
-    * { box-sizing: border-box; margin: 0; padding: 0; }
-    body {
-      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-      background: #0f1117;
-      color: #e0e0e0;
-      display: flex;
-      justify-content: center;
-      align-items: center;
-      min-height: 100vh;
-    }
-    .login-card {
-      background: #1a1d25;
-      border: 1px solid #2a2d35;
-      border-radius: 12px;
-      padding: 2.5rem;
-      text-align: center;
-      max-width: 400px;
-      width: 90%;
-    }
-    h1 {
-      font-size: 2rem;
-      margin-bottom: 0.5rem;
-      color: #fff;
-    }
-    .subtitle {
-      color: #888;
-      font-size: 0.9rem;
-      margin-bottom: 2rem;
-    }
-    .login-btn {
-      display: inline-flex;
-      align-items: center;
-      gap: 0.75rem;
-      background: #fff;
-      color: #333;
-      border: none;
-      border-radius: 8px;
-      padding: 0.75rem 1.5rem;
-      font-size: 1rem;
-      font-weight: 500;
-      cursor: pointer;
-      text-decoration: none;
-      transition: background 0.15s;
-    }
-    .login-btn:hover { background: #f0f0f0; }
-    .login-btn svg {
-      width: 20px;
-      height: 20px;
-    }
-    .security-note {
-      margin-top: 2rem;
-      font-size: 0.75rem;
-      color: #555;
-      line-height: 1.5;
-    }
-    .security-note strong { color: #888; }
-  </style>
+  <link rel="stylesheet" href="/konnect.css">
 </head>
-<body>
-  <div class="login-card">
-    <h1>Klaudii</h1>
-    <p class="subtitle">Access your servers from anywhere</p>
+<body class="centered-page">
+  <div class="konnect-card" style="text-align:center">
+    <div class="konnect-logo" style="justify-content:center">
+      <svg viewBox="0 0 512 512" xmlns="http://www.w3.org/2000/svg" width="36" height="36">
+        <defs><linearGradient id="kg" x1="256" y1="80" x2="256" y2="432" gradientUnits="userSpaceOnUse">
+          <stop offset="0%" stop-color="#86efac"/><stop offset="50%" stop-color="#4ade80"/><stop offset="100%" stop-color="#22c55e"/>
+        </linearGradient></defs>
+        <path d="M176 80 L176 432 L224 432 L224 288 L336 432 L400 432 L272 268 L384 80 L320 80 L224 244 L224 80 Z" fill="url(#kg)"/>
+      </svg>
+      <div>
+        <span class="konnect-logo-text">Klaudii</span>
+        <span class="konnect-logo-sub">Kloud Konnect</span>
+      </div>
+    </div>
 
-    <a href="/auth/google" class="login-btn">
+    <p class="subtitle" style="margin-top:0.75rem">Access your servers from anywhere</p>
+
+    <a href="/auth/google" class="btn-google" style="display:inline-flex; align-items:center; gap:0.75rem">
       <svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
         <path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92a5.06 5.06 0 01-2.2 3.32v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.1z" fill="#4285F4"/>
         <path d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" fill="#34A853"/>

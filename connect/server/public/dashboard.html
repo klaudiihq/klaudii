@@ -4,207 +4,8 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Klaudii — Kloud Konnect</title>
+  <link rel="stylesheet" href="/konnect.css">
   <link rel="stylesheet" href="/dashboard/style.css">
-  <style>
-    /* Cloud-specific overrides */
-    .server-picker {
-      max-width: 600px;
-      margin: 4rem auto;
-      padding: 0 1rem;
-    }
-    .server-picker h2 {
-      margin-bottom: 1rem;
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-    }
-    .server-card {
-      background: #1a1d25;
-      border: 1px solid #2a2d35;
-      border-radius: 8px;
-      padding: 1rem 1.25rem;
-      margin-bottom: 0.75rem;
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      cursor: pointer;
-      transition: border-color 0.15s, background 0.15s;
-    }
-    .server-card:hover { background: #252830; border-color: #3a3d45; }
-    .server-card .server-name {
-      font-weight: 500;
-      color: #fff;
-      font-size: 1rem;
-    }
-    .server-card .server-meta {
-      font-size: 0.75rem;
-      color: #666;
-      margin-top: 0.25rem;
-    }
-    .server-card .status-dot {
-      width: 10px;
-      height: 10px;
-      border-radius: 50%;
-      flex-shrink: 0;
-    }
-    .status-dot.online { background: #4ade80; }
-    .status-dot.offline { background: #555; }
-    .cloud-header {
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      padding: 0.75rem 1.25rem;
-      background: #1a1d25;
-      border-bottom: 1px solid #2a2d35;
-    }
-    .cloud-header .back-btn {
-      background: none;
-      border: 1px solid #3a3d45;
-      color: #aaa;
-      padding: 0.3rem 0.75rem;
-      border-radius: 6px;
-      cursor: pointer;
-      font-size: 0.8rem;
-    }
-    .cloud-header .back-btn:hover { background: #252830; color: #fff; }
-    .cloud-header .server-label {
-      font-size: 0.9rem;
-      color: #4ade80;
-    }
-    .cloud-header .user-info {
-      font-size: 0.8rem;
-      color: #666;
-    }
-    .empty-state {
-      text-align: center;
-      padding: 3rem 1rem;
-      color: #666;
-    }
-    .empty-state h3 { color: #aaa; margin-bottom: 0.5rem; }
-    .pair-action {
-      margin-top: 1.5rem;
-    }
-    .no-key-warning {
-      background: #3a2a1a;
-      border: 1px solid #fbbf24;
-      border-radius: 6px;
-      padding: 0.5rem 0.75rem;
-      font-size: 0.8rem;
-      color: #fbbf24;
-      margin-top: 0.5rem;
-      cursor: pointer;
-    }
-    #dashboard-frame {
-      width: 100%;
-      height: calc(100vh - 45px);
-      border: none;
-    }
-    /* Pairing code modal */
-    .pair-modal-overlay {
-      position: fixed;
-      inset: 0;
-      background: rgba(0,0,0,0.75);
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      z-index: 200;
-      backdrop-filter: blur(4px);
-    }
-    .pair-modal {
-      background: #1a1d25;
-      border: 1px solid #2a2d35;
-      border-radius: 12px;
-      padding: 2rem 2rem 1.5rem;
-      max-width: 460px;
-      width: 90%;
-    }
-    .pair-modal h2 {
-      text-align: center;
-      margin-bottom: 0.35rem;
-      font-size: 1.25rem;
-    }
-    .pair-modal-sub {
-      text-align: center;
-      color: #666;
-      font-size: 0.82rem;
-      margin-bottom: 1.5rem;
-    }
-    .pairing-code-display {
-      background: #0f1117;
-      border: 1px solid #2a2d35;
-      border-radius: 8px;
-      padding: 1.25rem 1rem;
-      text-align: center;
-      margin-bottom: 0.75rem;
-    }
-    .pairing-code-display .code {
-      font-size: 2.75rem;
-      font-weight: 700;
-      letter-spacing: 0.2em;
-      font-family: ui-monospace, monospace;
-      color: #4ade80;
-      line-height: 1;
-    }
-    .pairing-code-display .expires {
-      font-size: 0.75rem;
-      color: #555;
-      margin-top: 0.5rem;
-    }
-    .pair-steps {
-      list-style: none;
-      padding: 0;
-      margin: 1.25rem 0 1.5rem;
-      border: 1px solid #2a2d35;
-      border-radius: 8px;
-      overflow: hidden;
-    }
-    .pair-steps li {
-      display: flex;
-      align-items: flex-start;
-      gap: 0.75rem;
-      padding: 0.65rem 1rem;
-      border-bottom: 1px solid #2a2d35;
-      font-size: 0.83rem;
-      color: #aaa;
-      line-height: 1.4;
-    }
-    .pair-steps li:last-child { border-bottom: none; }
-    .pair-step-num {
-      min-width: 20px;
-      height: 20px;
-      border-radius: 50%;
-      background: #252830;
-      color: #888;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      font-size: 0.7rem;
-      font-weight: 600;
-      flex-shrink: 0;
-      margin-top: 0.05rem;
-    }
-    .pair-modal-footer {
-      display: flex;
-      justify-content: flex-end;
-      gap: 0.5rem;
-    }
-    .delete-server-btn {
-      background: none;
-      border: 1px solid transparent;
-      color: #555;
-      width: 26px;
-      height: 26px;
-      border-radius: 6px;
-      cursor: pointer;
-      font-size: 0.75rem;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      transition: all 0.15s;
-      flex-shrink: 0;
-    }
-    .delete-server-btn:hover { background: #2a1a1a; border-color: #ef4444; color: #f87171; }
-  </style>
 </head>
 <body>
   <!-- Pairing code modal -->
@@ -217,13 +18,13 @@
         <div class="expires" id="pair-modal-expires"></div>
       </div>
       <ul class="pair-steps">
-        <li><span class="pair-step-num">1</span>Open <strong style="color:#e0e0e0">http://localhost:9876</strong> on your home machine</li>
-        <li><span class="pair-step-num">2</span>Click the <strong style="color:#e0e0e0">Kloud Konnect</strong> button in the header</li>
-        <li><span class="pair-step-num">3</span>Enter the code above and click <strong style="color:#e0e0e0">Pair</strong></li>
+        <li><span class="pair-step-num">1</span>Open <strong>http://localhost:9876</strong> on your home machine</li>
+        <li><span class="pair-step-num">2</span>Click the <strong>Kloud Konnect</strong> button in the header</li>
+        <li><span class="pair-step-num">3</span>Enter the code above and click <strong>Pair</strong></li>
         <li><span class="pair-step-num">4</span>Scan the QR code that appears to complete the konnection</li>
       </ul>
       <div class="pair-modal-footer">
-        <button class="btn btn-sm" onclick="closePairModal()">Done</button>
+        <button class="btn btn-sm btn-ghost" onclick="closePairModal()">Done</button>
       </div>
     </div>
   </div>
@@ -231,15 +32,21 @@
   <!-- Server picker view -->
   <div id="picker-view">
     <header>
+      <svg viewBox="0 0 512 512" xmlns="http://www.w3.org/2000/svg" width="28" height="28">
+        <defs><linearGradient id="kg" x1="256" y1="80" x2="256" y2="432" gradientUnits="userSpaceOnUse">
+          <stop offset="0%" stop-color="#86efac"/><stop offset="50%" stop-color="#4ade80"/><stop offset="100%" stop-color="#22c55e"/>
+        </linearGradient></defs>
+        <path d="M176 80 L176 432 L224 432 L224 288 L336 432 L400 432 L272 268 L384 80 L320 80 L224 244 L224 80 Z" fill="url(#kg)"/>
+      </svg>
       <h1>Klaudii</h1>
       <span id="user-name" class="badge">...</span>
-      <button class="btn btn-sm" onclick="logout()" style="margin-left:auto">Sign Out</button>
+      <button class="btn btn-sm btn-ghost" onclick="logout()" style="margin-left:auto">Sign Out</button>
     </header>
 
     <div class="server-picker">
       <h2>
         Your Servers
-        <button class="btn btn-sm primary" onclick="addServer()">+ Add Server</button>
+        <button class="btn btn-sm btn-primary" onclick="addServer()">+ Add Server</button>
       </h2>
       <div id="server-list"></div>
     </div>
@@ -286,7 +93,7 @@
             <h3>No servers konnected</h3>
             <p>Add your first Klaudii server to access it from anywhere.</p>
             <div class="pair-action">
-              <button class="btn primary" onclick="addServer()">Add Server</button>
+              <button class="btn btn-primary" onclick="addServer()">Add Server</button>
             </div>
           </div>
         `;
@@ -306,7 +113,7 @@
             </div>
             <div style="display:flex; align-items:center; gap:0.75rem; flex-shrink:0">
               <div class="status-dot ${s.online ? "online" : "offline"}"></div>
-              <button class="delete-server-btn" onclick="event.stopPropagation(); deleteServer('${s.id}', '${esc(s.name)}')" title="Remove server">✕</button>
+              <button class="delete-server-btn" onclick="event.stopPropagation(); deleteServer('${s.id}', '${esc(s.name)}')" title="Remove server">&#x2715;</button>
             </div>
           </div>
         `;
