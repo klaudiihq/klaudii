@@ -1,7 +1,8 @@
 {
+  "_comment": "IMPORTANT: Use absolute paths. Do NOT use ~ or /tmp/ — macOS gives launchd agents a private /tmp and cannot resolve ~.",
   "port": 9876,
   "ttydBasePort": 9877,
-  "reposDir": "/path/to/your/repos",
+  "reposDir": "/Users/yourname/repos",
   "projects": [],
-  "tmuxSocket": "/path/to/klaudii-tmux.sock"
+  "tmuxSocket": "/Users/yourname/.klaudii/tmux.sock"
 }
