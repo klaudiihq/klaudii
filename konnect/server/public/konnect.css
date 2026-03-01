@@ -45,7 +45,45 @@ body {
   color: #fff;
 }
 
-/* --- Logo --- */
+/* --- Nav (matches klaudii.com exactly) --- */
+.nav {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 100;
+  background: rgba(10,10,15,0.8);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border-bottom: 1px solid var(--border);
+}
+.nav-inner {
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: 0 1.5rem;
+  height: 64px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+.nav-logo {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  font-size: 1.15rem;
+  font-weight: 600;
+  letter-spacing: -0.02em;
+  color: #fff;
+  text-decoration: none;
+}
+.nav-logo-icon { width: 28px; height: 28px; }
+.nav-right {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+}
+
+/* --- Logo (card context) --- */
 .konnect-logo {
   display: flex;
   align-items: center;
@@ -281,8 +319,8 @@ textarea { resize: none; }
 /* --- Server picker (dashboard.html) --- */
 .server-picker {
   max-width: 600px;
-  margin: 4rem auto;
-  padding: 0 1rem;
+  margin: 0 auto;
+  padding: 6rem 1rem 5rem;
 }
 .server-picker h2 {
   margin-bottom: 1rem;
@@ -325,6 +363,7 @@ textarea { resize: none; }
   align-items: center;
   justify-content: space-between;
   padding: 0.75rem 1.25rem;
+  padding-top: calc(64px + 0.75rem);
   background: var(--bg-raised);
   border-bottom: 1px solid var(--border);
 }
@@ -365,7 +404,7 @@ textarea { resize: none; }
 
 #dashboard-frame {
   width: 100%;
-  height: calc(100vh - 45px);
+  height: calc(100vh - 64px - 45px);
   border: none;
 }
 
@@ -486,17 +525,6 @@ textarea { resize: none; }
   color: var(--red);
 }
 
-/* --- Dashboard header bar --- */
-header {
-  display: flex;
-  align-items: center;
-  gap: 1rem;
-  padding: 0.75rem 1.25rem;
-  border-bottom: 1px solid var(--border);
-  background: var(--bg-raised);
-}
-header h1 { font-size: 1.25rem; }
-
 .badge {
   font-size: 0.75rem;
   padding: 0.2rem 0.6rem;
@@ -506,9 +534,37 @@ header h1 { font-size: 1.25rem; }
   color: var(--text-muted);
 }
 
+/* --- Footer (matches klaudii.com) --- */
+.konnect-footer {
+  position: fixed;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  padding: 1rem 1.5rem;
+  border-top: 1px solid var(--border);
+  background: rgba(10,10,15,0.8);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 2rem;
+  font-size: 0.8rem;
+  color: var(--text-dim);
+  z-index: 50;
+}
+.konnect-footer a {
+  color: var(--text-muted);
+  text-decoration: none;
+  transition: color 0.2s;
+}
+.konnect-footer a:hover { color: var(--text); }
+.konnect-footer .copyright { color: var(--text-dim); }
+
 /* --- Responsive --- */
 @media (max-width: 480px) {
   .konnect-card { padding: 1.75rem; }
   .pair-modal { padding: 1.5rem; }
   .pairing-code-display .code { font-size: 2rem; }
+  .konnect-footer { gap: 1rem; flex-wrap: wrap; }
 }
