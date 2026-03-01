@@ -10,11 +10,32 @@
   <header>
     <h1>Klaudii</h1>
     <span id="status-badge" class="badge">checking...</span>
+    <div id="auth-status" class="auth-box"></div>
+    <button class="btn btn-sm" id="cloud-btn" onclick="openCloudModal()" style="margin-left:auto">Kloud Konnect</button>
+    <button class="btn-theme" id="theme-toggle" onclick="toggleTheme()" title="Toggle light/dark">☀</button>
   </header>
 
   <main>
+    <section id="usage-section" class="usage-section hidden">
+      <div class="usage-header">
+        <span class="usage-label">token usage · 24h</span>
+        <div class="usage-meta">
+          <span id="usage-status" class="usage-status"></span>
+          <span id="usage-total" class="usage-total"></span>
+        </div>
+      </div>
+      <div id="usage-chart"></div>
+    </section>
+
     <section id="sessions-section">
-      <h2>Workspaces <button class="btn primary btn-sm" onclick="openNewSessionModal()">+ New Session</button></h2>
+      <h2>Workspaces
+        <span class="sort-controls">
+          <button class="btn btn-sm sort-btn" id="sort-activity" onclick="setSort('activity')">Recent</button>
+          <button class="btn btn-sm sort-btn" id="sort-alpha" onclick="setSort('alpha')">A-Z</button>
+          <button class="btn btn-sm sort-btn" id="sort-dir" onclick="toggleSortDir()">↓</button>
+        </span>
+        <button class="btn primary btn-sm" onclick="openNewSessionModal()">+ New Session</button>
+      </h2>
       <div id="sessions-list" class="card-grid"></div>
     </section>
 
@@ -42,16 +63,35 @@
         <button class="btn btn-sm" onclick="closeNewSessionModal()">X</button>
       </div>
       <div class="modal-body">
-        <div class="form-group">
-          <label>Repository</label>
-          <input id="repo-search" type="text" placeholder="Search repos..." oninput="filterRepos()" />
-          <div id="repo-list" class="repo-list"></div>
+        <!-- Repo search view (default) -->
+        <div id="repo-search-view">
+          <div class="form-group">
+            <label>Repository</label>
+            <input id="repo-search" type="text" placeholder="Search repos..." oninput="filterRepos()" />
+            <div id="repo-list" class="repo-list"></div>
+            <button class="btn btn-sm btn-link" onclick="showCreateRepoForm()">+ Create new repo</button>
+          </div>
+          <div id="branch-form" class="form-group hidden">
+            <label>Branch name</label>
+            <input id="branch-input" type="text" placeholder="e.g. fix-auth-bug" />
+            <div class="form-hint">A new git worktree will be created with this branch.</div>
+            <button class="btn primary" onclick="createNewSession()" id="create-session-btn">Start Session</button>
+          </div>
         </div>
-        <div id="branch-form" class="form-group hidden">
-          <label>Branch name</label>
-          <input id="branch-input" type="text" placeholder="e.g. fix-auth-bug" />
-          <div class="form-hint">A new git worktree will be created with this branch.</div>
-          <button class="btn primary" onclick="createNewSession()" id="create-session-btn">Start Session</button>
+        <!-- Create new repo view -->
+        <div id="create-repo-view" class="hidden">
+          <div class="form-group">
+            <label>Repo name</label>
+            <input id="new-repo-name" type="text" placeholder="e.g. my-project" />
+          </div>
+          <div class="form-group">
+            <label>Remote origin URL <span class="form-hint-inline">(optional)</span></label>
+            <input id="new-repo-remote" type="text" placeholder="e.g. git@github.com:user/my-project.git" />
+          </div>
+          <div class="form-actions">
+            <button class="btn" onclick="showRepoSearchView()">Back</button>
+            <button class="btn primary" onclick="createNewRepo()" id="create-repo-btn">Create Repo</button>
+          </div>
         </div>
       </div>
     </div>
@@ -65,6 +105,17 @@
         <button class="btn btn-sm" onclick="closeGitStatus()">X</button>
       </div>
       <div class="modal-body" id="git-status-body"></div>
+    </div>
+  </div>
+
+  <!-- Cloud Connect Modal -->
+  <div id="cloud-modal" class="modal-overlay hidden" onclick="closeCloudBackdrop(event)">
+    <div class="modal">
+      <div class="modal-header">
+        <h2 id="cloud-modal-title">Kloud Konnect</h2>
+        <button class="btn btn-sm" onclick="closeCloudModal()">X</button>
+      </div>
+      <div class="modal-body" id="cloud-modal-body"></div>
     </div>
   </div>
 

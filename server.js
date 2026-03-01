@@ -1,6 +1,6 @@
 const express = require("express");
 const path = require("path");
-const { loadConfig, getProjects, addProject, getProject } = require("./lib/projects");
+const { loadConfig, getProjects, addProject, removeProject, getProject, setPermissionMode } = require("./lib/projects");
 const tmux = require("./lib/tmux");
 const ttyd = require("./lib/ttyd");
 const claude = require("./lib/claude");
@@ -8,6 +8,7 @@ const github = require("./lib/github");
 const git = require("./lib/git");
 const fs = require("fs");
 const processes = require("./lib/processes");
+const sessionTracker = require("./lib/session-tracker");
 
 const config = loadConfig();
 const app = express();
@@ -17,10 +18,46 @@ app.use(express.static(path.join(__dirname, "public")));
 // --- Health check ---
 
 app.get("/api/health", (_req, res) => {
+  const { execSync } = require("child_process");
+
+  // Check gh CLI auth
+  let ghAuth = null;
+  try {
+    const ghOut = execSync("gh auth status 2>&1", { encoding: "utf-8", stdio: ["pipe", "pipe", "pipe"] });
+    const acctMatch = ghOut.match(/Logged in to .* account (\S+)/);
+    ghAuth = { loggedIn: true, account: acctMatch ? acctMatch[1] : "unknown" };
+  } catch {
+    ghAuth = { loggedIn: false };
+  }
+
+  // Check claude CLI auth — search common install locations since launchd
+  // PATH may not include ~/.local/bin where claude is typically installed
+  let claudeAuth = null;
+  const claudeBin = (() => {
+    try { return execSync("which claude 2>/dev/null", { encoding: "utf-8" }).trim(); } catch {}
+    const home = require("os").homedir();
+    const candidates = [
+      path.join(home, ".local", "bin", "claude"),
+      "/usr/local/bin/claude",
+      "/opt/homebrew/bin/claude",
+    ];
+    return candidates.find((p) => fs.existsSync(p)) || null;
+  })();
+  if (claudeBin) {
+    try {
+      const claudeOut = execSync(`${JSON.stringify(claudeBin)} auth status 2>&1`, { encoding: "utf-8", stdio: ["pipe", "pipe", "pipe"] });
+      claudeAuth = JSON.parse(claudeOut);
+    } catch {
+      claudeAuth = { loggedIn: false };
+    }
+  }
+
   res.json({
     ok: true,
     tmux: tmux.isTmuxInstalled(),
     ttyd: ttyd.isTtydInstalled(),
+    ghAuth,
+    claudeAuth,
   });
 });
 
@@ -78,6 +115,23 @@ app.post("/api/processes/kill", (req, res) => {
   res.json({ ok });
 });
 
+// --- Permission-aware Claude args builder ---
+
+function buildClaudeArgs(permissionMode, opts = {}) {
+  const parts = [];
+  if (permissionMode === "yolo") {
+    parts.push("--dangerously-skip-permissions");
+  } else if (permissionMode === "strict") {
+    parts.push("--dangerously-skip-permissions");
+    parts.push("--allowedTools", "Read,Glob,Grep,WebSearch,WebFetch");
+  }
+  // "ask" mode: no permission flags — Claude prompts for approval in terminal
+  if (opts.resumeSessionId) parts.push("--resume", opts.resumeSessionId);
+  else if (opts.continueSession) parts.push("--continue");
+  parts.push("remote-control");
+  return parts.join(" ");
+}
+
 // --- Sessions ---
 
 app.get("/api/sessions", (_req, res) => {
@@ -91,15 +145,32 @@ app.get("/api/sessions", (_req, res) => {
     const ttydInstance = ttydInstances.find((t) => t.project === project.name);
 
     const gitStatus = git.getStatus(project.path);
+    const remoteUrl = git.getRemoteUrl(project.path);
+
+    const tracked = sessionTracker.getSessions(project.name);
+    // Use mtime of session .jsonl files as activity — reflects real work, not just session start
+    const lastActivity = claude.getProjectLastActivity(project.path)
+      || (tracked.length ? tracked[0].startedAt : 0);
+
+    // Determine session status: running, exited, or stopped
+    let status = "stopped";
+    if (tmuxSession) {
+      status = tmux.isClaudeAlive(tmuxName) ? "running" : "exited";
+    }
 
     return {
       project: project.name,
       projectPath: project.path,
-      running: !!tmuxSession,
-      claudeUrl: tmuxSession ? tmux.getClaudeUrl(tmuxName) : null,
+      permissionMode: project.permissionMode || "yolo",
+      running: status === "running",
+      status,
+      claudeUrl: tmuxSession ? sessionTracker.getClaudeUrl(project.name) : null,
       tmux: tmuxSession || null,
       ttyd: ttydInstance || null,
       git: gitStatus,
+      remoteUrl,
+      sessionCount: tracked.length,
+      lastActivity,
     };
   });
 
@@ -117,8 +188,24 @@ app.get("/api/history", (req, res) => {
     return res.status(404).json({ error: `project "${project}" not found` });
   }
 
-  const sessions = claude.getRecentSessions(proj.path);
-  res.json(sessions);
+  // Primary: use our tracked session IDs (correct workspace mapping)
+  const trackedIds = sessionTracker.getSessionIds(project);
+  const trackedSessions = claude.getSessionsByIds(trackedIds);
+
+  // Fallback: also include path-based sessions (for pre-tracking history)
+  const pathSessions = claude.getRecentSessions(proj.path);
+
+  // Merge and dedup by sessionId, tracked takes priority
+  const seen = new Set(trackedSessions.map((s) => s.sessionId));
+  for (const s of pathSessions) {
+    if (!seen.has(s.sessionId)) {
+      trackedSessions.push(s);
+      seen.add(s.sessionId);
+    }
+  }
+
+  trackedSessions.sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
+  res.json(trackedSessions.slice(0, 20));
 });
 
 app.post("/api/sessions/start", async (req, res) => {
@@ -138,13 +225,11 @@ app.post("/api/sessions/start", async (req, res) => {
     return res.status(409).json({ error: "Session already running" });
   }
 
+  const startTs = Date.now();
+
   try {
-    let claudeArgs = "";
-    if (resumeSessionId) {
-      claudeArgs = `--resume ${resumeSessionId} remote-control`;
-    } else if (continueSession) {
-      claudeArgs = "--continue remote-control";
-    }
+    const permissionMode = proj.permissionMode || "yolo";
+    const claudeArgs = buildClaudeArgs(permissionMode, { resumeSessionId, continueSession });
 
     tmux.createSession(tmuxName, proj.path, claudeArgs);
 
@@ -162,6 +247,16 @@ app.post("/api/sessions/start", async (req, res) => {
     } catch (err) {
       console.error(`Failed to start ttyd for ${project}:`, err.message);
     }
+
+    // Track session ID: known for resume, detect in background for fresh/continue
+    if (resumeSessionId) {
+      sessionTracker.addSession(project, resumeSessionId, "resume");
+    } else {
+      sessionTracker.detectAndTrack(project, startTs);
+    }
+
+    // Capture the claude.ai URL in background (stable for process lifetime)
+    sessionTracker.captureClaudeUrl(project, tmuxName);
 
     res.json({ ok: true, tmuxSession: tmuxName, ttydPort: port });
   } catch (err) {
@@ -183,11 +278,79 @@ app.post("/api/sessions/stop", (req, res) => {
     // ttyd may not be running
   }
 
+  sessionTracker.clearClaudeUrl(project);
+
   try {
     tmux.killSession(tmuxName);
     res.json({ ok: true });
   } catch (err) {
     res.status(500).json({ error: err.message });
+  }
+});
+
+app.post("/api/projects/remove", (req, res) => {
+  const { project, force } = req.body;
+  if (!project) {
+    return res.status(400).json({ error: "project required" });
+  }
+
+  const proj = getProject(project);
+  if (!proj) {
+    return res.status(404).json({ error: `project "${project}" not found` });
+  }
+
+  // Refuse if session is running
+  const tmuxName = tmux.sessionName(project);
+  if (tmux.sessionExists(tmuxName)) {
+    return res.status(409).json({ error: "Stop the workspace before removing it" });
+  }
+
+  // Check git status — refuse if dirty unless forced
+  const status = git.getStatus(proj.path);
+  if (status && (status.dirtyFiles || status.unpushed) && !force) {
+    return res.status(409).json({
+      error: "Workspace has uncommitted or unpushed changes",
+      dirty: true,
+      dirtyFiles: status.dirtyFiles,
+      unpushed: status.unpushed,
+    });
+  }
+
+  try {
+    // If it's a worktree (`.git` is a file, not a directory), remove it
+    const dotGit = path.join(proj.path, ".git");
+    const isWorktree = fs.existsSync(dotGit) && fs.statSync(dotGit).isFile();
+    if (isWorktree && config.reposDir) {
+      // Derive main repo from project naming convention: {repo}--{branch}
+      const repoName = project.split("--")[0];
+      const mainRepoDir = path.join(config.reposDir, repoName);
+      if (git.isGitRepo(mainRepoDir)) {
+        git.removeWorktree(mainRepoDir, proj.path);
+      }
+    }
+
+    // Clean up session tracker URL cache
+    sessionTracker.clearClaudeUrl(project);
+
+    // Unregister from config
+    removeProject(project);
+
+    res.json({ ok: true, worktreeRemoved: isWorktree });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.post("/api/projects/permission", (req, res) => {
+  const { project, mode } = req.body;
+  if (!project || !mode) {
+    return res.status(400).json({ error: "project and mode required" });
+  }
+  try {
+    setPermissionMode(project, mode);
+    res.json({ ok: true, mode });
+  } catch (err) {
+    res.status(400).json({ error: err.message });
   }
 });
 
@@ -205,6 +368,7 @@ app.post("/api/sessions/restart", async (req, res) => {
   const tmuxName = tmux.sessionName(project);
 
   // Stop existing
+  sessionTracker.clearClaudeUrl(project);
   try {
     ttyd.stop(project);
   } catch {}
@@ -215,8 +379,12 @@ app.post("/api/sessions/restart", async (req, res) => {
   // Wait for old processes to die before starting new ones
   await new Promise((r) => setTimeout(r, 1000));
 
+  const startTs = Date.now();
+
   try {
-    tmux.createSession(tmuxName, proj.path, "--continue remote-control");
+    const permissionMode = proj.permissionMode || "yolo";
+    const claudeArgs = buildClaudeArgs(permissionMode, { continueSession: true });
+    tmux.createSession(tmuxName, proj.path, claudeArgs);
 
     const port = ttyd.allocatePort(config.ttydBasePort);
     try {
@@ -225,10 +393,23 @@ app.post("/api/sessions/restart", async (req, res) => {
       console.error(`Failed to start ttyd for ${project}:`, err.message);
     }
 
+    // Detect the (continued) session ID and capture URL in background
+    sessionTracker.detectAndTrack(project, startTs);
+    sessionTracker.captureClaudeUrl(project, tmuxName);
+
     res.json({ ok: true, tmuxSession: tmuxName, ttydPort: port });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
+});
+
+// --- Token usage ---
+
+app.get("/api/usage", (req, res) => {
+  const hours = Math.min(parseInt(req.query.hours) || 24, 168);
+  const buckets = claude.getTokenUsage(hours);
+  const rateLimits = claude.getRateLimitEvents(168); // always scan full week
+  res.json({ buckets, rateLimits });
 });
 
 // --- GitHub & Repos ---
@@ -268,6 +449,41 @@ app.get("/api/repos/:name/worktrees", (req, res) => {
   }
   const worktrees = git.listWorktrees(repoDir);
   res.json(worktrees);
+});
+
+// --- Create new repo ---
+
+app.post("/api/repos/create", (req, res) => {
+  const { name, remoteUrl } = req.body;
+  if (!name) {
+    return res.status(400).json({ error: "name required" });
+  }
+  if (!config.reposDir) {
+    return res.status(400).json({ error: "reposDir not configured" });
+  }
+  if (!/^[a-zA-Z0-9._-]+$/.test(name)) {
+    return res.status(400).json({ error: "Invalid repo name (letters, numbers, dots, hyphens, underscores only)" });
+  }
+
+  const repoDir = path.join(config.reposDir, name);
+  if (fs.existsSync(repoDir)) {
+    return res.status(409).json({ error: `Directory already exists: ${name}` });
+  }
+
+  try {
+    git.initRepo(repoDir, remoteUrl || null);
+
+    // Register as a project
+    try {
+      addProject(name, repoDir);
+    } catch {
+      // Already registered is fine
+    }
+
+    res.json({ ok: true, name, path: repoDir });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
 });
 
 // --- New session (clone + worktree + start) ---
@@ -325,7 +541,9 @@ app.post("/api/sessions/new", (req, res) => {
       return res.status(409).json({ error: `tmux session "${tmuxName}" already exists` });
     }
 
-    tmux.createSession(tmuxName, worktreeDir, "");
+    const startTs = Date.now();
+    const claudeArgs = buildClaudeArgs("yolo");
+    tmux.createSession(tmuxName, worktreeDir, claudeArgs);
 
     const port = ttyd.allocatePort(config.ttydBasePort);
     try {
@@ -333,6 +551,10 @@ app.post("/api/sessions/new", (req, res) => {
     } catch (err) {
       console.error(`Failed to start ttyd for ${projectName}:`, err.message);
     }
+
+    // Detect the new session ID and capture URL in background
+    sessionTracker.detectAndTrack(projectName, startTs);
+    sessionTracker.captureClaudeUrl(projectName, tmuxName);
 
     res.json({
       ok: true,
@@ -351,6 +573,24 @@ app.post("/api/sessions/new", (req, res) => {
 
 // Recover ttyd instances from before restart
 ttyd.recoverInstances();
+
+// Re-capture claude.ai URLs for running sessions that survived a server restart
+sessionTracker.recoverUrls(() => {
+  const projects = getProjects();
+  const claudeSessions = tmux.getClaudeSessions();
+  const running = [];
+  for (const project of projects) {
+    const tmuxName = tmux.sessionName(project.name);
+    if (claudeSessions.some((s) => s.name === tmuxName)) {
+      running.push({ workspace: project.name, tmuxName });
+    }
+  }
+  return running;
+});
+
+// Cloud connector (optional — only activates if cloud is configured in config.json)
+const connector = require("./connect/client");
+connector.init(app, config);
 
 const PORT = config.port || 9876;
 app.listen(PORT, "0.0.0.0", () => {

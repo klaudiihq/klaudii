@@ -1,0 +1,322 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Klaudii — Pair Browser</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      background: #0f1117;
+      color: #e0e0e0;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      min-height: 100vh;
+    }
+    .pair-card {
+      background: #1a1d25;
+      border: 1px solid #2a2d35;
+      border-radius: 12px;
+      padding: 2.5rem;
+      max-width: 500px;
+      width: 90%;
+    }
+    h2 { margin-bottom: 0.5rem; color: #fff; }
+    .subtitle { color: #888; font-size: 0.9rem; margin-bottom: 1.5rem; line-height: 1.5; }
+    label {
+      display: block;
+      font-size: 0.8rem;
+      color: #888;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      margin-bottom: 0.4rem;
+    }
+    input {
+      width: 100%;
+      background: #0f1117;
+      color: #fbbf24;
+      border: 1px solid #3a3d45;
+      border-radius: 8px;
+      padding: 0.75rem;
+      font-size: 0.9rem;
+      font-family: ui-monospace, monospace;
+      letter-spacing: 1px;
+    }
+    input:focus { outline: none; border-color: #2563eb; }
+    .hint {
+      font-size: 0.75rem;
+      color: #555;
+      margin: 0.5rem 0 1.5rem;
+      line-height: 1.5;
+    }
+    .btn {
+      background: #2563eb;
+      color: #fff;
+      border: none;
+      border-radius: 8px;
+      padding: 0.65rem 1.25rem;
+      font-size: 0.9rem;
+      cursor: pointer;
+      transition: background 0.15s;
+      width: 100%;
+    }
+    .btn:hover { background: #1d4ed8; }
+    .btn:disabled { opacity: 0.5; cursor: not-allowed; }
+    .btn.secondary {
+      background: #2a2d35;
+      color: #aaa;
+      margin-top: 0.75rem;
+    }
+    .btn.secondary:hover { background: #3a3d45; color: #fff; }
+    .error { color: #f87171; font-size: 0.85rem; margin-top: 0.5rem; }
+    .success {
+      background: #0f2a1a;
+      border: 1px solid #4ade80;
+      border-radius: 8px;
+      padding: 1rem;
+      margin-top: 1rem;
+      color: #4ade80;
+      text-align: center;
+    }
+    .divider {
+      text-align: center;
+      color: #555;
+      font-size: 0.8rem;
+      margin: 1.5rem 0;
+      position: relative;
+    }
+    .divider::before, .divider::after {
+      content: "";
+      position: absolute;
+      top: 50%;
+      width: 40%;
+      height: 1px;
+      background: #2a2d35;
+    }
+    .divider::before { left: 0; }
+    .divider::after { right: 0; }
+
+    /* Camera scanner */
+    #scanner-container {
+      margin: 1rem 0;
+      border-radius: 8px;
+      overflow: hidden;
+      background: #000;
+      position: relative;
+    }
+    #scanner-video {
+      width: 100%;
+      display: block;
+    }
+    #scanner-canvas { display: none; }
+    .scanner-overlay {
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      width: 200px;
+      height: 200px;
+      border: 2px solid rgba(74, 222, 128, 0.5);
+      border-radius: 12px;
+      pointer-events: none;
+    }
+    .scanner-status {
+      text-align: center;
+      font-size: 0.8rem;
+      color: #888;
+      margin-top: 0.5rem;
+    }
+  </style>
+</head>
+<body>
+  <div class="pair-card">
+    <h2>Pair this Browser</h2>
+    <p class="subtitle" id="pair-subtitle">
+      Scan the QR code shown in your local Klaudii's Kloud Konnect panel, or paste the Konnection Key.
+    </p>
+
+    <div id="pair-content">
+      <!-- QR Scanner (shown when camera API is available) -->
+      <div id="scanner-section" style="display:none">
+        <button class="btn" onclick="startScanner()" id="scan-btn">Scan QR Code</button>
+        <div id="scanner-container" style="display:none">
+          <video id="scanner-video" autoplay playsinline></video>
+          <canvas id="scanner-canvas"></canvas>
+          <div class="scanner-overlay"></div>
+        </div>
+        <p class="scanner-status" id="scanner-status"></p>
+      </div>
+
+      <div id="divider-el" class="divider" style="display:none">or</div>
+
+      <!-- Paste / manual entry — always visible, primary on unsupported browsers -->
+      <div id="manual-section">
+        <label>Konnection Key</label>
+        <textarea id="key-input" rows="3"
+          placeholder="Paste the key from your local Klaudii's Kloud Konnect panel"
+          style="width:100%; background:#0f1117; color:#fbbf24; border:1px solid #3a3d45; border-radius:8px; padding:0.75rem; font-size:0.85rem; font-family:ui-monospace,monospace; letter-spacing:1px; resize:none; margin-bottom:0.5rem"
+        ></textarea>
+        <p class="hint">Open <strong>Kloud Konnect</strong> on your local Klaudii, copy the Konnection Key, and paste it above.</p>
+        <button class="btn" onclick="saveKey()" style="margin-top:0.25rem">Save Key</button>
+      </div>
+
+      <p id="error-msg" class="error" style="display:none"></p>
+    </div>
+
+    <div id="success-msg" class="success" style="display:none">
+      Konnected! <a href="/" style="color:#4ade80; font-weight:500">Go to dashboard →</a>
+    </div>
+  </div>
+
+  <script src="https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.min.js"></script>
+  <script>
+    const params = new URLSearchParams(window.location.search);
+    let targetServerId = params.get("serverId");
+    let scannerStream = null;
+    let scannerInterval = null;
+
+    // Auto-pair if key is in the URL (QR scan opened this page directly)
+    const prefilledKey = params.get("key");
+    if (prefilledKey && targetServerId) {
+      const clean = prefilledKey.replace(/-/g, "").replace(/\s/g, "");
+      if (/^[0-9a-fA-F]{64}$/.test(clean)) {
+        saveKeyForServer(targetServerId, clean);
+      }
+    }
+
+    // Show scanner section if getUserMedia is available (all modern browsers incl. iOS Safari)
+    if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
+      document.getElementById("scanner-section").style.display = "block";
+      document.getElementById("divider-el").style.display = "block";
+    }
+
+    // --- QR Scanner using camera + canvas + jsQR ---
+
+    async function startScanner() {
+      const btn = document.getElementById("scan-btn");
+      const container = document.getElementById("scanner-container");
+      const video = document.getElementById("scanner-video");
+      const status = document.getElementById("scanner-status");
+
+      try {
+        scannerStream = await navigator.mediaDevices.getUserMedia({
+          video: { facingMode: "environment" },
+        });
+        video.srcObject = scannerStream;
+        container.style.display = "block";
+        btn.style.display = "none";
+        status.textContent = "Point your camera at the QR code...";
+
+        // Start scanning frames
+        scannerInterval = setInterval(() => scanFrame(), 250);
+      } catch (err) {
+        status.textContent = "Camera access denied. Paste the key below instead.";
+      }
+    }
+
+    function scanFrame() {
+      const video = document.getElementById("scanner-video");
+      const canvas = document.getElementById("scanner-canvas");
+
+      if (video.readyState !== video.HAVE_ENOUGH_DATA) return;
+
+      canvas.width = video.videoWidth;
+      canvas.height = video.videoHeight;
+      const ctx = canvas.getContext("2d", { willReadFrequently: true });
+      ctx.drawImage(video, 0, 0);
+
+      // Use jsQR — works on all browsers including iOS Safari
+      const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+      const code = jsQR(imageData.data, imageData.width, imageData.height);
+      if (code) {
+        handleQRResult(code.data);
+      }
+    }
+
+    function handleQRResult(text) {
+      // New format: https://<relay>/pair.html?serverId=<id>&key=<hex>
+      try {
+        const u = new URL(text);
+        if (u.pathname.endsWith("/pair.html")) {
+          const sid = u.searchParams.get("serverId");
+          const k = u.searchParams.get("key");
+          if (sid && k && /^[0-9a-fA-F]{64}$/.test(k)) {
+            stopScanner();
+            saveKeyForServer(targetServerId || sid, k);
+            return;
+          }
+        }
+      } catch {}
+
+      // Legacy format: klaudii://<serverId>/<connectionKeyHex>
+      const match = text.match(/^klaudii:\/\/([^/]+)\/([0-9a-fA-F]{64})$/);
+      if (!match) return;
+      const [, scannedServerId, connectionKey] = match;
+      stopScanner();
+      saveKeyForServer(targetServerId || scannedServerId, connectionKey);
+    }
+
+    function stopScanner() {
+      if (scannerInterval) {
+        clearInterval(scannerInterval);
+        scannerInterval = null;
+      }
+      if (scannerStream) {
+        scannerStream.getTracks().forEach((t) => t.stop());
+        scannerStream = null;
+      }
+      document.getElementById("scanner-container").style.display = "none";
+    }
+
+    // --- Manual entry ---
+
+    function saveKey() {
+      const key = document.getElementById("key-input").value.replace(/\s/g, "").trim();
+      if (!key) {
+        showError("Please enter the connection key");
+        return;
+      }
+
+      // Try to parse as klaudii:// URL (if they pasted the full QR content)
+      const match = key.match(/^klaudii:\/\/([^/]+)\/([0-9a-fA-F]{64})$/);
+      if (match) {
+        const [, scannedServerId, connectionKey] = match;
+        saveKeyForServer(targetServerId || scannedServerId, connectionKey);
+        return;
+      }
+
+      // Otherwise treat as raw hex key
+      const clean = key.replace(/-/g, "").replace(/\s/g, "");
+      if (!/^[0-9a-fA-F]{64}$/.test(clean)) {
+        showError("Invalid key format. Should be 64 hex characters (with optional dashes).");
+        return;
+      }
+
+      if (!targetServerId) {
+        showError("Missing server ID. Go back to the dashboard and try again.");
+        return;
+      }
+
+      saveKeyForServer(targetServerId, clean);
+    }
+
+    function saveKeyForServer(serverId, keyHex) {
+      const keys = JSON.parse(localStorage.getItem("klaudii-connection-keys") || "{}");
+      keys[serverId] = keyHex;
+      localStorage.setItem("klaudii-connection-keys", JSON.stringify(keys));
+
+      document.getElementById("pair-content").style.display = "none";
+      document.getElementById("success-msg").style.display = "block";
+    }
+
+    function showError(msg) {
+      const el = document.getElementById("error-msg");
+      el.textContent = msg;
+      el.style.display = "block";
+      setTimeout(() => (el.style.display = "none"), 5000);
+    }
+  </script>
+</body>
+</html>

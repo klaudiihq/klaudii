@@ -9,21 +9,21 @@ Everything we can imagine building, ordered roughly by dependencies and impact. 
 The stuff that should have been there from day one. Pay off tech debt, fix the rough edges, make the core reliable before building on top of it.
 
 ### Session reliability
-- [ ] New sessions should start in `remote-control` mode by default (currently starts with no args)
-- [ ] Detect when a Claude session crashes or exits and update the UI immediately instead of waiting for the next poll
-- [ ] Graceful shutdown — when stopping a session, send `/exit` to Claude before killing tmux, give it a few seconds to clean up
-- [ ] Session health heartbeat — periodically check if the Claude process inside tmux is actually alive vs. the shell just sitting there after Claude exited
-- [ ] Handle the case where tmux session exists but Claude inside it has died — show as "exited" not "running"
+- [x] New sessions should start in `remote-control` mode by default (currently starts with no args)
+- [x] Detect when a Claude session crashes or exits — process tree health check on every poll
+- [x] ~~Graceful shutdown~~ — not feasible; can't reliably inject keystrokes when TUI state is unknown (mid-approval, etc). `kill-session` sends SIGTERM which Claude handles gracefully already
+- [x] Session health heartbeat — `isClaudeAlive()` checks process tree under tmux pane on each 10s poll
+- [x] Handle the case where tmux session exists but Claude inside it has died — shows as "exited" (yellow badge) with Restart/Clean up actions
 
 ### Permissions model
-- [ ] Per-workspace permission mode: `--dangerously-skip-permissions` (current default), normal interactive, or custom allowlist
-- [ ] UI toggle on each workspace card to switch between permission modes
-- [ ] Support for `--allowedTools` flag — let the user specify which tools a Claude can use per workspace
+- [x] Per-workspace permission mode: `--dangerously-skip-permissions` (current default), normal interactive, or custom allowlist — three modes: Yolo (auto-approve), Ask (terminal approval), Strict (read-only tools)
+- [x] UI toggle on each workspace card to switch between permission modes — segmented control with color-coded active state
+- [x] Support for `--allowedTools` flag — Strict mode uses `--allowedTools Read,Glob,Grep,WebSearch,WebFetch`
 - [ ] "Supervised" mode — Claude runs but pauses for approval on destructive actions, approvals come through the dashboard
 
 ### Configuration
 - [ ] Edit workspace settings from the dashboard (rename, change path, set permission mode, set Claude model)
-- [ ] Delete/archive workspaces from the dashboard (currently can only add)
+- [x] Delete/archive workspaces from the dashboard (currently can only add) — removal with git cleanliness gating, force-confirm for dirty workspaces
 - [ ] Per-workspace environment variables (some projects need specific env vars)
 - [ ] Per-workspace Claude flags (model, system prompt, max turns)
 - [ ] Import/export config for backup or sharing setups across machines
@@ -31,6 +31,7 @@ The stuff that should have been there from day one. Pay off tech debt, fix the r
 ### UI polish
 - [ ] Toast notifications instead of `alert()` for errors
 - [ ] Loading skeletons instead of blank states during refresh
+- [x] Workspace sorting — by recent activity and alphabetical, persisted in localStorage
 - [ ] Drag-and-drop workspace card reordering
 - [ ] Collapse/expand workspace cards
 - [ ] Dark/light theme toggle (currently dark only)
@@ -66,8 +67,8 @@ You can't manage what you can't see. Make it easy to understand what every Claud
 - [ ] Export session history and activity logs
 
 ### Git awareness
-- [ ] Show current branch, last commit, dirty/clean status on each workspace card
-- [ ] Show uncommitted changes count
+- [x] Show current branch, last commit, dirty/clean status on each workspace card
+- [x] Show uncommitted changes count — with clickable detail modal showing file-level status
 - [ ] Diff viewer for pending changes in each workspace
 - [ ] Commit history for the workspace's branch
 
@@ -300,7 +301,7 @@ If I had to pick the order that delivers the most value fastest:
 2. **Permissions model** — not everything should run with `--dangerously-skip-permissions`
 3. **Live session output** — seeing what Claude is doing without opening terminal is transformative
 4. **Toast notifications + UI polish** — stop using `alert()`, make it feel professional
-5. **Git awareness on cards** — branch, dirty status, last commit
+5. ~~**Git awareness on cards** — branch, dirty status, last commit~~ DONE
 6. **Rendezvous service** — unlocks mobile access and breaks out of localhost; everything after this is more useful because you can monitor from anywhere
 7. **Task queue** — the first step toward orchestration
 8. **GitHub issue → workspace** — most natural way to seed work
