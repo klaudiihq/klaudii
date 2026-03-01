@@ -1,7 +1,7 @@
 {
-  "name": "klaudii-cloud-relay",
+  "name": "klaudii-kloud-relay",
   "version": "0.1.0",
-  "description": "Zero-trust cloud relay for Klaudii — forwards encrypted payloads it cannot read",
+  "description": "Zero-trust kloud relay for Klaudii — forwards encrypted payloads it cannot read",
   "main": "index.js",
   "scripts": {
     "start": "node index.js"

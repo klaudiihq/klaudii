@@ -1,0 +1,28 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 560 140">
+  <defs>
+    <linearGradient id="kg" x1="0" y1="20" x2="0" y2="110" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#86efac"/>
+      <stop offset="50%" stop-color="#4ade80"/>
+      <stop offset="100%" stop-color="#22c55e"/>
+    </linearGradient>
+    <radialGradient id="bg" cx="50%" cy="44%" r="70%">
+      <stop offset="0%" stop-color="#161922"/>
+      <stop offset="100%" stop-color="#0F1117"/>
+    </radialGradient>
+    <filter id="glow" x="-5%" y="-5%" width="110%" height="110%">
+      <feGaussianBlur in="SourceAlpha" stdDeviation="4" result="blur"/>
+      <feFlood flood-color="#4ade80" flood-opacity="0.25"/>
+      <feComposite in2="blur" operator="in" result="colorblur"/>
+      <feMerge>
+        <feMergeNode in="colorblur"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+  </defs>
+
+  <rect width="560" height="140" rx="16" fill="url(#bg)"/>
+
+  <text x="40" y="98" font-family="SF Pro Rounded, SF Pro, -apple-system, system-ui, Helvetica Neue, Arial, sans-serif" font-size="80" font-weight="700" letter-spacing="-1" filter="url(#glow)">
+    <tspan fill="url(#kg)">K</tspan><tspan fill="#e8e8e8">laudii</tspan>
+  </text>
+</svg>

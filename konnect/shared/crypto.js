@@ -1,4 +1,4 @@
-// Shared cryptographic primitives for Klaudii Cloud Connector
+// Shared cryptographic primitives for Klaudii Kloud Konnector
 // Used by both the relay server and connector client (Node.js)
 // Browser equivalent uses Web Crypto API (see cloud.js)
 

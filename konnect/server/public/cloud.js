@@ -1,4 +1,4 @@
-// Browser-side E2E encryption and WebSocket tunnel for Klaudii Cloud Connect
+// Browser-side E2E encryption and WebSocket tunnel for Klaudii Kloud Konnect
 // Uses Web Crypto API — no dependencies
 
 let tunnelWs = null;
