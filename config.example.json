@@ -1,0 +1,7 @@
+{
+  "port": 9876,
+  "ttydBasePort": 9877,
+  "reposDir": "/path/to/your/repos",
+  "projects": [],
+  "tmuxSocket": "/path/to/klaudii-tmux.sock"
+}
