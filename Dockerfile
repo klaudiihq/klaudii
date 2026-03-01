@@ -6,16 +6,16 @@ WORKDIR /app
 RUN apt-get update && apt-get install -y python3 make g++ && rm -rf /var/lib/apt/lists/*
 
 # Copy relay server
-COPY connect/server/package.json connect/server/package-lock.json* ./connect/server/
-WORKDIR /app/connect/server
+COPY konnect/server/package.json konnect/server/package-lock.json* ./konnect/server/
+WORKDIR /app/konnect/server
 RUN npm ci --production
 
 # Copy source files
 WORKDIR /app
-COPY connect/ ./connect/
+COPY konnect/ ./konnect/
 COPY public/ ./public/
 
 EXPOSE 3000
 ENV NODE_ENV=production
 
-CMD ["node", "connect/server/index.js"]
+CMD ["node", "konnect/server/index.js"]

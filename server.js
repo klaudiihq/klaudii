@@ -589,7 +589,7 @@ sessionTracker.recoverUrls(() => {
 });
 
 // Cloud connector (optional — only activates if cloud is configured in config.json)
-const connector = require("./connect/client");
+const connector = require("./konnect/client");
 connector.init(app, config);
 
 const PORT = config.port || 9876;

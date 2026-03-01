@@ -2,7 +2,7 @@ app = "klaudii-cloud-relay"
 primary_region = "sjc"
 
 [build]
-  dockerfile = "connect/server/Dockerfile"
+  dockerfile = "konnect/server/Dockerfile"
 
 [env]
   NODE_ENV = "production"
