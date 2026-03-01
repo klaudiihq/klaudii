@@ -35,6 +35,15 @@ app.use(
   })
 );
 
+// Named routes first — must come before static middleware so /privacy and /tos aren't swallowed
+app.get("/privacy", (_req, res) => {
+  res.sendFile(path.join(__dirname, "public", "privacy.html"));
+});
+
+app.get("/tos", (_req, res) => {
+  res.sendFile(path.join(__dirname, "public", "tos.html"));
+});
+
 // Serve the Klaudii dashboard files (same UI as local)
 // Cloud-specific pages (login, server picker) are served from relay's own public/
 app.use(express.static(path.join(__dirname, "public")));
@@ -63,14 +72,6 @@ pairing.setupRoutes(app, { requireAuth: auth.requireAuth });
 
 // --- Proxy routes ---
 proxy.setupRoutes(app);
-
-app.get("/privacy", (_req, res) => {
-  res.sendFile(path.join(__dirname, "public", "privacy.html"));
-});
-
-app.get("/tos", (_req, res) => {
-  res.sendFile(path.join(__dirname, "public", "tos.html"));
-});
 
 // --- SPA fallback: serve login page for unauthenticated, dashboard for authenticated ---
 app.get("/", (req, res) => {
