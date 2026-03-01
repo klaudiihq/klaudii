@@ -58,6 +58,7 @@ body {
   border-bottom: 1px solid var(--border);
 }
 .nav-inner {
+  position: relative;
   max-width: 1200px;
   margin: 0 auto;
   padding: 0 1.5rem;
@@ -77,6 +78,11 @@ body {
   text-decoration: none;
 }
 .nav-logo-icon { width: 28px; height: 28px; }
+.nav-left {
+  display: flex;
+  align-items: center;
+  gap: 0;
+}
 .nav-right {
   display: flex;
   align-items: center;
@@ -358,30 +364,119 @@ textarea { resize: none; }
 .status-dot.online { background: var(--green); box-shadow: 0 0 8px var(--green-bg); }
 .status-dot.offline { background: var(--text-dim); }
 
-.cloud-header {
+/* --- Server selector (centered in nav) --- */
+.nav-center {
+  position: absolute;
+  left: 50%;
+  transform: translateX(-50%);
+}
+.server-selector-btn {
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  padding: 0.75rem 1.25rem;
-  padding-top: calc(64px + 0.75rem);
-  background: var(--bg-raised);
-  border-bottom: 1px solid var(--border);
-}
-.back-btn {
+  gap: 0.4rem;
   background: none;
-  border: 1px solid var(--border-bright);
-  color: var(--text-muted);
-  padding: 0.3rem 0.75rem;
-  border-radius: 6px;
-  cursor: pointer;
-  font-size: 0.8rem;
+  border: 1px solid transparent;
+  color: var(--green);
+  font-size: 1.15rem;
+  font-weight: 600;
   font-family: var(--font);
+  cursor: pointer;
+  padding: 0.25rem 0.6rem;
+  border-radius: 6px;
   transition: all 0.15s;
 }
-.back-btn:hover { background: var(--bg-card-hover); color: #fff; }
+.server-selector-btn:hover {
+  background: rgba(255,255,255,0.04);
+  border-color: var(--border-bright);
+}
 
-.server-label { font-size: 0.9rem; color: var(--green); font-weight: 500; }
-.user-info { font-size: 0.8rem; color: var(--text-dim); }
+/* --- Dropdowns --- */
+.dropdown {
+  position: absolute;
+  top: calc(100% + 4px);
+  background: var(--bg-card);
+  border: 1px solid var(--border-bright);
+  border-radius: 10px;
+  box-shadow: 0 8px 32px rgba(0,0,0,0.4), 0 0 1px rgba(255,255,255,0.05);
+  padding: 0.35rem;
+  z-index: 200;
+  display: none;
+  min-width: 180px;
+}
+.dropdown.open { display: block; }
+
+.dropdown-item {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  width: 100%;
+  padding: 0.5rem 0.75rem;
+  background: none;
+  border: none;
+  color: var(--text);
+  font-size: 0.85rem;
+  font-family: var(--font);
+  cursor: pointer;
+  border-radius: 6px;
+  transition: background 0.1s;
+  text-align: left;
+}
+.dropdown-item:hover { background: rgba(255,255,255,0.05); }
+.dropdown-item:disabled { opacity: 0.4; cursor: not-allowed; }
+.dropdown-item:disabled:hover { background: none; }
+.dropdown-item.active { color: var(--green); }
+
+.dropdown-divider {
+  height: 1px;
+  background: var(--border);
+  margin: 0.25rem 0.5rem;
+}
+
+.server-dropdown {
+  left: 50%;
+  transform: translateX(-50%);
+  min-width: 220px;
+}
+.server-dropdown-item {
+  justify-content: space-between;
+}
+.server-dropdown-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* --- User menu --- */
+.user-menu {
+  position: relative;
+}
+.user-menu-btn {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  color: var(--text-muted);
+  font-size: 0.8rem;
+  font-family: var(--font);
+  padding: 0.3rem 0.65rem;
+  border-radius: 999px;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+.user-menu-btn:hover {
+  background: var(--bg-card-hover);
+  border-color: var(--border-bright);
+  color: var(--text);
+}
+.user-dropdown {
+  right: 0;
+}
+
+.chevron {
+  opacity: 0.5;
+  flex-shrink: 0;
+}
 
 .empty-state {
   text-align: center;
@@ -404,8 +499,9 @@ textarea { resize: none; }
 
 #dashboard-frame {
   width: 100%;
-  height: calc(100vh - 64px - 45px);
+  height: calc(100vh - 64px);
   border: none;
+  margin-top: 64px;
 }
 
 /* --- Pairing modal --- */
@@ -523,15 +619,6 @@ textarea { resize: none; }
   background: var(--red-bg);
   border-color: var(--red);
   color: var(--red);
-}
-
-.badge {
-  font-size: 0.75rem;
-  padding: 0.2rem 0.6rem;
-  background: var(--bg-card);
-  border: 1px solid var(--border);
-  border-radius: 999px;
-  color: var(--text-muted);
 }
 
 /* --- Footer (matches klaudii.com) --- */

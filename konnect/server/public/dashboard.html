@@ -4,6 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Klaudii — Kloud Konnect</title>
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 512 512'><defs><linearGradient id='kg' x1='256' y1='80' x2='256' y2='432' gradientUnits='userSpaceOnUse'><stop offset='0%25' stop-color='%2386efac'/><stop offset='50%25' stop-color='%234ade80'/><stop offset='100%25' stop-color='%2322c55e'/></linearGradient></defs><rect x='132' y='100' width='40' height='312' rx='20' fill='url(%23kg)'/><line x1='188' y1='256' x2='362' y2='120' stroke='url(%23kg)' stroke-width='40' stroke-linecap='round'/><line x1='188' y1='256' x2='362' y2='392' stroke='url(%23kg)' stroke-width='40' stroke-linecap='round'/></svg>">
   <link rel="stylesheet" href="/konnect.css">
   <link rel="stylesheet" href="/dashboard/style.css">
 </head>
@@ -29,21 +30,37 @@
     </div>
   </div>
 
-  <!-- Nav bar (same as klaudii.com) -->
+  <!-- Nav bar -->
   <nav class="nav">
     <div class="nav-inner">
-      <a href="https://www.klaudii.com" class="nav-logo">
-        <svg class="nav-logo-icon" viewBox="0 0 512 512" xmlns="http://www.w3.org/2000/svg">
-          <defs><linearGradient id="lg" x1="256" y1="80" x2="256" y2="432" gradientUnits="userSpaceOnUse"><stop offset="0%" stop-color="#86efac"/><stop offset="50%" stop-color="#4ade80"/><stop offset="100%" stop-color="#22c55e"/></linearGradient></defs>
-          <rect x="132" y="100" width="40" height="312" rx="20" fill="url(#lg)"/>
-          <line x1="188" y1="256" x2="362" y2="120" stroke="url(#lg)" stroke-width="40" stroke-linecap="round"/>
-          <line x1="188" y1="256" x2="362" y2="392" stroke="url(#lg)" stroke-width="40" stroke-linecap="round"/>
-        </svg>
-        <span>Klaudii</span>
-      </a>
+      <div class="nav-left">
+        <a href="https://www.klaudii.com" class="nav-logo" id="nav-logo">
+          <svg class="nav-logo-icon" viewBox="0 0 512 512" xmlns="http://www.w3.org/2000/svg">
+            <defs><linearGradient id="lg" x1="256" y1="80" x2="256" y2="432" gradientUnits="userSpaceOnUse"><stop offset="0%" stop-color="#86efac"/><stop offset="50%" stop-color="#4ade80"/><stop offset="100%" stop-color="#22c55e"/></linearGradient></defs>
+            <rect x="132" y="100" width="40" height="312" rx="20" fill="url(#lg)"/>
+            <line x1="188" y1="256" x2="362" y2="120" stroke="url(#lg)" stroke-width="40" stroke-linecap="round"/>
+            <line x1="188" y1="256" x2="362" y2="392" stroke="url(#lg)" stroke-width="40" stroke-linecap="round"/>
+          </svg>
+          <span id="nav-title">Klaudii</span>
+        </a>
+      </div>
+      <div class="nav-center" id="server-selector" style="display:none">
+        <button class="server-selector-btn" onclick="toggleServerMenu(event)">
+          <span id="server-selector-name"></span>
+          <svg class="chevron" width="14" height="14" viewBox="0 0 12 12"><path d="M3 4.5L6 7.5L9 4.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" fill="none"/></svg>
+        </button>
+        <div class="dropdown server-dropdown" id="server-dropdown"></div>
+      </div>
       <div class="nav-right">
-        <span id="user-name" class="badge">...</span>
-        <button class="btn btn-sm btn-ghost" onclick="logout()">Sign Out</button>
+        <div class="user-menu" id="user-menu">
+          <button class="user-menu-btn" onclick="toggleUserMenu(event)">
+            <span id="user-name">...</span>
+            <svg class="chevron" width="12" height="12" viewBox="0 0 12 12"><path d="M3 4.5L6 7.5L9 4.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" fill="none"/></svg>
+          </button>
+          <div class="dropdown user-dropdown" id="user-dropdown">
+            <button class="dropdown-item" onclick="logout()">Sign Out</button>
+          </div>
+        </div>
       </div>
     </div>
   </nav>
@@ -71,11 +88,6 @@
 
   <!-- Dashboard view (when a server is selected) -->
   <div id="dashboard-view" style="display:none">
-    <div class="cloud-header">
-      <button class="back-btn" onclick="backToServers()">Back</button>
-      <span class="server-label" id="active-server-name"></span>
-      <span class="user-info" id="active-user-name"></span>
-    </div>
     <iframe id="dashboard-frame" src=""></iframe>
   </div>
 
@@ -83,6 +95,7 @@
   <script>
     let currentUser = null;
     let currentServerId = null;
+    let cachedServers = [];
 
     async function init() {
       try {
@@ -90,16 +103,33 @@
         if (!resp.ok) { window.location.href = "/"; return; }
         currentUser = await resp.json();
         document.getElementById("user-name").textContent = currentUser.name || currentUser.email;
-        loadServers();
+        await loadServers();
+
+        // Auto-reconnect to last used server if it's online and we have a key
+        const lastServer = localStorage.getItem("klaudii-last-server");
+        if (lastServer) {
+          try {
+            const { id, name } = JSON.parse(lastServer);
+            const server = cachedServers.find(s => s.id === id);
+            if (server && server.online && hasConnectionKey(id)) {
+              selectServer(id, name);
+              return;
+            }
+          } catch {}
+        }
       } catch { window.location.href = "/"; }
     }
 
     async function loadServers() {
       const resp = await fetch("/api/servers");
-      const servers = await resp.json();
+      cachedServers = await resp.json();
+      renderServerList();
+    }
+
+    function renderServerList() {
       const list = document.getElementById("server-list");
 
-      if (servers.length === 0) {
+      if (cachedServers.length === 0) {
         list.innerHTML = `
           <div class="empty-state">
             <h3>No servers konnected</h3>
@@ -112,7 +142,7 @@
         return;
       }
 
-      list.innerHTML = servers.map(s => {
+      list.innerHTML = cachedServers.map(s => {
         const hasKey = hasConnectionKey(s.id);
         const lastSeen = s.lastSeen ? formatTimeAgo(s.lastSeen * 1000) : "never";
         const clickAction = s.online && hasKey ? `selectServer('${s.id}', '${esc(s.name)}')` : (!hasKey ? `enterKey('${s.id}')` : "");
@@ -130,6 +160,25 @@
           </div>
         `;
       }).join("");
+    }
+
+    function renderServerDropdown() {
+      const dd = document.getElementById("server-dropdown");
+      const items = cachedServers.map(s => {
+        const active = s.id === currentServerId ? " active" : "";
+        const hasKey = hasConnectionKey(s.id);
+        const clickable = s.online && hasKey;
+        return `
+          <button class="dropdown-item server-dropdown-item${active}" onclick="${clickable ? `switchServer('${s.id}', '${esc(s.name)}')` : ""}" ${!clickable ? "disabled" : ""}>
+            <span class="server-dropdown-name">${esc(s.name)}</span>
+            <span class="status-dot ${s.online ? "online" : "offline"}"></span>
+          </button>
+        `;
+      }).join("");
+      dd.innerHTML = items
+        + `<div class="dropdown-divider"></div>`
+        + `<button class="dropdown-item" onclick="showPickerView(); closeAllDropdowns()">All Servers</button>`
+        + `<button class="dropdown-item" onclick="addServer()">+ Add Server</button>`;
     }
 
     async function deleteServer(id, name) {
@@ -152,18 +201,13 @@
     }
 
     async function addServer() {
-      const btn = document.querySelector('[onclick="addServer()"]');
-      if (btn) { btn.disabled = true; btn.textContent = "Generating..."; }
-      try {
-        const resp = await fetch("/api/pairing/create", { method: "POST" });
-        const { code, expiresIn } = await resp.json();
-        document.getElementById("pair-modal-code").textContent = code;
-        document.getElementById("pair-modal-expires").textContent =
-          `Expires in ${Math.floor(expiresIn / 60)} minutes`;
-        document.getElementById("pair-modal").style.display = "flex";
-      } finally {
-        if (btn) { btn.disabled = false; btn.textContent = "+ Add Server"; }
-      }
+      closeAllDropdowns();
+      const resp = await fetch("/api/pairing/create", { method: "POST" });
+      const { code, expiresIn } = await resp.json();
+      document.getElementById("pair-modal-code").textContent = code;
+      document.getElementById("pair-modal-expires").textContent =
+        `Expires in ${Math.floor(expiresIn / 60)} minutes`;
+      document.getElementById("pair-modal").style.display = "flex";
     }
 
     function closePairModal() {
@@ -175,25 +219,66 @@
 
     function selectServer(serverId, serverName) {
       currentServerId = serverId;
-      document.getElementById("active-server-name").textContent = serverName;
-      document.getElementById("active-user-name").textContent = currentUser.name || currentUser.email;
-
       const key = getConnectionKey(serverId);
       if (!key) { enterKey(serverId); return; }
+
+      // Remember last selected server
+      localStorage.setItem("klaudii-last-server", JSON.stringify({ id: serverId, name: serverName }));
+
+      // Show server selector in nav center
+      document.getElementById("server-selector").style.display = "flex";
+      document.getElementById("server-selector-name").textContent = serverName;
+      renderServerDropdown();
 
       document.getElementById("picker-view").style.display = "none";
       document.getElementById("dashboard-view").style.display = "block";
       initCloudTunnel(serverId, key, currentUser.id);
     }
 
-    function backToServers() {
+    function switchServer(serverId, serverName) {
+      closeAllDropdowns();
+      if (serverId === currentServerId) return;
+      disconnectCloudTunnel();
+      document.getElementById("dashboard-frame").src = "";
+      selectServer(serverId, serverName);
+    }
+
+    function showPickerView() {
       currentServerId = null;
       disconnectCloudTunnel();
       document.getElementById("dashboard-view").style.display = "none";
       document.getElementById("picker-view").style.display = "";
       document.getElementById("dashboard-frame").src = "";
+      document.getElementById("server-selector").style.display = "none";
       loadServers();
     }
+
+    // --- Dropdowns ---
+    function toggleServerMenu(e) {
+      e.preventDefault();
+      e.stopPropagation();
+      const dd = document.getElementById("server-dropdown");
+      const wasOpen = dd.classList.contains("open");
+      closeAllDropdowns();
+      if (!wasOpen) {
+        renderServerDropdown();
+        dd.classList.add("open");
+      }
+    }
+
+    function toggleUserMenu(e) {
+      e.stopPropagation();
+      const dd = document.getElementById("user-dropdown");
+      const wasOpen = dd.classList.contains("open");
+      closeAllDropdowns();
+      if (!wasOpen) dd.classList.add("open");
+    }
+
+    function closeAllDropdowns() {
+      document.querySelectorAll(".dropdown.open").forEach(d => d.classList.remove("open"));
+    }
+
+    document.addEventListener("click", () => closeAllDropdowns());
 
     async function logout() {
       await fetch("/auth/logout", { method: "POST" });
