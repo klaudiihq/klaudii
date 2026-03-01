@@ -1,4 +1,4 @@
-// Content script running on connect.klaudii.com pages.
+// Content script running on konnect.klaudii.com pages.
 // Reads the E2E connection keys from localStorage and forwards them to the
 // extension's background service worker so the side panel can establish
 // encrypted WebSocket tunnels to paired Klaudii servers.

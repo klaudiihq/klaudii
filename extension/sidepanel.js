@@ -1,5 +1,5 @@
 const DEFAULT_KLAUDII_URL = "http://localhost:9876";
-const KONNECT_ORIGIN = "https://connect.klaudii.com";
+const KONNECT_ORIGIN = "https://konnect.klaudii.com";
 
 const THEME_ICONS = {
   auto: `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>`,
@@ -19,9 +19,10 @@ let klaudiiUrl = DEFAULT_KLAUDII_URL;
 let klaudiiUrls = [DEFAULT_KLAUDII_URL];
 
 // Konnect / multi-server state
-let konnectUser = null;         // { id, email, name } if logged into connect.klaudii.com
+let konnectUser = null;         // { id, email, name } if logged into konnect.klaudii.com
 let konnectServers = [];        // [{ id, name, online, lastSeen }] from Konnect API
 let konnectTunnels = new Map(); // serverId → KonnectTunnel
+let konnectErrors = [];         // [{ name, error }] — servers that failed verification
 let selectedServer = "all";     // "all" | { type:"local", url } | { type:"konnect", id, name }
 let sessionsByProject = {};     // project → session (with _serverUrl or _konnectId)
 
@@ -200,7 +201,7 @@ async function konnectApi(serverId, path, opts = {}) {
     let { konnectConnectionKeys = {} } = await chrome.storage.local.get("konnectConnectionKeys");
 
     if (!konnectConnectionKeys[serverId]) {
-      // Auto-open connect.klaudii.com briefly to let the bridge script read localStorage
+      // Auto-open konnect.klaudii.com briefly to let the bridge script read localStorage
       konnectConnectionKeys = await chrome.runtime.sendMessage({ action: "fetchConnectionKeys" }) || {};
     }
 
@@ -231,7 +232,7 @@ class KonnectTunnel {
   connect() {
     if (this._connectPromise) return this._connectPromise;
     this._connectPromise = new Promise((resolve, reject) => {
-      const url = `wss://connect.klaudii.com/ws?role=browser&serverId=${this.serverId}&userId=${this.userId}`;
+      const url = `${KONNECT_ORIGIN.replace(/^http/, "ws")}/ws?role=browser&serverId=${this.serverId}&userId=${this.userId}`;
       this.ws = new WebSocket(url);
       const timeout = setTimeout(() => {
         this.ws.close();
@@ -267,16 +268,23 @@ class KonnectTunnel {
     const p = this.pending.get(msg.requestId);
     if (!p) return;
     this.pending.delete(msg.requestId);
+
+    // Handle relay-level errors (server_offline, wrong_key, etc.)
+    if (msg.error) {
+      if (msg.error === "wrong_key") {
+        // Connection key is stale — clear it so we re-pair next time
+        const { konnectConnectionKeys = {} } = await chrome.storage.local.get("konnectConnectionKeys");
+        delete konnectConnectionKeys[this.serverId];
+        chrome.storage.local.set({ konnectConnectionKeys });
+        this.ws?.close();
+      }
+      p.reject(new Error(msg.error));
+      return;
+    }
+
     try {
       const plain = await this._decrypt(msg.encrypted);
-      const response = JSON.parse(new TextDecoder().decode(plain));
-      if (response.status >= 400) {
-        const err = new Error(response.body?.error || `HTTP ${response.status}`);
-        err.status = response.status;
-        p.reject(err);
-      } else {
-        p.resolve(response.body);
-      }
+      p.resolve(JSON.parse(new TextDecoder().decode(plain)));
     } catch (e) { p.reject(e); }
   }
 
@@ -333,20 +341,83 @@ function _hexToBytes(hex) {
 }
 
 // --- Konnect discovery ---
+// Opens konnect.klaudii.com in a hidden tab and uses chrome.scripting.executeScript
+// in the page's MAIN world to fetch user/server data (page-context fetch includes
+// session cookies that cross-origin extension fetches can't access).
 
 async function fetchKonnectData() {
   try {
-    const meRes = await fetch(`${KONNECT_ORIGIN}/auth/me`, { credentials: "include" });
-    if (!meRes.ok) { konnectUser = null; renderServerPicker(); return; }
-    konnectUser = await meRes.json();
-
-    const serversRes = await fetch(`${KONNECT_ORIGIN}/api/servers`, { credentials: "include" });
-    if (serversRes.ok) konnectServers = await serversRes.json();
+    // Use cached data only if we have a valid logged-in user
+    const cached = await chrome.storage.local.get(["konnectUser", "konnectServers"]);
+    if (cached.konnectUser) {
+      konnectUser = cached.konnectUser;
+      konnectServers = cached.konnectServers || [];
+    } else {
+      // No valid cached user — fetch fresh data via background (opens hidden tab)
+      const result = await chrome.runtime.sendMessage({ action: "fetchKonnectData" });
+      if (result && result.user) {
+        konnectUser = result.user;
+        konnectServers = result.servers || [];
+      } else {
+        konnectUser = null;
+        konnectServers = [];
+      }
+    }
   } catch {
     konnectUser = null;
   }
+
+  // Verify each online server with a test API call before showing it
+  await verifyKonnectServers();
   renderServerPicker();
+  renderKonnectWarning();
 }
+
+async function verifyKonnectServers() {
+  const online = konnectServers.filter((s) => s.online);
+  if (!online.length) { konnectErrors = []; return; }
+
+  const results = await Promise.allSettled(
+    online.map(async (srv) => {
+      await konnectApi(srv.id, "/api/sessions");
+      return srv;
+    })
+  );
+
+  const verified = [];
+  const errors = [];
+  for (let i = 0; i < results.length; i++) {
+    if (results[i].status === "fulfilled") {
+      verified.push(online[i]);
+    } else {
+      errors.push({ name: online[i].name, error: results[i].reason?.message || "unknown" });
+    }
+  }
+
+  // Keep offline servers in the list, replace online ones with only verified
+  konnectServers = [
+    ...konnectServers.filter((s) => !s.online),
+    ...verified.map((s) => ({ ...s, verified: true })),
+  ];
+  konnectErrors = errors;
+
+  // If the selected server failed verification, fall back to "all"
+  if (selectedServer?.type === "konnect" && !verified.some((s) => s.id === selectedServer.id)) {
+    selectedServer = "all";
+    localStorage.setItem("selectedServer", JSON.stringify(selectedServer));
+  }
+}
+
+// React to bridge updates (e.g. user logs in/out on konnect.klaudii.com)
+chrome.storage.local.onChanged.addListener(async (changes) => {
+  if (changes.konnectUser || changes.konnectServers) {
+    if (changes.konnectUser) konnectUser = changes.konnectUser.newValue || null;
+    if (changes.konnectServers) konnectServers = changes.konnectServers.newValue || [];
+    await verifyKonnectServers();
+    renderServerPicker();
+    renderKonnectWarning();
+  }
+});
 
 // --- Server picker ---
 
@@ -382,25 +453,43 @@ function renderServerPicker() {
     html += `<div class="server-picker-section"><div class="server-picker-heading">Local</div>${items}</div>`;
   }
 
-  if (konnectServers.length) {
-    const items = konnectServers.map((srv) => {
+  // Only show Konnect servers that passed tunnel verification
+  const verifiedKonnect = konnectServers.filter((s) => s.verified);
+  if (verifiedKonnect.length) {
+    const items = verifiedKonnect.map((srv) => {
       const isSel = selectedServer.type === "konnect" && selectedServer.id === srv.id;
       return `<button class="server-picker-item${isSel ? " selected" : ""}"
-        data-server-key="konnect:${esc(srv.id)}"
-        ${!srv.online ? "disabled" : ""}>
+        data-server-key="konnect:${esc(srv.id)}">
         ${CLOUD_SVG}
         <span class="sp-name">${esc(srv.name)}</span>
-        <span class="sp-dot ${srv.online ? "online" : "offline"}"></span>
+        <span class="sp-dot online"></span>
       </button>`;
     }).join("");
     html += `<div class="server-picker-section"><div class="server-picker-heading">Kloud Konnect</div>${items}</div>`;
   } else if (konnectUser) {
+    const msg = konnectErrors.length ? "No reachable servers" : "No servers paired";
     html += `<div class="server-picker-section"><div class="server-picker-heading">Kloud Konnect</div>
-      <div class="server-picker-item" style="cursor:default;color:var(--text-dimmer)">No servers paired</div>
+      <div class="server-picker-item" style="cursor:default;color:var(--text-dimmer)">${msg}</div>
     </div>`;
   }
 
   menu.innerHTML = html;
+}
+
+function renderKonnectWarning() {
+  const el = document.getElementById("konnect-warning");
+  if (!el) return;
+  if (!konnectErrors.length) {
+    el.classList.add("hidden");
+    el.textContent = "";
+    return;
+  }
+  const names = konnectErrors.map((e) => e.name).join(", ");
+  el.textContent = konnectErrors.length === 1
+    ? `${names} unreachable`
+    : `${konnectErrors.length} Konnect servers unreachable`;
+  el.title = konnectErrors.map((e) => `${e.name}: ${e.error}`).join("\n");
+  el.classList.remove("hidden");
 }
 
 // --- Data loading ---
@@ -1163,7 +1252,13 @@ async function submitCreateRepo() {
 // --- Navigation ---
 
 function openDashboard() {
-  chrome.runtime.sendMessage({ action: "openUrl", url: klaudiiUrls[0] || DEFAULT_KLAUDII_URL });
+  chrome.windows.getCurrent((win) => {
+    chrome.runtime.sendMessage({
+      action: "switchToUrl",
+      url: klaudiiUrls[0] || DEFAULT_KLAUDII_URL,
+      windowId: win?.id,
+    });
+  });
 }
 
 function openSettings() {

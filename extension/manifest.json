@@ -14,7 +14,7 @@
     "https://localhost:*/*",
     "http://127.0.0.1:*/*",
     "https://claude.ai/*",
-    "https://connect.klaudii.com/*"
+    "https://konnect.klaudii.com/*"
   ],
   "side_panel": {
     "default_path": "sidepanel.html"
@@ -29,7 +29,7 @@
       "run_at": "document_idle"
     },
     {
-      "matches": ["https://connect.klaudii.com/*"],
+      "matches": ["https://konnect.klaudii.com/*"],
       "js": ["connect-bridge.js"],
       "run_at": "document_idle"
     }

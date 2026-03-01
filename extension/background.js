@@ -44,9 +44,15 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     return true;
   }
 
-  // Open a URL in a new tab (used for dashboard, terminal, etc.)
+  // Open a URL in a new tab (used for terminal, etc.)
   if (message.action === "openUrl") {
     chrome.tabs.create({ url: message.url }).then(sendResponse);
+    return true;
+  }
+
+  // Reuse an existing tab at this URL origin, or open a new one
+  if (message.action === "switchToUrl") {
+    switchToUrl(message.url, message.windowId).then(sendResponse);
     return true;
   }
 
@@ -57,7 +63,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     return true;
   }
 
-  // connect-bridge.js: store E2E connection keys read from connect.klaudii.com localStorage
+  // connect-bridge.js: store E2E connection keys read from konnect.klaudii.com localStorage
   if (message.action === "storeConnectionKeys") {
     chrome.storage.local.get("konnectConnectionKeys", (existing) => {
       const merged = { ...(existing.konnectConnectionKeys || {}), ...message.keys };
@@ -66,10 +72,16 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     return;
   }
 
-  // Side panel: open connect.klaudii.com briefly to trigger connect-bridge.js,
-  // wait for the keys to land in local storage, then close the tab.
+  // Side panel: open konnect.klaudii.com briefly, use executeScript to
+  // read connection keys and fetch user/server data from the page context.
   if (message.action === "fetchConnectionKeys") {
-    fetchConnectionKeys().then(sendResponse);
+    fetchKonnectAll().then((result) => sendResponse(result.keys));
+    return true;
+  }
+
+  // Side panel: fetch all Konnect data (user, servers, keys)
+  if (message.action === "fetchKonnectData") {
+    fetchKonnectAll().then(sendResponse);
     return true;
   }
 });
@@ -171,6 +183,22 @@ async function switchTab(url, title, windowId, needsInput) {
   return { tabId: targetTab.id };
 }
 
+// Switch to an existing tab whose URL starts with the given URL, or open a new one.
+async function switchToUrl(url, windowId) {
+  const origin = new URL(url).origin;
+  const queryOpts = { url: `${origin}/*` };
+  if (windowId) queryOpts.windowId = windowId;
+  const candidates = await chrome.tabs.query(queryOpts);
+  if (candidates.length) {
+    await chrome.tabs.update(candidates[0].id, { active: true });
+    return { tabId: candidates[0].id };
+  }
+  const createOpts = { url };
+  if (windowId) createOpts.windowId = windowId;
+  const tab = await chrome.tabs.create(createOpts);
+  return { tabId: tab.id };
+}
+
 function waitForTabLoad(tabId) {
   return new Promise((resolve) => {
     let seenLoading = false;
@@ -194,24 +222,93 @@ function waitForTabLoad(tabId) {
   });
 }
 
-// Open connect.klaudii.com in a background tab, let connect-bridge.js run and
-// store the connection keys, then close the tab.  Returns when keys are stored
-// (or after a 6-second timeout).
-async function fetchConnectionKeys() {
-  const tab = await chrome.tabs.create({ url: "https://connect.klaudii.com/", active: false });
-  await waitForTabLoad(tab.id);
+// Open konnect.klaudii.com in a background tab, then use executeScript in
+// the page's MAIN world to read connection keys from localStorage and fetch
+// user/server data (page-context fetch includes session cookies).
+// Returns { keys, user, servers }.
+// Deduplicates concurrent calls so only one tab is opened at a time.
+let _fetchKonnectPromise = null;
 
-  // Poll local storage for up to 5 seconds waiting for the bridge script to fire
-  const start = Date.now();
-  while (Date.now() - start < 5000) {
-    await new Promise((r) => setTimeout(r, 300));
-    const { konnectConnectionKeys } = await chrome.storage.local.get("konnectConnectionKeys");
-    if (konnectConnectionKeys && Object.keys(konnectConnectionKeys).length > 0) break;
+function fetchKonnectAll() {
+  if (_fetchKonnectPromise) return _fetchKonnectPromise;
+  _fetchKonnectPromise = _doFetchKonnectAll().finally(() => { _fetchKonnectPromise = null; });
+  return _fetchKonnectPromise;
+}
+
+async function _doFetchKonnectAll() {
+  let tab;
+  try {
+    tab = await chrome.tabs.create({ url: "https://konnect.klaudii.com/", active: false });
+    await waitForTabLoad(tab.id);
+  } catch (err) {
+    console.warn("[Klaudii] Failed to open Konnect tab:", err);
+    return { keys: {}, user: null, servers: [] };
+  }
+
+  let keys = {};
+  let user = null;
+  let servers = [];
+
+  try {
+    // Read connection keys from the page's localStorage (MAIN world)
+    const [keysResult] = await chrome.scripting.executeScript({
+      target: { tabId: tab.id },
+      world: "MAIN",
+      func: () => {
+        try {
+          const raw = localStorage.getItem("klaudii-connection-keys");
+          return raw ? JSON.parse(raw) : {};
+        } catch { return {}; }
+      },
+    });
+    if (keysResult?.result && typeof keysResult.result === "object") {
+      keys = keysResult.result;
+    }
+  } catch (err) {
+    console.warn("[Klaudii] Failed to read connection keys:", err);
+  }
+
+  try {
+    // Fetch user info and server list from the page context (cookies included)
+    const [dataResult] = await chrome.scripting.executeScript({
+      target: { tabId: tab.id },
+      world: "MAIN",
+      func: async () => {
+        try {
+          const meRes = await fetch("/auth/me");
+          if (!meRes.ok) return { user: null, servers: [] };
+          const user = await meRes.json();
+          const serversRes = await fetch("/api/servers");
+          const servers = serversRes.ok ? await serversRes.json() : [];
+          return { user, servers };
+        } catch { return { user: null, servers: [] }; }
+      },
+    });
+    if (dataResult?.result) {
+      user = dataResult.result.user;
+      servers = dataResult.result.servers || [];
+    }
+  } catch (err) {
+    console.warn("[Klaudii] Failed to fetch Konnect data:", err);
   }
 
   chrome.tabs.remove(tab.id).catch(() => {});
-  const { konnectConnectionKeys = {} } = await chrome.storage.local.get("konnectConnectionKeys");
-  return konnectConnectionKeys;
+
+  // Persist to storage so the side panel can read cached data on next open
+  if (Object.keys(keys).length > 0) {
+    const existing = await chrome.storage.local.get("konnectConnectionKeys");
+    const merged = { ...(existing.konnectConnectionKeys || {}), ...keys };
+    chrome.storage.local.set({ konnectConnectionKeys: merged });
+  }
+  // Only cache user/server data if we got a valid user — avoids caching
+  // "not logged in" state which would prevent fresh fetches on next open
+  if (user) {
+    chrome.storage.local.set({ konnectUser: user, konnectServers: servers });
+  } else {
+    chrome.storage.local.remove(["konnectUser", "konnectServers"]);
+  }
+
+  return { keys, user, servers };
 }
 
 // This function is injected into the claude.ai page context (MAIN world).

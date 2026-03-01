@@ -177,6 +177,13 @@ h1 {
 .badge.ok    { background: var(--ok-bg);  color: var(--ok-fg);  }
 .badge.error { background: var(--err-bg); color: var(--err-fg); }
 
+.konnect-warning {
+  font-size: 10px;
+  color: var(--err-fg);
+  margin-left: 4px;
+  white-space: nowrap;
+}
+
 /* Connection error banner */
 .connection-error {
   display: flex;
