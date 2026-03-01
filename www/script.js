@@ -155,3 +155,93 @@ document.querySelectorAll('a[href^="#"]').forEach(a => {
     }
   });
 })();
+
+
+// ---- Stretchy nav indicator ----
+(function navIndicator() {
+  const container = document.getElementById('nav-links');
+  const indicator = document.getElementById('nav-indicator');
+  if (!container || !indicator) return;
+
+  const links = container.querySelectorAll('a[data-section]');
+  const sections = [];
+  links.forEach(link => {
+    const id = link.dataset.section;
+    const section = document.getElementById(id);
+    if (section) sections.push({ link, section, id });
+  });
+  if (!sections.length) return;
+
+  let current = null;
+
+  function moveIndicator(link) {
+    if (!link) {
+      indicator.style.opacity = '0';
+      return;
+    }
+    const containerRect = container.getBoundingClientRect();
+    const linkRect = link.getBoundingClientRect();
+    indicator.style.opacity = '1';
+    indicator.style.left = (linkRect.left - containerRect.left) + 'px';
+    indicator.style.width = linkRect.width + 'px';
+  }
+
+  function updateActive() {
+    const scrollY = window.scrollY + 120; // offset for nav
+    let active = null;
+
+    for (let i = sections.length - 1; i >= 0; i--) {
+      const top = sections[i].section.offsetTop;
+      if (scrollY >= top) {
+        active = sections[i];
+        break;
+      }
+    }
+
+    // Hide if at the very top (hero area)
+    if (window.scrollY < 300) active = null;
+
+    if (active !== current) {
+      if (current) current.link.classList.remove('active');
+      current = active;
+      if (current) {
+        current.link.classList.add('active');
+        moveIndicator(current.link);
+      } else {
+        moveIndicator(null);
+      }
+    }
+  }
+
+  // Stretch effect: briefly widen during transition
+  let prevLeft = 0;
+  const origTransition = indicator.style.transition;
+  const observer = new MutationObserver(() => {
+    const newLeft = parseFloat(indicator.style.left) || 0;
+    if (Math.abs(newLeft - prevLeft) > 10) {
+      const stretch = Math.min(Math.abs(newLeft - prevLeft) * 0.3, 40);
+      indicator.style.transition = 'left 0.35s cubic-bezier(0.4,0,0.2,1), width 0.35s cubic-bezier(0.4,0,0.2,1)';
+      // Temporarily widen
+      const baseWidth = parseFloat(indicator.style.width) || 0;
+      indicator.style.width = (baseWidth + stretch) + 'px';
+      setTimeout(() => {
+        if (current) moveIndicator(current.link);
+      }, 180);
+    }
+    prevLeft = newLeft;
+  });
+  observer.observe(indicator, { attributes: true, attributeFilter: ['style'] });
+
+  indicator.style.opacity = '0';
+
+  let rafId;
+  window.addEventListener('scroll', () => {
+    cancelAnimationFrame(rafId);
+    rafId = requestAnimationFrame(updateActive);
+  });
+
+  // Also update on resize (link positions change)
+  window.addEventListener('resize', () => {
+    if (current) moveIndicator(current.link);
+  });
+})();

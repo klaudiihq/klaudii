@@ -106,6 +106,15 @@ img { max-width: 100%; display: block; }
   background: #6d4de8;
   box-shadow: 0 0 24px var(--accent-glow-strong);
 }
+.btn-green {
+  background: #15803d;
+  color: #fff;
+  border-color: #15803d;
+}
+.btn-green:hover {
+  background: #166534;
+  box-shadow: 0 0 24px rgba(21,128,61,0.3);
+}
 .btn-ghost {
   background: transparent;
   color: var(--text);
@@ -161,9 +170,25 @@ img { max-width: 100%; display: block; }
   gap: 2rem;
   font-size: 0.9rem;
   color: var(--text-muted);
+  position: relative;
+}
+.nav-links a {
+  position: relative;
+  padding-bottom: 4px;
+  transition: color 0.2s;
 }
 .nav-links a:hover { color: var(--text); }
+.nav-links a.active { color: var(--text); }
 .nav-link-muted { opacity: 0.6; }
+.nav-indicator {
+  position: absolute;
+  bottom: -4px;
+  height: 2px;
+  background: var(--accent);
+  border-radius: 1px;
+  transition: left 0.35s cubic-bezier(0.4, 0, 0.2, 1), width 0.35s cubic-bezier(0.4, 0, 0.2, 1);
+  pointer-events: none;
+}
 .nav-actions { display: flex; gap: 0.75rem; }
 .nav-mobile-toggle {
   display: none;

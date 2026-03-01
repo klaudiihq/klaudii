@@ -11,7 +11,7 @@
   <meta property="og:type" content="website">
   <meta property="og:url" content="https://www.klaudii.com">
   <meta name="twitter:card" content="summary_large_image">
-  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' rx='8' fill='%237c5bf5'/><path d='M10 22V10h2.5l4.5 7.5L21.5 10H24v12h-2.2V14.8L17.5 21h-1l-4.3-6.2V22H10z' fill='white'/></svg>">
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 512 512'><defs><linearGradient id='kg' x1='256' y1='80' x2='256' y2='432' gradientUnits='userSpaceOnUse'><stop offset='0%25' stop-color='%2386efac'/><stop offset='50%25' stop-color='%234ade80'/><stop offset='100%25' stop-color='%2322c55e'/></linearGradient></defs><rect x='132' y='100' width='40' height='312' rx='20' fill='url(%23kg)'/><line x1='188' y1='256' x2='362' y2='120' stroke='url(%23kg)' stroke-width='40' stroke-linecap='round'/><line x1='188' y1='256' x2='362' y2='392' stroke='url(%23kg)' stroke-width='40' stroke-linecap='round'/></svg>">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
@@ -23,23 +23,25 @@
   <nav class="nav" id="nav">
     <div class="nav-inner">
       <a href="/" class="nav-logo">
-        <svg class="nav-logo-icon" viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg">
-          <rect width="32" height="32" rx="8" fill="url(#logo-grad)"/>
-          <path d="M10 22V10h2.5l4.5 7.5L21.5 10H24v12h-2.2V14.8L17.5 21h-1l-4.3-6.2V22H10z" fill="#fff"/>
-          <defs><linearGradient id="logo-grad" x1="0" y1="0" x2="32" y2="32"><stop stop-color="#7c5bf5"/><stop offset="1" stop-color="#a855f7"/></linearGradient></defs>
+        <svg class="nav-logo-icon" viewBox="0 0 512 512" xmlns="http://www.w3.org/2000/svg">
+          <defs><linearGradient id="logo-grad" x1="256" y1="80" x2="256" y2="432" gradientUnits="userSpaceOnUse"><stop offset="0%" stop-color="#86efac"/><stop offset="50%" stop-color="#4ade80"/><stop offset="100%" stop-color="#22c55e"/></linearGradient></defs>
+          <rect x="132" y="100" width="40" height="312" rx="20" fill="url(#logo-grad)"/>
+          <line x1="188" y1="256" x2="362" y2="120" stroke="url(#logo-grad)" stroke-width="40" stroke-linecap="round"/>
+          <line x1="188" y1="256" x2="362" y2="392" stroke="url(#logo-grad)" stroke-width="40" stroke-linecap="round"/>
         </svg>
         <span>Klaudii</span>
       </a>
-      <div class="nav-links">
-        <a href="#features">Features</a>
-        <a href="#security">Security</a>
-        <a href="#setup">Setup</a>
-        <a href="#pricing">Pricing</a>
-        <a href="https://docs.klaudii.com" class="nav-link-muted">Docs</a>
+      <div class="nav-links" id="nav-links">
+        <a href="#features" data-section="features">Features</a>
+        <a href="#security" data-section="security">Security</a>
+        <a href="#setup" data-section="setup">Setup</a>
+        <a href="#pricing" data-section="pricing">Pricing</a>
+        <a href="/docs" class="nav-link-muted">Docs</a>
+        <div class="nav-indicator" id="nav-indicator"></div>
       </div>
       <div class="nav-actions">
         <a href="https://konnect.klaudii.com" class="btn btn-ghost">Sign In</a>
-        <a href="#setup" class="btn btn-primary">Get Started</a>
+        <a href="#setup" class="btn btn-green">Get Started</a>
       </div>
       <button class="nav-mobile-toggle" id="nav-toggle" aria-label="Toggle menu">
         <span></span><span></span><span></span>
@@ -718,7 +720,7 @@
       </p>
       <div class="hero-actions">
         <a href="#setup" class="btn btn-primary btn-lg">Get started free</a>
-        <a href="https://docs.klaudii.com" class="btn btn-ghost btn-lg">Read the docs</a>
+        <a href="/docs" class="btn btn-ghost btn-lg">Read the docs</a>
       </div>
     </div>
   </section>
@@ -729,10 +731,11 @@
       <div class="footer-grid">
         <div class="footer-brand">
           <div class="nav-logo">
-            <svg class="nav-logo-icon" viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg">
-              <rect width="32" height="32" rx="8" fill="url(#logo-grad2)"/>
-              <path d="M10 22V10h2.5l4.5 7.5L21.5 10H24v12h-2.2V14.8L17.5 21h-1l-4.3-6.2V22H10z" fill="#fff"/>
-              <defs><linearGradient id="logo-grad2" x1="0" y1="0" x2="32" y2="32"><stop stop-color="#7c5bf5"/><stop offset="1" stop-color="#a855f7"/></linearGradient></defs>
+            <svg class="nav-logo-icon" viewBox="0 0 512 512" xmlns="http://www.w3.org/2000/svg">
+              <defs><linearGradient id="logo-grad2" x1="256" y1="80" x2="256" y2="432" gradientUnits="userSpaceOnUse"><stop offset="0%" stop-color="#86efac"/><stop offset="50%" stop-color="#4ade80"/><stop offset="100%" stop-color="#22c55e"/></linearGradient></defs>
+              <rect x="132" y="100" width="40" height="312" rx="20" fill="url(#logo-grad2)"/>
+              <line x1="188" y1="256" x2="362" y2="120" stroke="url(#logo-grad2)" stroke-width="40" stroke-linecap="round"/>
+              <line x1="188" y1="256" x2="362" y2="392" stroke="url(#logo-grad2)" stroke-width="40" stroke-linecap="round"/>
             </svg>
             <span>Klaudii</span>
           </div>
@@ -747,7 +750,7 @@
         </div>
         <div class="footer-col">
           <h4>Resources</h4>
-          <a href="https://docs.klaudii.com">Documentation</a>
+          <a href="/docs">Documentation</a>
           <a href="https://github.com/klaudii-dev/klaudii">GitHub</a>
           <a href="https://github.com/klaudii-dev/klaudii/releases">Changelog</a>
         </div>
