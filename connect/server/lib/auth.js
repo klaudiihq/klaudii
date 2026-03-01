@@ -1,8 +1,13 @@
 // Google OAuth 2.0 — direct implementation, no passport dependency
 
+const crypto = require("crypto");
+
 const GOOGLE_AUTH_URL = "https://accounts.google.com/o/oauth2/v2/auth";
 const GOOGLE_TOKEN_URL = "https://oauth2.googleapis.com/token";
 const GOOGLE_USERINFO_URL = "https://www.googleapis.com/oauth2/v2/userinfo";
+
+// One-time tokens for mobile auth (token -> { userId, expires })
+const mobileTokens = new Map();
 
 function getConfig() {
   const clientId = process.env.GOOGLE_CLIENT_ID;
@@ -65,8 +70,12 @@ function requireAuth(req, res, next) {
 }
 
 function setupRoutes(app, db) {
-  app.get("/auth/google", (_req, res) => {
+  app.get("/auth/google", (req, res) => {
     try {
+      // Mobile apps pass ?mobile=1 to trigger custom-scheme redirect after auth
+      if (req.query.mobile === "1") {
+        req.session.mobile = true;
+      }
       res.redirect(getAuthUrl());
     } catch (err) {
       res.status(500).json({ error: err.message });
@@ -84,13 +93,39 @@ function setupRoutes(app, db) {
       const userInfo = await getUserInfo(tokens.access_token);
 
       const user = db.upsertUser(userInfo.id, userInfo.email, userInfo.name);
-      req.session.userId = user.id;
 
+      // Mobile flow: generate one-time token and redirect to custom URL scheme
+      if (req.session.mobile) {
+        const token = crypto.randomBytes(32).toString("hex");
+        mobileTokens.set(token, { userId: user.id, expires: Date.now() + 60000 });
+        req.session = null;
+        return res.redirect(`klaudii://auth/callback?token=${token}`);
+      }
+
+      req.session.userId = user.id;
       res.redirect("/");
     } catch (err) {
       console.error("OAuth callback error:", err);
       res.status(500).send("Authentication failed");
     }
+  });
+
+  // Mobile token exchange: swap one-time token for a session cookie
+  app.post("/auth/token-exchange", (req, res) => {
+    const { token } = req.body;
+    if (!token) {
+      return res.status(400).json({ error: "Missing token" });
+    }
+
+    const entry = mobileTokens.get(token);
+    if (!entry || Date.now() > entry.expires) {
+      mobileTokens.delete(token);
+      return res.status(401).json({ error: "Invalid or expired token" });
+    }
+
+    mobileTokens.delete(token);
+    req.session.userId = entry.userId;
+    res.json({ ok: true });
   });
 
   app.get("/auth/me", requireAuth, (req, res) => {

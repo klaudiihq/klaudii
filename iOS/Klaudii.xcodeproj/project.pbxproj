@@ -1,0 +1,492 @@
+// !$*UTF8*$!
+{
+	archiveVersion = 1;
+	classes = {
+	};
+	objectVersion = 56;
+	objects = {
+
+/* Begin PBXBuildFile section */
+		A000000000000001 /* KlaudiiApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = A000000000000101 /* KlaudiiApp.swift */; };
+		A000000000000002 /* Session.swift in Sources */ = {isa = PBXBuildFile; fileRef = A000000000000102 /* Session.swift */; };
+		A000000000000003 /* Server.swift in Sources */ = {isa = PBXBuildFile; fileRef = A000000000000103 /* Server.swift */; };
+		A000000000000004 /* HistoryEntry.swift in Sources */ = {isa = PBXBuildFile; fileRef = A000000000000104 /* HistoryEntry.swift */; };
+		A000000000000005 /* CryptoService.swift in Sources */ = {isa = PBXBuildFile; fileRef = A000000000000105 /* CryptoService.swift */; };
+		A000000000000006 /* KeychainService.swift in Sources */ = {isa = PBXBuildFile; fileRef = A000000000000106 /* KeychainService.swift */; };
+		A000000000000007 /* AuthService.swift in Sources */ = {isa = PBXBuildFile; fileRef = A000000000000107 /* AuthService.swift */; };
+		A000000000000008 /* CloudRelay.swift in Sources */ = {isa = PBXBuildFile; fileRef = A000000000000108 /* CloudRelay.swift */; };
+		A000000000000009 /* AppViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = A000000000000109 /* AppViewModel.swift */; };
+		A00000000000000A /* SessionsViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000010A /* SessionsViewModel.swift */; };
+		A00000000000000B /* PairingViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000010B /* PairingViewModel.swift */; };
+		A00000000000000C /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000010C /* ContentView.swift */; };
+		A00000000000000D /* LoginView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000010D /* LoginView.swift */; };
+		A00000000000000E /* ServerPickerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000010E /* ServerPickerView.swift */; };
+		A00000000000000F /* PairingView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000010F /* PairingView.swift */; };
+		A000000000000010 /* DashboardView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A000000000000110 /* DashboardView.swift */; };
+		A000000000000011 /* SessionCardView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A000000000000111 /* SessionCardView.swift */; };
+		A000000000000012 /* HistoryListView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A000000000000112 /* HistoryListView.swift */; };
+		A000000000000013 /* ProcessesView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A000000000000113 /* ProcessesView.swift */; };
+		A000000000000014 /* SettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A000000000000114 /* SettingsView.swift */; };
+		A000000000000015 /* Theme.swift in Sources */ = {isa = PBXBuildFile; fileRef = A000000000000115 /* Theme.swift */; };
+		A000000000000016 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = A000000000000116 /* Assets.xcassets */; };
+		A000000000000017 /* CryptoKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = A000000000000201 /* CryptoKit.framework */; settings = {ATTRIBUTES = (Weak, ); }; };
+		A000000000000018 /* AuthenticationServices.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = A000000000000202 /* AuthenticationServices.framework */; };
+		A000000000000019 /* AVFoundation.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = A000000000000203 /* AVFoundation.framework */; };
+		A00000000000001A /* Security.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = A000000000000204 /* Security.framework */; };
+/* End PBXBuildFile section */
+
+/* Begin PBXFileReference section */
+		A000000000000101 /* KlaudiiApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KlaudiiApp.swift; sourceTree = "<group>"; };
+		A000000000000102 /* Session.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Session.swift; sourceTree = "<group>"; };
+		A000000000000103 /* Server.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Server.swift; sourceTree = "<group>"; };
+		A000000000000104 /* HistoryEntry.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HistoryEntry.swift; sourceTree = "<group>"; };
+		A000000000000105 /* CryptoService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CryptoService.swift; sourceTree = "<group>"; };
+		A000000000000106 /* KeychainService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeychainService.swift; sourceTree = "<group>"; };
+		A000000000000107 /* AuthService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AuthService.swift; sourceTree = "<group>"; };
+		A000000000000108 /* CloudRelay.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CloudRelay.swift; sourceTree = "<group>"; };
+		A000000000000109 /* AppViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppViewModel.swift; sourceTree = "<group>"; };
+		A00000000000010A /* SessionsViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SessionsViewModel.swift; sourceTree = "<group>"; };
+		A00000000000010B /* PairingViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PairingViewModel.swift; sourceTree = "<group>"; };
+		A00000000000010C /* ContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentView.swift; sourceTree = "<group>"; };
+		A00000000000010D /* LoginView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LoginView.swift; sourceTree = "<group>"; };
+		A00000000000010E /* ServerPickerView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ServerPickerView.swift; sourceTree = "<group>"; };
+		A00000000000010F /* PairingView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PairingView.swift; sourceTree = "<group>"; };
+		A000000000000110 /* DashboardView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DashboardView.swift; sourceTree = "<group>"; };
+		A000000000000111 /* SessionCardView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SessionCardView.swift; sourceTree = "<group>"; };
+		A000000000000112 /* HistoryListView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HistoryListView.swift; sourceTree = "<group>"; };
+		A000000000000113 /* ProcessesView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProcessesView.swift; sourceTree = "<group>"; };
+		A000000000000114 /* SettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsView.swift; sourceTree = "<group>"; };
+		A000000000000115 /* Theme.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Theme.swift; sourceTree = "<group>"; };
+		A000000000000116 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
+		A000000000000201 /* CryptoKit.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = CryptoKit.framework; path = System/Library/Frameworks/CryptoKit.framework; sourceTree = SDKROOT; };
+		A000000000000202 /* AuthenticationServices.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = AuthenticationServices.framework; path = System/Library/Frameworks/AuthenticationServices.framework; sourceTree = SDKROOT; };
+		A000000000000203 /* AVFoundation.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = AVFoundation.framework; path = System/Library/Frameworks/AVFoundation.framework; sourceTree = SDKROOT; };
+		A000000000000204 /* Security.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = Security.framework; path = System/Library/Frameworks/Security.framework; sourceTree = SDKROOT; };
+		A000000000000117 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
+		A000000000000301 /* Klaudii.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Klaudii.app; sourceTree = BUILT_PRODUCTS_DIR; };
+/* End PBXFileReference section */
+
+/* Begin PBXFrameworksBuildPhase section */
+		A000000000000401 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				A000000000000017 /* CryptoKit.framework in Frameworks */,
+				A000000000000018 /* AuthenticationServices.framework in Frameworks */,
+				A000000000000019 /* AVFoundation.framework in Frameworks */,
+				A00000000000001A /* Security.framework in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXFrameworksBuildPhase section */
+
+/* Begin PBXGroup section */
+		A000000000000500 /* = */ = {
+			isa = PBXGroup;
+			children = (
+				A000000000000501 /* Klaudii */,
+				A000000000000508 /* Frameworks */,
+				A000000000000509 /* Products */,
+			);
+			sourceTree = "<group>";
+		};
+		A000000000000501 /* Klaudii */ = {
+			isa = PBXGroup;
+			children = (
+				A000000000000101 /* KlaudiiApp.swift */,
+				A000000000000502 /* Models */,
+				A000000000000503 /* Services */,
+				A000000000000504 /* ViewModels */,
+				A000000000000505 /* Views */,
+				A000000000000506 /* Theme */,
+				A000000000000116 /* Assets.xcassets */,
+				A000000000000117 /* Info.plist */,
+			);
+			path = Klaudii;
+			sourceTree = "<group>";
+		};
+		A000000000000502 /* Models */ = {
+			isa = PBXGroup;
+			children = (
+				A000000000000102 /* Session.swift */,
+				A000000000000103 /* Server.swift */,
+				A000000000000104 /* HistoryEntry.swift */,
+			);
+			path = Models;
+			sourceTree = "<group>";
+		};
+		A000000000000503 /* Services */ = {
+			isa = PBXGroup;
+			children = (
+				A000000000000105 /* CryptoService.swift */,
+				A000000000000106 /* KeychainService.swift */,
+				A000000000000107 /* AuthService.swift */,
+				A000000000000108 /* CloudRelay.swift */,
+			);
+			path = Services;
+			sourceTree = "<group>";
+		};
+		A000000000000504 /* ViewModels */ = {
+			isa = PBXGroup;
+			children = (
+				A000000000000109 /* AppViewModel.swift */,
+				A00000000000010A /* SessionsViewModel.swift */,
+				A00000000000010B /* PairingViewModel.swift */,
+			);
+			path = ViewModels;
+			sourceTree = "<group>";
+		};
+		A000000000000505 /* Views */ = {
+			isa = PBXGroup;
+			children = (
+				A00000000000010C /* ContentView.swift */,
+				A00000000000010D /* LoginView.swift */,
+				A00000000000010E /* ServerPickerView.swift */,
+				A00000000000010F /* PairingView.swift */,
+				A000000000000110 /* DashboardView.swift */,
+				A000000000000111 /* SessionCardView.swift */,
+				A000000000000112 /* HistoryListView.swift */,
+				A000000000000113 /* ProcessesView.swift */,
+				A000000000000114 /* SettingsView.swift */,
+			);
+			path = Views;
+			sourceTree = "<group>";
+		};
+		A000000000000506 /* Theme */ = {
+			isa = PBXGroup;
+			children = (
+				A000000000000115 /* Theme.swift */,
+			);
+			path = Theme;
+			sourceTree = "<group>";
+		};
+		A000000000000508 /* Frameworks */ = {
+			isa = PBXGroup;
+			children = (
+				A000000000000201 /* CryptoKit.framework */,
+				A000000000000202 /* AuthenticationServices.framework */,
+				A000000000000203 /* AVFoundation.framework */,
+				A000000000000204 /* Security.framework */,
+			);
+			name = Frameworks;
+			sourceTree = "<group>";
+		};
+		A000000000000509 /* Products */ = {
+			isa = PBXGroup;
+			children = (
+				A000000000000301 /* Klaudii.app */,
+			);
+			name = Products;
+			sourceTree = "<group>";
+		};
+/* End PBXGroup section */
+
+/* Begin PBXNativeTarget section */
+		A000000000000600 /* Klaudii */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = A000000000000800 /* Build configuration list for PBXNativeTarget "Klaudii" */;
+			buildPhases = (
+				A000000000000701 /* Sources */,
+				A000000000000401 /* Frameworks */,
+				A000000000000702 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = Klaudii;
+			productName = Klaudii;
+			productReference = A000000000000301 /* Klaudii.app */;
+			productType = "com.apple.product-type.application";
+		};
+/* End PBXNativeTarget section */
+
+/* Begin PBXProject section */
+		A000000000000900 /* Project object */ = {
+			isa = PBXProject;
+			attributes = {
+				BuildIndependentTargetsInParallel = 1;
+				LastSwiftUpdateCheck = 1500;
+				LastUpgradeCheck = 1500;
+				ORGANIZATIONNAME = Klaudii;
+				TargetAttributes = {
+					A000000000000600 = {
+						CreatedOnToolsVersion = 15.0;
+					};
+				};
+			};
+			buildConfigurationList = A000000000000810 /* Build configuration list for PBXProject "Klaudii" */;
+			compatibilityVersion = "Xcode 14.0";
+			developmentRegion = en;
+			hasScannedForEncodings = 0;
+			knownRegions = (
+				en,
+				Base,
+			);
+			mainGroup = A000000000000500;
+			productRefGroup = A000000000000509 /* Products */;
+			projectDirPath = "";
+			projectRoot = "";
+			targets = (
+				A000000000000600 /* Klaudii */,
+			);
+		};
+/* End PBXProject section */
+
+/* Begin PBXResourcesBuildPhase section */
+		A000000000000702 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				A000000000000016 /* Assets.xcassets in Resources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXResourcesBuildPhase section */
+
+/* Begin PBXSourcesBuildPhase section */
+		A000000000000701 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				A000000000000001 /* KlaudiiApp.swift in Sources */,
+				A000000000000002 /* Session.swift in Sources */,
+				A000000000000003 /* Server.swift in Sources */,
+				A000000000000004 /* HistoryEntry.swift in Sources */,
+				A000000000000005 /* CryptoService.swift in Sources */,
+				A000000000000006 /* KeychainService.swift in Sources */,
+				A000000000000007 /* AuthService.swift in Sources */,
+				A000000000000008 /* CloudRelay.swift in Sources */,
+				A000000000000009 /* AppViewModel.swift in Sources */,
+				A00000000000000A /* SessionsViewModel.swift in Sources */,
+				A00000000000000B /* PairingViewModel.swift in Sources */,
+				A00000000000000C /* ContentView.swift in Sources */,
+				A00000000000000D /* LoginView.swift in Sources */,
+				A00000000000000E /* ServerPickerView.swift in Sources */,
+				A00000000000000F /* PairingView.swift in Sources */,
+				A000000000000010 /* DashboardView.swift in Sources */,
+				A000000000000011 /* SessionCardView.swift in Sources */,
+				A000000000000012 /* HistoryListView.swift in Sources */,
+				A000000000000013 /* ProcessesView.swift in Sources */,
+				A000000000000014 /* SettingsView.swift in Sources */,
+				A000000000000015 /* Theme.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXSourcesBuildPhase section */
+
+/* Begin XCBuildConfiguration section */
+		A000000000000811 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				ASSETCATALOG_COMPILER_GENERATE_SWIFT_ASSET_SYMBOL_EXTENSIONS = YES;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++20";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = dwarf;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				ENABLE_TESTABILITY = YES;
+				ENABLE_USER_SCRIPT_SANDBOXING = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu17;
+				GCC_DYNAMIC_NO_PIC = NO;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_OPTIMIZATION_LEVEL = 0;
+				GCC_PREPROCESSOR_DEFINITIONS = (
+					"DEBUG=1",
+					"$(inherited)",
+				);
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				LOCALIZATION_PREFERS_STRING_CATALOGS = YES;
+				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
+				MTL_FAST_MATH = YES;
+				ONLY_ACTIVE_ARCH = YES;
+				SDKROOT = iphoneos;
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = "DEBUG $(inherited)";
+				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
+			};
+			name = Debug;
+		};
+		A000000000000812 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				ASSETCATALOG_COMPILER_GENERATE_SWIFT_ASSET_SYMBOL_EXTENSIONS = YES;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++20";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
+				ENABLE_NS_ASSERTIONS = NO;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				ENABLE_USER_SCRIPT_SANDBOXING = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu17;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				LOCALIZATION_PREFERS_STRING_CATALOGS = YES;
+				MTL_ENABLE_DEBUG_INFO = NO;
+				MTL_FAST_MATH = YES;
+				SDKROOT = iphoneos;
+				SWIFT_COMPILATION_MODE = wholemodule;
+				VALIDATE_PRODUCT = YES;
+			};
+			name = Release;
+		};
+		A000000000000801 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = "";
+				ENABLE_PREVIEWS = YES;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = Klaudii/Info.plist;
+				INFOPLIST_KEY_CFBundleDisplayName = Klaudii;
+				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.developer-tools";
+				INFOPLIST_KEY_NSCameraUsageDescription = "Klaudii needs camera access to scan QR codes for device pairing.";
+				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
+				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
+				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
+				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
+				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone = "UIInterfaceOrientationPortrait UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
+				INFOPLIST_KEY_UIStatusBarStyle = "";
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.klaudii;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
+				SUPPORTS_MACCATALYST = NO;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Debug;
+		};
+		A000000000000802 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = "";
+				ENABLE_PREVIEWS = YES;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = Klaudii/Info.plist;
+				INFOPLIST_KEY_CFBundleDisplayName = Klaudii;
+				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.developer-tools";
+				INFOPLIST_KEY_NSCameraUsageDescription = "Klaudii needs camera access to scan QR codes for device pairing.";
+				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
+				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
+				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
+				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
+				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone = "UIInterfaceOrientationPortrait UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
+				INFOPLIST_KEY_UIStatusBarStyle = "";
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.klaudii;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
+				SUPPORTS_MACCATALYST = NO;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Release;
+		};
+/* End XCBuildConfiguration section */
+
+/* Begin XCConfigurationList section */
+		A000000000000810 /* Build configuration list for PBXProject "Klaudii" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				A000000000000811 /* Debug */,
+				A000000000000812 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		A000000000000800 /* Build configuration list for PBXNativeTarget "Klaudii" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				A000000000000801 /* Debug */,
+				A000000000000802 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+/* End XCConfigurationList section */
+	};
+	rootObject = A000000000000900 /* Project object */;
+}
