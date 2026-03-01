@@ -233,12 +233,7 @@
     <header>
       <h1>Klaudii</h1>
       <span id="user-name" class="badge">...</span>
-      <div style="margin-left:auto; display:flex; align-items:center; gap:1rem;">
-        <span style="font-size:0.75rem; color:#555;">
-          <a href="/privacy" style="color:#555;">Privacy</a> &middot; <a href="/tos" style="color:#555;">Terms</a>
-        </span>
-        <button class="btn btn-sm" onclick="logout()">Sign Out</button>
-      </div>
+      <button class="btn btn-sm" onclick="logout()" style="margin-left:auto">Sign Out</button>
     </header>
 
     <div class="server-picker">
@@ -247,6 +242,9 @@
         <button class="btn btn-sm primary" onclick="addServer()">+ Add Server</button>
       </h2>
       <div id="server-list"></div>
+      <p style="margin-top: 2rem; font-size: 0.75rem; color: #444; text-align: center;">
+        <a href="/privacy" style="color:#444;">Privacy Policy</a> &middot; <a href="/tos" style="color:#444;">Terms of Service</a>
+      </p>
     </div>
   </div>
 
