@@ -1,8 +1,13 @@
 // Google OAuth 2.0 — direct implementation, no passport dependency
 
+const crypto = require("crypto");
+
 const GOOGLE_AUTH_URL = "https://accounts.google.com/o/oauth2/v2/auth";
 const GOOGLE_TOKEN_URL = "https://oauth2.googleapis.com/token";
 const GOOGLE_USERINFO_URL = "https://www.googleapis.com/oauth2/v2/userinfo";
+
+// One-time tokens for mobile auth (token -> { userId, expires })
+const mobileTokens = new Map();
 
 function getConfig() {
   const clientId = process.env.GOOGLE_CLIENT_ID;
@@ -14,7 +19,7 @@ function getConfig() {
   return { clientId, clientSecret, redirectUri };
 }
 
-function getAuthUrl() {
+function getAuthUrl(state) {
   const { clientId, redirectUri } = getConfig();
   const params = new URLSearchParams({
     client_id: clientId,
@@ -24,6 +29,9 @@ function getAuthUrl() {
     access_type: "online",
     prompt: "select_account",
   });
+  if (state) {
+    params.set("state", state);
+  }
   return `${GOOGLE_AUTH_URL}?${params}`;
 }
 
@@ -65,16 +73,19 @@ function requireAuth(req, res, next) {
 }
 
 function setupRoutes(app, db) {
-  app.get("/auth/google", (_req, res) => {
+  app.get("/auth/google", (req, res) => {
     try {
-      res.redirect(getAuthUrl());
+      // Mobile apps pass ?mobile=1; we forward this via OAuth state param
+      // (session cookies don't survive the ephemeral browser's redirect chain)
+      const state = req.query.mobile === "1" ? "mobile" : undefined;
+      res.redirect(getAuthUrl(state));
     } catch (err) {
       res.status(500).json({ error: err.message });
     }
   });
 
   app.get("/auth/google/callback", async (req, res) => {
-    const { code } = req.query;
+    const { code, state } = req.query;
     if (!code) {
       return res.status(400).send("Missing authorization code");
     }
@@ -84,13 +95,38 @@ function setupRoutes(app, db) {
       const userInfo = await getUserInfo(tokens.access_token);
 
       const user = db.upsertUser(userInfo.id, userInfo.email, userInfo.name);
-      req.session.userId = user.id;
 
+      // Mobile flow: generate one-time token and redirect to custom URL scheme
+      if (state === "mobile") {
+        const token = crypto.randomBytes(32).toString("hex");
+        mobileTokens.set(token, { userId: user.id, expires: Date.now() + 60000 });
+        return res.redirect(`klaudii://auth/callback?token=${token}`);
+      }
+
+      req.session.userId = user.id;
       res.redirect("/");
     } catch (err) {
       console.error("OAuth callback error:", err);
       res.status(500).send("Authentication failed");
     }
+  });
+
+  // Mobile token exchange: swap one-time token for a session cookie
+  app.post("/auth/token-exchange", (req, res) => {
+    const { token } = req.body;
+    if (!token) {
+      return res.status(400).json({ error: "Missing token" });
+    }
+
+    const entry = mobileTokens.get(token);
+    if (!entry || Date.now() > entry.expires) {
+      mobileTokens.delete(token);
+      return res.status(401).json({ error: "Invalid or expired token" });
+    }
+
+    mobileTokens.delete(token);
+    req.session.userId = entry.userId;
+    res.json({ ok: true });
   });
 
   app.get("/auth/me", requireAuth, (req, res) => {

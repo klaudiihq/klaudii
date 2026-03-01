@@ -91,6 +91,7 @@ function handleServerConnection(ws, url) {
       }
 
       tempConn.authenticated = true;
+      tempConn.platform = msg.platform || null;
       servers.set(serverId, tempConn);
       db.updateServerLastSeen(serverId);
       ws.send(JSON.stringify({ type: "auth_result", ok: true }));
@@ -203,9 +204,11 @@ function handleBrowserConnection(ws, url, req) {
 
   // Notify browser of connection status
   const serverConn = servers.get(serverId);
+  const online = !!(serverConn && serverConn.authenticated);
   ws.send(JSON.stringify({
     type: "server_status",
-    online: !!(serverConn && serverConn.authenticated),
+    online,
+    platform: online ? serverConn.platform : null,
   }));
 }
 
@@ -222,6 +225,11 @@ function findBrowserByRequestId(requestId) {
 function isServerOnline(serverId) {
   const conn = servers.get(serverId);
   return !!(conn && conn.authenticated);
+}
+
+function getServerPlatform(serverId) {
+  const conn = servers.get(serverId);
+  return conn && conn.authenticated ? conn.platform : null;
 }
 
 function getOnlineServerIds() {
@@ -247,6 +255,7 @@ function shutdown() {
 module.exports = {
   init,
   isServerOnline,
+  getServerPlatform,
   getOnlineServerIds,
   shutdown,
 };
