@@ -64,6 +64,10 @@ pairing.setupRoutes(app, { requireAuth: auth.requireAuth });
 // --- Proxy routes ---
 proxy.setupRoutes(app);
 
+app.get("/privacy", (_req, res) => {
+  res.sendFile(path.join(__dirname, "public", "privacy.html"));
+});
+
 // --- SPA fallback: serve login page for unauthenticated, dashboard for authenticated ---
 app.get("/", (req, res) => {
   if (req.session && req.session.userId) {
