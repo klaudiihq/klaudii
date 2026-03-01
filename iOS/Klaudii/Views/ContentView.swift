@@ -2,6 +2,7 @@ import SwiftUI
 
 struct ContentView: View {
     @StateObject private var appVM = AppViewModel()
+    @AppStorage("appearanceMode") private var appearanceMode = "system"
 
     var body: some View {
         Group {
@@ -19,7 +20,10 @@ struct ContentView: View {
                 DashboardView(appVM: appVM)
             }
         }
-        .preferredColorScheme(.dark)
+        .preferredColorScheme(
+            appearanceMode == "light" ? .light :
+            appearanceMode == "dark" ? .dark : nil
+        )
         .task {
             await appVM.onAppear()
         }

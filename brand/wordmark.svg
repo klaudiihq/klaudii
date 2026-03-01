@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 480 120">
+  <defs>
+    <linearGradient id="kg" x1="0" y1="20" x2="0" y2="100" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#86efac"/>
+      <stop offset="50%" stop-color="#4ade80"/>
+      <stop offset="100%" stop-color="#22c55e"/>
+    </linearGradient>
+  </defs>
+
+  <text x="0" y="88" font-family="SF Pro Rounded, SF Pro, -apple-system, system-ui, Helvetica Neue, Arial, sans-serif" font-size="80" font-weight="700" letter-spacing="-1">
+    <tspan fill="url(#kg)">K</tspan><tspan fill="#e8e8e8">laudii</tspan>
+  </text>
+</svg>

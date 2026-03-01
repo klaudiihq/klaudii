@@ -5,22 +5,32 @@ struct Session: Codable, Identifiable {
 
     let project: String
     let projectPath: String
-    let permissionMode: String
-    let running: Bool
-    let status: String
+    var permissionMode: String
+    var running: Bool
+    var status: String
     let claudeUrl: String?
     let git: GitStatus?
     let remoteUrl: String?
     let sessionCount: Int
-    let lastActivity: Double?
+    var lastActivity: Double?
     let ttyd: TtydInfo?
 
-    var displayBranch: String {
-        if let branch = git?.branch { return branch }
-        if let range = project.range(of: "--") {
-            return String(project[range.upperBound...])
+    /// Repo name from git remote URL, falling back to project name
+    var displayName: String {
+        if let remoteUrl = remoteUrl,
+           let url = URL(string: remoteUrl) {
+            // "https://github.com/user/klaudii.git" → "klaudii"
+            let last = url.lastPathComponent
+            if last.hasSuffix(".git") {
+                return String(last.dropLast(4))
+            }
+            return last
         }
-        return ""
+        return project
+    }
+
+    var displayBranch: String {
+        git?.branch ?? ""
     }
 
     var isRunning: Bool { status == "running" }

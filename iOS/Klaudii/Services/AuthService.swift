@@ -1,7 +1,7 @@
 import Foundation
 import AuthenticationServices
 
-/// Handles authentication with the Klaudii cloud relay.
+/// Handles authentication with the Klaudii kloud relay.
 /// Uses ASWebAuthenticationSession for Google OAuth (system browser, Google-approved).
 /// The relay redirects to klaudii://auth/callback?token=X after OAuth completes.
 /// We then exchange that one-time token for a session cookie via /auth/token-exchange.
@@ -90,19 +90,20 @@ class AuthService: NSObject, ObservableObject, ASWebAuthenticationPresentationCo
             throw AuthError.notAuthenticated
         }
 
-        // Extract the session cookie from the Set-Cookie response header
-        guard let headerFields = httpResponse.allHeaderFields as? [String: String],
-              let responseURL = httpResponse.url else {
+        // cookie-session sets TWO cookies: klaudii_session + klaudii_session.sig
+        // allHeaderFields is a dictionary so it can only hold one Set-Cookie.
+        // Read from HTTPCookieStorage instead, which URLSession populates automatically.
+        guard let cookies = HTTPCookieStorage.shared.cookies(for: url),
+              !cookies.filter({ $0.name.hasPrefix(Self.cookieName) }).isEmpty else {
             throw AuthError.noCookie
         }
 
-        let cookies = HTTPCookie.cookies(withResponseHeaderFields: headerFields, for: responseURL)
-        guard let sessionCookie = cookies.first(where: { $0.name == Self.cookieName }) else {
-            throw AuthError.noCookie
-        }
+        // Build full cookie header string with both session + signature cookies
+        let sessionCookies = cookies.filter { $0.name.hasPrefix(Self.cookieName) }
+        let cookieString = sessionCookies.map { "\($0.name)=\($0.value)" }.joined(separator: "; ")
 
-        self.sessionCookie = sessionCookie.value
-        KeychainService.saveSessionCookie(sessionCookie.value)
+        self.sessionCookie = cookieString
+        KeychainService.saveSessionCookie(cookieString)
         self.isAuthenticated = true
     }
 
@@ -118,7 +119,7 @@ class AuthService: NSObject, ObservableObject, ASWebAuthenticationPresentationCo
 
         guard let url = URL(string: "\(Self.relayBaseURL)/auth/me") else { return }
         var request = URLRequest(url: url)
-        request.setValue("\(Self.cookieName)=\(cookie)", forHTTPHeaderField: "Cookie")
+        request.setValue(cookie, forHTTPHeaderField: "Cookie")
 
         do {
             let (data, response) = try await URLSession.shared.data(for: request)
@@ -146,7 +147,7 @@ class AuthService: NSObject, ObservableObject, ASWebAuthenticationPresentationCo
         if let cookie = sessionCookie {
             var request = URLRequest(url: URL(string: "\(Self.relayBaseURL)/auth/logout")!)
             request.httpMethod = "POST"
-            request.setValue("\(Self.cookieName)=\(cookie)", forHTTPHeaderField: "Cookie")
+            request.setValue(cookie, forHTTPHeaderField: "Cookie")
             try? await URLSession.shared.data(for: request)
         }
         sessionCookie = nil
@@ -165,7 +166,7 @@ class AuthService: NSObject, ObservableObject, ASWebAuthenticationPresentationCo
 
         var request = URLRequest(url: url)
         request.httpMethod = method
-        request.setValue("\(Self.cookieName)=\(cookie)", forHTTPHeaderField: "Cookie")
+        request.setValue(cookie, forHTTPHeaderField: "Cookie")
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         if let body = body { request.httpBody = body }
 

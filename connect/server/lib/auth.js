@@ -19,7 +19,7 @@ function getConfig() {
   return { clientId, clientSecret, redirectUri };
 }
 
-function getAuthUrl() {
+function getAuthUrl(state) {
   const { clientId, redirectUri } = getConfig();
   const params = new URLSearchParams({
     client_id: clientId,
@@ -29,6 +29,9 @@ function getAuthUrl() {
     access_type: "online",
     prompt: "select_account",
   });
+  if (state) {
+    params.set("state", state);
+  }
   return `${GOOGLE_AUTH_URL}?${params}`;
 }
 
@@ -72,18 +75,17 @@ function requireAuth(req, res, next) {
 function setupRoutes(app, db) {
   app.get("/auth/google", (req, res) => {
     try {
-      // Mobile apps pass ?mobile=1 to trigger custom-scheme redirect after auth
-      if (req.query.mobile === "1") {
-        req.session.mobile = true;
-      }
-      res.redirect(getAuthUrl());
+      // Mobile apps pass ?mobile=1; we forward this via OAuth state param
+      // (session cookies don't survive the ephemeral browser's redirect chain)
+      const state = req.query.mobile === "1" ? "mobile" : undefined;
+      res.redirect(getAuthUrl(state));
     } catch (err) {
       res.status(500).json({ error: err.message });
     }
   });
 
   app.get("/auth/google/callback", async (req, res) => {
-    const { code } = req.query;
+    const { code, state } = req.query;
     if (!code) {
       return res.status(400).send("Missing authorization code");
     }
@@ -95,10 +97,9 @@ function setupRoutes(app, db) {
       const user = db.upsertUser(userInfo.id, userInfo.email, userInfo.name);
 
       // Mobile flow: generate one-time token and redirect to custom URL scheme
-      if (req.session.mobile) {
+      if (state === "mobile") {
         const token = crypto.randomBytes(32).toString("hex");
         mobileTokens.set(token, { userId: user.id, expires: Date.now() + 60000 });
-        req.session = null;
         return res.redirect(`klaudii://auth/callback?token=${token}`);
       }
 

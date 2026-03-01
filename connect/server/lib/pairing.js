@@ -50,6 +50,7 @@ function setupRoutes(app, { requireAuth }) {
       id: s.id,
       name: s.name,
       online: wsHub.isServerOnline(s.id),
+      platform: wsHub.getServerPlatform(s.id),
       lastSeen: s.last_seen,
       createdAt: s.created_at,
     }));

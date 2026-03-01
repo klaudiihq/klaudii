@@ -32,7 +32,7 @@ struct PairingView: View {
                                 .font(.system(size: 17, weight: .semibold))
                                 .foregroundColor(KTheme.textWhite)
 
-                            Text("Scan the QR code or paste the connection key from your local Klaudii's Cloud Connect panel")
+                            Text("Scan the QR code or paste the konnection key from your local Klaudii's Kloud Konnect panel")
                                 .font(.system(size: 13))
                                 .foregroundColor(KTheme.textSecondary)
                                 .multilineTextAlignment(.center)
@@ -124,7 +124,6 @@ struct PairingView: View {
             .navigationTitle("Pair Browser")
             .navigationBarTitleDisplayMode(.inline)
             .toolbarBackground(KTheme.background, for: .navigationBar)
-            .toolbarColorScheme(.dark, for: .navigationBar)
             .toolbar {
                 ToolbarItem(placement: .topBarLeading) {
                     Button("Back") {

@@ -78,7 +78,7 @@ const server = http.createServer(app);
 wsHub.init(server);
 
 server.listen(PORT, () => {
-  console.log(`Klaudii Cloud Relay running on port ${PORT}`);
+  console.log(`Klaudii Kloud Relay running on port ${PORT}`);
   console.log(`  Google OAuth: ${process.env.GOOGLE_CLIENT_ID ? "configured" : "NOT CONFIGURED"}`);
 });
 

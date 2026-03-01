@@ -3,119 +3,238 @@ import SwiftUI
 struct DashboardView: View {
     @ObservedObject var appVM: AppViewModel
     @StateObject private var sessionsVM: SessionsViewModel
+    @State private var showingAddWorkspace = false
+    @State private var hasAppeared = false
+    @Environment(\.colorScheme) private var colorScheme
 
     init(appVM: AppViewModel) {
         self.appVM = appVM
-        self._sessionsVM = StateObject(wrappedValue: SessionsViewModel(relay: appVM.relay))
+        self._sessionsVM = StateObject(wrappedValue: SessionsViewModel(relay: appVM.relay, demoMode: appVM.isDemoMode))
     }
 
     var body: some View {
         NavigationStack {
-            ZStack {
-                KTheme.background.ignoresSafeArea()
+            VStack(spacing: 0) {
+                // Header: server name + connection pill + sort
+                header
 
+                // Connection banners
+                if !appVM.relay.serverOnline && appVM.relay.isConnected {
+                    serverOfflineBanner
+                }
+                if !appVM.relay.isConnected {
+                    connectionErrorBanner
+                }
+
+                // Session list
                 ScrollView {
-                    VStack(spacing: 0) {
-                        // Sort bar
-                        sortBar
-
-                        // Connection status
-                        if !appVM.relay.serverOnline && appVM.relay.isConnected {
-                            serverOfflineBanner
-                        }
-
-                        if !appVM.relay.isConnected {
-                            connectionErrorBanner
-                        }
-
-                        // Sessions
-                        LazyVStack(spacing: KTheme.cardSpacing) {
-                            ForEach(sessionsVM.sortedSessions) { session in
-                                let proc = sessionsVM.processes.first { $0.project == session.project && $0.managed }
-                                SessionCardView(
-                                    session: session,
-                                    process: proc,
-                                    sessionsVM: sessionsVM
-                                )
-                            }
-                        }
-                        .padding(.horizontal, KTheme.sectionPadding)
-                        .padding(.top, KTheme.sectionPadding)
-
-                        // Empty state
-                        if sessionsVM.sortedSessions.isEmpty && !sessionsVM.isLoading {
-                            emptyState
-                        }
-
-                        // Unmanaged processes
-                        if !sessionsVM.unmanagedProcesses.isEmpty {
-                            ProcessesView(
-                                processes: sessionsVM.unmanagedProcesses,
-                                onKill: { pid in
-                                    Task { await sessionsVM.killProcess(pid: pid) }
-                                }
+                    LazyVStack(spacing: KTheme.cardSpacing) {
+                        ForEach(Array(sessionsVM.sortedSessions.enumerated()), id: \.element.id) { index, session in
+                            let proc = sessionsVM.processes.first { $0.project == session.project && $0.managed }
+                            SessionCardView(
+                                session: session,
+                                process: proc,
+                                sessionsVM: sessionsVM
+                            )
+                            .transition(.move(edge: .bottom).combined(with: .opacity))
+                            .animation(
+                                .spring(response: 0.4, dampingFraction: 0.8)
+                                    .delay(hasAppeared ? 0 : Double(index) * 0.05),
+                                value: sessionsVM.sortedSessions.map(\.id)
                             )
                         }
                     }
-                }
-                .refreshable {
-                    await sessionsVM.refresh()
-                }
-            }
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbarBackground(KTheme.background, for: .navigationBar)
-            .toolbarColorScheme(.dark, for: .navigationBar)
-            .toolbar {
-                ToolbarItem(placement: .topBarLeading) {
-                    connectionBadge
-                }
-                ToolbarItem(placement: .topBarTrailing) {
-                    HStack(spacing: 4) {
-                        Button {
-                            Task { await sessionsVM.refresh() }
-                        } label: {
-                            Image(systemName: "arrow.clockwise")
-                                .font(.system(size: 14))
-                                .foregroundColor(KTheme.textSecondary)
-                        }
+                    .padding(.horizontal, KTheme.sectionPadding)
+                    .padding(.top, KTheme.sectionPadding)
+                    .padding(.bottom, 12)
 
-                        NavigationLink {
-                            SettingsView(appVM: appVM)
-                        } label: {
-                            Image(systemName: "gearshape")
-                                .font(.system(size: 14))
-                                .foregroundColor(KTheme.textSecondary)
+                    // Loading / empty state
+                    if sessionsVM.sortedSessions.isEmpty {
+                        if !appVM.relay.isConnected || !appVM.relay.serverOnline || sessionsVM.isLoading {
+                            connectingState
+                        } else {
+                            emptyState
                         }
                     }
+
+                    // Unmanaged processes
+                    if !sessionsVM.unmanagedProcesses.isEmpty {
+                        ProcessesView(
+                            processes: sessionsVM.unmanagedProcesses,
+                            onKill: { pid in
+                                Task { await sessionsVM.killProcess(pid: pid) }
+                            }
+                        )
+                    }
                 }
+                .refreshable {
+                    Haptics.success()
+                    await sessionsVM.refresh()
+                }
+
+                // Bottom bar: settings gear
+                bottomBar
             }
+            .navigationBarHidden(true)
         }
+        .background(backgroundGradient.ignoresSafeArea())
         .onAppear {
             sessionsVM.startAutoRefresh()
+            // Mark stagger animation as done after initial load
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
+                hasAppeared = true
+            }
         }
         .onDisappear {
             sessionsVM.stopAutoRefresh()
         }
+        .onChange(of: appVM.isDemoMode) { _, newValue in
+            sessionsVM.demoMode = newValue
+            if newValue {
+                sessionsVM.sessions = SessionsViewModel.mockSessions
+                sessionsVM.processes = SessionsViewModel.mockProcesses
+            } else {
+                sessionsVM.sessions = []
+                sessionsVM.processes = []
+            }
+        }
+        .sheet(isPresented: $showingAddWorkspace) {
+            AddWorkspaceView(sessionsVM: sessionsVM)
+        }
     }
 
-    // MARK: - Subviews
+    /// Platform from live WebSocket or cached server model
+    private var serverPlatform: String? {
+        appVM.relay.serverPlatform ?? appVM.selectedServer?.platform
+    }
 
-    private var connectionBadge: some View {
-        HStack(spacing: 4) {
-            Circle()
-                .fill(badgeColor)
-                .frame(width: 6, height: 6)
-            Text(badgeText)
-                .font(.system(size: KTheme.microSize))
-                .foregroundColor(badgeColor)
+    private var serverNameLabel: some View {
+        HStack(spacing: 8) {
+            if serverPlatform == "darwin" {
+                Image(systemName: "apple.logo")
+                    .font(.system(size: 13))
+                    .foregroundColor(KTheme.textMuted)
+            }
+            Text(appVM.selectedServer?.name ?? "Klaudii")
+                .font(.system(size: 17, weight: .semibold))
+                .foregroundColor(KTheme.textWhite)
+            connectionPill
         }
-        .padding(.horizontal, 6)
-        .padding(.vertical, 2)
-        .background(badgeBg)
+    }
+
+    // MARK: - Background Gradient
+
+    private var backgroundGradient: some View {
+        ZStack {
+            KTheme.background
+
+            // Subtle radial glow behind the header area
+            if colorScheme == .dark {
+                RadialGradient(
+                    colors: [
+                        Color(hex: 0x4ADE80).opacity(0.03),
+                        Color.clear,
+                    ],
+                    center: .top,
+                    startRadius: 0,
+                    endRadius: 300
+                )
+            } else {
+                RadialGradient(
+                    colors: [
+                        Color(hex: 0x2563EB).opacity(0.03),
+                        Color.clear,
+                    ],
+                    center: .top,
+                    startRadius: 0,
+                    endRadius: 300
+                )
+            }
+        }
+    }
+
+    // MARK: - Header
+
+    private var header: some View {
+        HStack {
+            // Invisible spacer matching sort button width for centering
+            Color.clear.frame(width: 28, height: 28)
+
+            Spacer()
+
+            // Server name + connection pill, centered
+            if appVM.servers.count > 1 {
+                Menu {
+                    ForEach(appVM.servers) { server in
+                        Button {
+                            Haptics.light()
+                            appVM.switchToServer(server)
+                        } label: {
+                            Label(
+                                server.name,
+                                systemImage: server.id == appVM.selectedServer?.id ? "checkmark" : ""
+                            )
+                        }
+                    }
+                } label: {
+                    serverNameLabel
+                    Image(systemName: "chevron.up.chevron.down")
+                        .font(.system(size: 9, weight: .medium))
+                        .foregroundColor(KTheme.textSecondary)
+                }
+            } else {
+                serverNameLabel
+            }
+
+            Spacer()
+
+            // Sort menu
+            sortMenuButton
+        }
+        .padding(.horizontal, 16)
+        .padding(.vertical, 10)
+    }
+
+    private var sortMenuButton: some View {
+        Menu {
+            ForEach(SortMode.allCases, id: \.self) { mode in
+                Button {
+                    Haptics.light()
+                    withAnimation(.easeInOut(duration: 0.2)) {
+                        sessionsVM.sortMode = mode
+                    }
+                } label: {
+                    Label(mode.rawValue, systemImage: sessionsVM.sortMode == mode ? "checkmark" : "")
+                }
+            }
+        } label: {
+            Image(systemName: "arrow.up.arrow.down")
+                .font(.system(size: 13, weight: .medium))
+                .foregroundColor(KTheme.textSecondary)
+                .frame(width: 28, height: 28)
+        }
+    }
+
+    private var connectionPill: some View {
+        HStack(spacing: 4) {
+            if appVM.relay.isConnected && appVM.relay.serverOnline {
+                PulsingDot(color: KTheme.success)
+            } else {
+                Circle()
+                    .fill(pillColor)
+                    .frame(width: 6, height: 6)
+            }
+            Text(pillText)
+                .font(.system(size: KTheme.microSize))
+                .foregroundColor(pillColor)
+        }
+        .padding(.horizontal, 8)
+        .padding(.vertical, 3)
+        .background(pillBg)
         .clipShape(Capsule())
     }
 
-    private var badgeColor: Color {
+    private var pillColor: Color {
         if appVM.relay.isConnected && appVM.relay.serverOnline {
             return KTheme.success
         } else if appVM.relay.isConnected {
@@ -124,16 +243,16 @@ struct DashboardView: View {
         return KTheme.textSecondary
     }
 
-    private var badgeBg: Color {
+    private var pillBg: Color {
         if appVM.relay.isConnected && appVM.relay.serverOnline {
             return KTheme.successBg
         } else if appVM.relay.isConnected {
             return KTheme.warningBg
         }
-        return Color(hex: 0x2A2D35)
+        return KTheme.border
     }
 
-    private var badgeText: String {
+    private var pillText: String {
         if appVM.relay.isConnected && appVM.relay.serverOnline {
             return "connected"
         } else if appVM.relay.isConnected {
@@ -142,49 +261,7 @@ struct DashboardView: View {
         return "connecting..."
     }
 
-    private var sortBar: some View {
-        HStack(spacing: 4) {
-            Text("SORT")
-                .font(.system(size: KTheme.microSize, weight: .medium))
-                .foregroundColor(KTheme.textTertiary)
-                .tracking(0.5)
-
-            ForEach(SortMode.allCases, id: \.self) { mode in
-                Button {
-                    withAnimation(.easeInOut(duration: 0.15)) {
-                        sessionsVM.sortMode = mode
-                    }
-                } label: {
-                    Text(mode.rawValue)
-                        .font(.system(size: KTheme.microSize))
-                        .foregroundColor(sessionsVM.sortMode == mode ? KTheme.textPrimary : KTheme.textMuted)
-                        .padding(.horizontal, 7)
-                        .padding(.vertical, 2)
-                        .background(sessionsVM.sortMode == mode ? Color(hex: 0x2A2D35) : Color.clear)
-                        .cornerRadius(4)
-                        .overlay(
-                            RoundedRectangle(cornerRadius: 4)
-                                .stroke(
-                                    sessionsVM.sortMode == mode ? KTheme.borderHover : KTheme.border,
-                                    lineWidth: 1
-                                )
-                        )
-                }
-                .buttonStyle(.plain)
-            }
-
-            Spacer()
-        }
-        .padding(.horizontal, 12)
-        .padding(.vertical, 5)
-        .background(KTheme.background)
-        .overlay(
-            Rectangle()
-                .fill(KTheme.border)
-                .frame(height: 1),
-            alignment: .bottom
-        )
-    }
+    // MARK: - Banners
 
     private var serverOfflineBanner: some View {
         HStack {
@@ -204,7 +281,7 @@ struct DashboardView: View {
         HStack {
             Image(systemName: "exclamationmark.triangle")
                 .font(.system(size: 12))
-            Text("Cannot reach relay")
+            Text("Can't reach relay")
                 .font(.system(size: 12))
             Spacer()
             Button("Switch Server") {
@@ -214,7 +291,7 @@ struct DashboardView: View {
             .foregroundColor(KTheme.textPrimary)
             .padding(.horizontal, 8)
             .padding(.vertical, 4)
-            .background(Color(hex: 0x2A2D35))
+            .background(KTheme.border)
             .cornerRadius(4)
         }
         .foregroundColor(KTheme.danger)
@@ -223,15 +300,91 @@ struct DashboardView: View {
         .background(KTheme.dangerBg)
     }
 
-    private var emptyState: some View {
-        VStack(spacing: 8) {
-            Image(systemName: "tray")
-                .font(.system(size: 28))
-                .foregroundColor(KTheme.textTertiary)
-            Text("No sessions")
+    // MARK: - Bottom Bar
+
+    private var bottomBar: some View {
+        HStack {
+            // Add workspace
+            Button {
+                Haptics.light()
+                showingAddWorkspace = true
+            } label: {
+                Image(systemName: "plus")
+                    .font(.system(size: 15, weight: .medium))
+                    .foregroundColor(KTheme.accent)
+            }
+            .frame(width: 44)
+
+            Spacer()
+
+            // Settings
+            NavigationLink {
+                SettingsView(appVM: appVM)
+            } label: {
+                HStack(spacing: 4) {
+                    Image(systemName: "gearshape")
+                        .font(.system(size: 13))
+                    Text("Settings")
+                        .font(.system(size: 12))
+                }
+                .foregroundColor(KTheme.textSecondary)
+            }
+
+            Spacer()
+
+            // Refresh
+            Button {
+                Haptics.light()
+                Task { await sessionsVM.refresh() }
+            } label: {
+                Image(systemName: "arrow.clockwise")
+                    .font(.system(size: 14))
+                    .foregroundColor(KTheme.textSecondary)
+            }
+            .frame(width: 44)
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 8)
+        .background(KTheme.background)
+        .overlay(
+            Rectangle()
+                .fill(KTheme.border)
+                .frame(height: 1),
+            alignment: .top
+        )
+    }
+
+    // MARK: - Loading & Empty States
+
+    private var connectingState: some View {
+        VStack(spacing: 12) {
+            KLogoSpinner()
+            Text("Waking up...")
                 .font(.system(size: 13, weight: .medium))
                 .foregroundColor(KTheme.textSecondary)
-            Text("Add workspaces from the Klaudii dashboard")
+        }
+        .padding(.vertical, 40)
+    }
+
+    private var emptyState: some View {
+        VStack(spacing: 10) {
+            // K logo mark
+            Text("K")
+                .font(.system(size: 32, weight: .black, design: .rounded))
+                .foregroundStyle(
+                    LinearGradient(
+                        colors: [Color(hex: 0x86EFAC), Color(hex: 0x4ADE80), Color(hex: 0x22C55E)],
+                        startPoint: .top,
+                        endPoint: .bottom
+                    )
+                )
+                .shadow(color: Color(hex: 0x4ADE80).opacity(0.3), radius: 12)
+
+            Text("It's quiet... too quiet")
+                .font(.system(size: 14, weight: .semibold))
+                .foregroundColor(KTheme.textSecondary)
+
+            Text("Tap + to unleash a claude")
                 .font(.system(size: 12))
                 .foregroundColor(KTheme.textTertiary)
         }

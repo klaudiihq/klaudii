@@ -91,4 +91,36 @@ enum KeychainService {
         delete(key: "sessionCookie")
         delete(key: "userId")
     }
+
+    // MARK: - Last selected server
+
+    static func saveLastServerId(_ serverId: String) {
+        setString(serverId, forKey: "lastServerId")
+    }
+
+    static func getLastServerId() -> String? {
+        getString(key: "lastServerId")
+    }
+
+    static func saveLastServerName(_ name: String) {
+        setString(name, forKey: "lastServerName")
+    }
+
+    static func getLastServerName() -> String? {
+        getString(key: "lastServerName")
+    }
+
+    static func saveLastServerPlatform(_ platform: String) {
+        setString(platform, forKey: "lastServerPlatform")
+    }
+
+    static func getLastServerPlatform() -> String? {
+        getString(key: "lastServerPlatform")
+    }
+
+    static func clearLastServerId() {
+        delete(key: "lastServerId")
+        delete(key: "lastServerName")
+        delete(key: "lastServerPlatform")
+    }
 }

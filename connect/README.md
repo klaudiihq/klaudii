@@ -1,15 +1,15 @@
-# Klaudii Cloud Connector
+# Klaudii Kloud Konnector
 
-Access your Klaudii servers from anywhere through `connect.klaudii.com`.
+Access your Klaudii servers from anywhere through `konnect.klaudii.com`.
 
 ## Architecture
 
 ```
-Browser (connect.klaudii.com)
+Browser (konnect.klaudii.com)
   |
   |  E2E encrypted WebSocket
   v
-Cloud Relay (dumb pipe — cannot read your data)
+Kloud Relay (dumb pipe — cannot read your data)
   |
   |  WSS (Ed25519 authenticated)
   v
@@ -22,21 +22,21 @@ Claude Code sessions (tmux)
 
 ## Security Model
 
-**Zero-trust relay.** The cloud relay forwards encrypted packets between your browser and your Klaudii server. It literally cannot read or modify your dashboard data, even if the relay itself is compromised.
+**Zero-trust relay.** The kloud relay forwards encrypted packets between your browser and your Klaudii server. It literally cannot read or modify your dashboard data, even if the relay itself is compromised.
 
 ### How it works
 
-1. **Pairing**: You pair your Klaudii server with the relay using a one-time code. During pairing, your server generates a random 256-bit **Connection Key** that is displayed only on your local dashboard — it never touches the relay.
+1. **Pairing**: You pair your Klaudii server with the relay using a one-time code. During pairing, your server generates a random 256-bit **Konnection Key** that is displayed only on your local dashboard — it never touches the relay.
 
-2. **Browser setup**: You enter this Connection Key in your browser at connect.klaudii.com. It's stored in your browser's localStorage — never sent to the relay.
+2. **Browser setup**: You enter this Konnection Key in your browser at konnect.klaudii.com. It's stored in your browser's localStorage — never sent to the relay.
 
-3. **E2E encryption**: Every API request from your browser is encrypted with AES-256-GCM using a key derived (HKDF) from the Connection Key. The relay forwards the encrypted blob to your Klaudii server, which decrypts it with the same Connection Key.
+3. **E2E encryption**: Every API request from your browser is encrypted with AES-256-GCM using a key derived (HKDF) from the Konnection Key. The relay forwards the encrypted blob to your Klaudii server, which decrypts it with the same Konnection Key.
 
-4. **Server authentication**: Your Klaudii server authenticates to the relay using an Ed25519 signing keypair generated during pairing. On each connection, the relay sends a random challenge and the server signs it — proving identity without shared secrets.
+4. **Server authentication**: Your Klaudii server authenticates to the relay using an Ed25519 signing keypair generated during pairing. On each konnection, the relay sends a random challenge and the server signs it — proving identity without shared secrets.
 
 ### What the relay can see
 
-- That a server is connected (online/offline)
+- That a server is konnected (online/offline)
 - Timing and size of API requests (traffic analysis)
 - Your Google account email (for login)
 
@@ -44,24 +44,24 @@ Claude Code sessions (tmux)
 
 - Dashboard content (workspaces, sessions, git status)
 - API request/response bodies
-- Your Connection Key
+- Your Konnection Key
 - Your server's private signing key
 
 ## Directory Structure
 
 ```
 connect/
-├── server/          # Cloud relay (deployed to connect.klaudii.com)
+├── server/          # Kloud relay (deployed to konnect.klaudii.com)
 │   ├── index.js     # Express + WebSocket server
 │   ├── lib/
 │   │   ├── auth.js      # Google OAuth 2.0
 │   │   ├── db.js        # SQLite database
-│   │   ├── ws-hub.js    # WebSocket connection manager
+│   │   ├── ws-hub.js    # WebSocket konnection manager
 │   │   ├── pairing.js   # Pairing code flow
 │   │   └── proxy.js     # Status endpoints
-│   └── public/      # Cloud UI (login, server picker)
+│   └── public/      # Kloud UI (login, server picker)
 │
-├── client/          # Connector (runs inside local Klaudii)
+├── client/          # Konnector (runs inside local Klaudii)
 │   ├── index.js     # Main entry + API routes
 │   ├── ws-client.js # WebSocket client to relay
 │   ├── crypto.js    # E2E encrypt/decrypt
@@ -75,11 +75,11 @@ connect/
 
 ### Local Klaudii (your machine)
 
-No setup needed — the connector is built into Klaudii. Just click the **Cloud** button in your dashboard header to start pairing.
+No setup needed — the konnector is built into Klaudii. Just click the **Kloud** button in your dashboard header to start pairing.
 
-### Cloud Relay (self-hosting)
+### Kloud Relay (self-hosting)
 
-If you want to run your own relay instead of using connect.klaudii.com:
+If you want to run your own relay instead of using konnect.klaudii.com:
 
 ```bash
 cd connect/server
@@ -106,23 +106,23 @@ fly deploy
 
 ## Pairing Flow
 
-1. Sign in at connect.klaudii.com with Google
+1. Sign in at konnect.klaudii.com with Google
 2. Click **Add Server** → copy the 6-character pairing code
 3. Open your local Klaudii dashboard (localhost:9876)
-4. Click **Cloud** → enter the pairing code
-5. Your server displays a **QR code** and Connection Key
-6. Back on connect.klaudii.com, **scan the QR code** with your camera (or enter the key manually)
+4. Click **Kloud** → enter the pairing code
+5. Your server displays a **QR code** and Konnection Key
+6. Back on konnect.klaudii.com, **scan the QR code** with your camera (or enter the key manually)
 7. Done — click your server to access its dashboard remotely
 
 The QR code encodes `klaudii://<serverId>/<connectionKey>` — everything the browser needs in one scan. The relay never sees this data.
 
 ## FAQ
 
-**Q: What if I lose the Connection Key?**
-A: Click the Cloud button on your local dashboard to view it again. You can also unpair and re-pair to generate a new key.
+**Q: What if I lose the Konnection Key?**
+A: Click the Kloud button on your local dashboard to view it again. You can also unpair and re-pair to generate a new key.
 
 **Q: Can I access from multiple devices?**
-A: Yes — each device needs the Connection Key entered once. View it from your local Klaudii dashboard's Cloud panel.
+A: Yes — each device needs the Konnection Key entered once. View it from your local Klaudii dashboard's Kloud panel.
 
 **Q: What happens if the relay goes down?**
 A: Your local Klaudii keeps working normally. You just can't access it remotely until the relay is back.

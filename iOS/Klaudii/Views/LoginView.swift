@@ -64,7 +64,7 @@ struct LoginView: View {
 
                 Spacer()
 
-                Text("Connects via cloud relay with E2E encryption")
+                Text("Konnects via kloud relay with E2E encryption")
                     .font(.system(size: 11))
                     .foregroundColor(KTheme.textTertiary)
                     .padding(.bottom, 16)

@@ -46,7 +46,7 @@ function connect(config, messageHandler) {
     // Handle auth challenge
     if (msg.type === "auth_challenge") {
       const signature = sign(signingKey, msg.nonce);
-      send({ type: "auth_response", signature });
+      send({ type: "auth_response", signature, platform: process.platform });
       return;
     }
 

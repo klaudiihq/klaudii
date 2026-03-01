@@ -18,7 +18,6 @@ struct ServerPickerView: View {
             .navigationTitle("Servers")
             .navigationBarTitleDisplayMode(.inline)
             .toolbarBackground(KTheme.background, for: .navigationBar)
-            .toolbarColorScheme(.dark, for: .navigationBar)
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) {
                     Button {
@@ -110,7 +109,7 @@ struct ServerPickerView: View {
                 .font(.system(size: 15, weight: .medium))
                 .foregroundColor(KTheme.textSecondary)
 
-            Text("Pair your local Klaudii instance\nvia Cloud Connect first")
+            Text("Pair your local Klaudii instance\nvia Kloud Konnect first")
                 .font(.system(size: 13))
                 .foregroundColor(KTheme.textTertiary)
                 .multilineTextAlignment(.center)

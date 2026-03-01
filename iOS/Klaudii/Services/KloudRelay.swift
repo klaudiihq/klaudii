@@ -1,14 +1,15 @@
 import Foundation
 
-/// WebSocket client for the Klaudii cloud relay.
+/// WebSocket client for the Klaudii kloud relay.
 /// Mirrors the browser's cloud.js: connects as role=browser, sends encrypted API requests,
 /// receives encrypted responses. All payloads are E2E encrypted with the connection key.
 @MainActor
-class CloudRelay: ObservableObject {
+class KloudRelay: ObservableObject {
     static let relayHost = "konnect.klaudii.com"
 
     @Published var isConnected = false
     @Published var serverOnline = false
+    @Published var serverPlatform: String?
 
     private var webSocket: URLSessionWebSocketTask?
     private var connectionKey: Data?
@@ -31,6 +32,18 @@ class CloudRelay: ObservableObject {
         self.sessionCookie = cookie
         self.intentionalDisconnect = false
         doConnect()
+    }
+
+    func setDemoMode(_ enabled: Bool) {
+        if enabled {
+            isConnected = true
+            serverOnline = true
+            serverPlatform = "darwin"
+        } else {
+            isConnected = false
+            serverOnline = false
+            serverPlatform = nil
+        }
     }
 
     func disconnect() {
@@ -255,6 +268,7 @@ class CloudRelay: ObservableObject {
         case "server_status":
             if let online = json["online"] as? Bool {
                 serverOnline = online
+                serverPlatform = json["platform"] as? String
             }
 
         case "api_response":
@@ -322,6 +336,7 @@ class CloudRelay: ObservableObject {
     private func handleDisconnect() {
         isConnected = false
         serverOnline = false
+        serverPlatform = nil
         heartbeatTask?.cancel()
         failAllPending(error: RelayError.disconnected)
 
@@ -380,8 +395,8 @@ class CloudRelay: ObservableObject {
 
         var errorDescription: String? {
             switch self {
-            case .notConnected: return "Not connected to relay"
-            case .noConnectionKey: return "No connection key"
+            case .notConnected: return "Not konnected to relay"
+            case .noConnectionKey: return "No konnection key"
             case .timeout: return "Request timed out"
             case .disconnected: return "Disconnected from relay"
             case .invalidResponse: return "Invalid response from server"

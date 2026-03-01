@@ -2,6 +2,8 @@ import SwiftUI
 
 struct SettingsView: View {
     @ObservedObject var appVM: AppViewModel
+    @AppStorage("appearanceMode") private var appearanceMode = "system"
+    @AppStorage("branchFirst") private var branchFirst = false
     @State private var showUnpairConfirm = false
     @State private var showLogoutConfirm = false
 
@@ -37,10 +39,10 @@ struct SettingsView: View {
                         .font(.system(size: 14))
 
                         HStack {
-                            Text("Connection")
+                            Text("Konnection")
                                 .foregroundColor(KTheme.textSecondary)
                             Spacer()
-                            Text(appVM.relay.isConnected ? "Connected" : "Disconnected")
+                            Text(appVM.relay.isConnected ? "Konnected" : "Diskonnected")
                                 .foregroundColor(appVM.relay.isConnected ? KTheme.success : KTheme.warning)
                         }
                         .font(.system(size: 14))
@@ -52,39 +54,41 @@ struct SettingsView: View {
                     .listRowBackground(KTheme.cardBackground)
                 }
 
-                // Actions
-                Section {
-                    Button {
-                        appVM.disconnectServer()
-                    } label: {
-                        HStack {
-                            Image(systemName: "arrow.left.arrow.right")
-                                .foregroundColor(KTheme.accent)
-                            Text("Switch Server")
-                                .foregroundColor(KTheme.textPrimary)
-                        }
-                        .font(.system(size: 14))
-                    }
-
-                    if let server = appVM.selectedServer {
+                // Actions (hidden in demo mode)
+                if !appVM.isDemoMode {
+                    Section {
                         Button {
-                            showUnpairConfirm = true
+                            appVM.disconnectServer()
                         } label: {
                             HStack {
-                                Image(systemName: "link.badge.plus")
-                                    .foregroundColor(KTheme.warning)
-                                Text("Unpair \(server.name)")
+                                Image(systemName: "arrow.left.arrow.right")
+                                    .foregroundColor(KTheme.accent)
+                                Text("Switch Server")
                                     .foregroundColor(KTheme.textPrimary)
                             }
                             .font(.system(size: 14))
                         }
+
+                        if let server = appVM.selectedServer {
+                            Button {
+                                showUnpairConfirm = true
+                            } label: {
+                                HStack {
+                                    Image(systemName: "link.badge.plus")
+                                        .foregroundColor(KTheme.warning)
+                                    Text("Unpair \(server.name)")
+                                        .foregroundColor(KTheme.textPrimary)
+                                }
+                                .font(.system(size: 14))
+                            }
+                        }
+                    } header: {
+                        Text("Konnection")
+                            .font(.system(size: 11, weight: .medium))
+                            .foregroundColor(KTheme.textMuted)
                     }
-                } header: {
-                    Text("Connection")
-                        .font(.system(size: 11, weight: .medium))
-                        .foregroundColor(KTheme.textMuted)
+                    .listRowBackground(KTheme.cardBackground)
                 }
-                .listRowBackground(KTheme.cardBackground)
 
                 // Account
                 Section {
@@ -117,13 +121,95 @@ struct SettingsView: View {
                 }
                 .listRowBackground(KTheme.cardBackground)
 
+                // Appearance
+                Section {
+                    ForEach(["system", "light", "dark"], id: \.self) { mode in
+                        Button {
+                            appearanceMode = mode
+                        } label: {
+                            HStack {
+                                Text(mode.capitalized)
+                                    .foregroundColor(KTheme.textPrimary)
+                                Spacer()
+                                if appearanceMode == mode {
+                                    Image(systemName: "checkmark")
+                                        .font(.system(size: 13, weight: .medium))
+                                        .foregroundColor(KTheme.accent)
+                                }
+                            }
+                            .font(.system(size: 14))
+                        }
+                    }
+                } header: {
+                    Text("Appearance")
+                        .font(.system(size: 11, weight: .medium))
+                        .foregroundColor(KTheme.textMuted)
+                }
+                .listRowBackground(KTheme.cardBackground)
+
+                // Display
+                Section {
+                    Toggle(isOn: $branchFirst) {
+                        Text("Branch names first")
+                            .foregroundColor(KTheme.textPrimary)
+                            .font(.system(size: 14))
+                    }
+                    .tint(KTheme.accent)
+                } header: {
+                    Text("Display")
+                        .font(.system(size: 11, weight: .medium))
+                        .foregroundColor(KTheme.textMuted)
+                }
+                .listRowBackground(KTheme.cardBackground)
+
+                // Demo Mode
+                if appVM.isDemoMode {
+                    Section {
+                        Button {
+                            appVM.exitDemoMode()
+                        } label: {
+                            HStack {
+                                Image(systemName: "xmark.circle")
+                                    .foregroundColor(KTheme.warning)
+                                Text("Exit Demo Mode")
+                                    .foregroundColor(KTheme.textPrimary)
+                            }
+                            .font(.system(size: 14))
+                        }
+                    } header: {
+                        Text("Demo Mode")
+                            .font(.system(size: 11, weight: .medium))
+                            .foregroundColor(KTheme.textMuted)
+                    }
+                    .listRowBackground(KTheme.cardBackground)
+                } else if appVM.canPreviewDemoMode {
+                    Section {
+                        Button {
+                            appVM.enterDemoMode()
+                        } label: {
+                            HStack {
+                                Image(systemName: "play.display")
+                                    .foregroundColor(KTheme.accent)
+                                Text("Preview Demo Mode")
+                                    .foregroundColor(KTheme.textPrimary)
+                            }
+                            .font(.system(size: 14))
+                        }
+                    } header: {
+                        Text("Demo Mode")
+                            .font(.system(size: 11, weight: .medium))
+                            .foregroundColor(KTheme.textMuted)
+                    }
+                    .listRowBackground(KTheme.cardBackground)
+                }
+
                 // About
                 Section {
                     HStack {
                         Text("Version")
                             .foregroundColor(KTheme.textSecondary)
                         Spacer()
-                        Text("1.0.0")
+                        Text(Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "1.0")
                             .foregroundColor(KTheme.textTertiary)
                     }
                     .font(.system(size: 14))
@@ -136,6 +222,29 @@ struct SettingsView: View {
                             .foregroundColor(KTheme.textTertiary)
                     }
                     .font(.system(size: 14))
+                    Link(destination: URL(string: "https://konnect.klaudii.com/privacy")!) {
+                        HStack {
+                            Text("Privacy Policy")
+                                .foregroundColor(KTheme.textPrimary)
+                            Spacer()
+                            Image(systemName: "arrow.up.right")
+                                .font(.system(size: 11))
+                                .foregroundColor(KTheme.textTertiary)
+                        }
+                        .font(.system(size: 14))
+                    }
+
+                    Link(destination: URL(string: "https://konnect.klaudii.com/tos")!) {
+                        HStack {
+                            Text("Terms of Service")
+                                .foregroundColor(KTheme.textPrimary)
+                            Spacer()
+                            Image(systemName: "arrow.up.right")
+                                .font(.system(size: 11))
+                                .foregroundColor(KTheme.textTertiary)
+                        }
+                        .font(.system(size: 14))
+                    }
                 } header: {
                     Text("About")
                         .font(.system(size: 11, weight: .medium))
@@ -149,7 +258,6 @@ struct SettingsView: View {
         .navigationTitle("Settings")
         .navigationBarTitleDisplayMode(.inline)
         .toolbarBackground(KTheme.background, for: .navigationBar)
-        .toolbarColorScheme(.dark, for: .navigationBar)
         .alert("Unpair Server?", isPresented: $showUnpairConfirm) {
             Button("Unpair", role: .destructive) {
                 if let server = appVM.selectedServer {
