@@ -4,134 +4,10 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Klaudii — Pair Browser</title>
-  <style>
-    * { box-sizing: border-box; margin: 0; padding: 0; }
-    body {
-      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-      background: #0f1117;
-      color: #e0e0e0;
-      display: flex;
-      justify-content: center;
-      align-items: center;
-      min-height: 100vh;
-    }
-    .pair-card {
-      background: #1a1d25;
-      border: 1px solid #2a2d35;
-      border-radius: 12px;
-      padding: 2.5rem;
-      max-width: 500px;
-      width: 90%;
-    }
-    h2 { margin-bottom: 0.5rem; color: #fff; }
-    .subtitle { color: #888; font-size: 0.9rem; margin-bottom: 1.5rem; line-height: 1.5; }
-    label {
-      display: block;
-      font-size: 0.8rem;
-      color: #888;
-      text-transform: uppercase;
-      letter-spacing: 0.05em;
-      margin-bottom: 0.4rem;
-    }
-    input {
-      width: 100%;
-      background: #0f1117;
-      color: #fbbf24;
-      border: 1px solid #3a3d45;
-      border-radius: 8px;
-      padding: 0.75rem;
-      font-size: 0.9rem;
-      font-family: ui-monospace, monospace;
-      letter-spacing: 1px;
-    }
-    input:focus { outline: none; border-color: #2563eb; }
-    .hint {
-      font-size: 0.75rem;
-      color: #555;
-      margin: 0.5rem 0 1.5rem;
-      line-height: 1.5;
-    }
-    .btn {
-      background: #2563eb;
-      color: #fff;
-      border: none;
-      border-radius: 8px;
-      padding: 0.65rem 1.25rem;
-      font-size: 0.9rem;
-      cursor: pointer;
-      transition: background 0.15s;
-      width: 100%;
-    }
-    .btn:hover { background: #1d4ed8; }
-    .btn:disabled { opacity: 0.5; cursor: not-allowed; }
-    .btn.secondary {
-      background: #2a2d35;
-      color: #aaa;
-      margin-top: 0.75rem;
-    }
-    .btn.secondary:hover { background: #3a3d45; color: #fff; }
-    .error { color: #f87171; font-size: 0.85rem; margin-top: 0.5rem; }
-    .success {
-      background: #0f2a1a;
-      border: 1px solid #4ade80;
-      border-radius: 8px;
-      padding: 1rem;
-      margin-top: 1rem;
-      color: #4ade80;
-      text-align: center;
-    }
-    .divider {
-      text-align: center;
-      color: #555;
-      font-size: 0.8rem;
-      margin: 1.5rem 0;
-      position: relative;
-    }
-    .divider::before, .divider::after {
-      content: "";
-      position: absolute;
-      top: 50%;
-      width: 40%;
-      height: 1px;
-      background: #2a2d35;
-    }
-    .divider::before { left: 0; }
-    .divider::after { right: 0; }
-
-    /* Camera scanner */
-    #scanner-container {
-      margin: 1rem 0;
-      border-radius: 8px;
-      overflow: hidden;
-      background: #000;
-      position: relative;
-    }
-    #scanner-video {
-      width: 100%;
-      display: block;
-    }
-    #scanner-canvas { display: none; }
-    .scanner-overlay {
-      position: absolute;
-      top: 50%;
-      left: 50%;
-      transform: translate(-50%, -50%);
-      width: 200px;
-      height: 200px;
-      border: 2px solid rgba(74, 222, 128, 0.5);
-      border-radius: 12px;
-      pointer-events: none;
-    }
-    .scanner-status {
-      text-align: center;
-      font-size: 0.8rem;
-      color: #888;
-      margin-top: 0.5rem;
-    }
-  </style>
+  <link rel="stylesheet" href="/konnect.css">
 </head>
-<body>
-  <div class="pair-card">
+<body class="centered-page">
+  <div class="konnect-card wide">
     <h2>Pair this Browser</h2>
     <p class="subtitle" id="pair-subtitle">
       Scan the QR code shown in your local Klaudii's Kloud Konnect panel, or paste the Konnection Key.
@@ -140,7 +16,7 @@
     <div id="pair-content">
       <!-- QR Scanner (shown when camera API is available) -->
       <div id="scanner-section" style="display:none">
-        <button class="btn" onclick="startScanner()" id="scan-btn">Scan QR Code</button>
+        <button class="btn btn-primary btn-block" onclick="startScanner()" id="scan-btn">Scan QR Code</button>
         <div id="scanner-container" style="display:none">
           <video id="scanner-video" autoplay playsinline></video>
           <canvas id="scanner-canvas"></canvas>
@@ -151,22 +27,22 @@
 
       <div id="divider-el" class="divider" style="display:none">or</div>
 
-      <!-- Paste / manual entry — always visible, primary on unsupported browsers -->
+      <!-- Paste / manual entry -->
       <div id="manual-section">
         <label>Konnection Key</label>
         <textarea id="key-input" rows="3"
           placeholder="Paste the key from your local Klaudii's Kloud Konnect panel"
-          style="width:100%; background:#0f1117; color:#fbbf24; border:1px solid #3a3d45; border-radius:8px; padding:0.75rem; font-size:0.85rem; font-family:ui-monospace,monospace; letter-spacing:1px; resize:none; margin-bottom:0.5rem"
+          style="margin-bottom:0.5rem"
         ></textarea>
         <p class="hint">Open <strong>Kloud Konnect</strong> on your local Klaudii, copy the Konnection Key, and paste it above.</p>
-        <button class="btn" onclick="saveKey()" style="margin-top:0.25rem">Save Key</button>
+        <button class="btn btn-primary btn-block" onclick="saveKey()" style="margin-top:0.25rem">Save Key</button>
       </div>
 
-      <p id="error-msg" class="error" style="display:none"></p>
+      <p id="error-msg" class="error-msg" style="display:none"></p>
     </div>
 
-    <div id="success-msg" class="success" style="display:none">
-      Konnected! <a href="/" style="color:#4ade80; font-weight:500">Go to dashboard →</a>
+    <div id="success-msg" class="success-box" style="display:none">
+      Konnected! <a href="/">Go to dashboard &rarr;</a>
     </div>
   </div>
 
