@@ -30,7 +30,7 @@
       margin-bottom: 6px;
     }
 
-    input {
+    input, textarea {
       width: 100%;
       background: #1a1d25;
       color: #e0e0e0;
@@ -41,7 +41,13 @@
       font-family: monospace;
     }
 
-    input:focus {
+    textarea {
+      resize: vertical;
+      min-height: 64px;
+      line-height: 1.5;
+    }
+
+    input:focus, textarea:focus {
       outline: none;
       border-color: #2563eb;
     }
@@ -195,9 +201,9 @@
 <body>
   <h1>Klaudii Settings</h1>
 
-  <label for="url-input">Klaudii Instance URL</label>
-  <input id="url-input" type="url" placeholder="http://localhost:9876" />
-  <div class="hint">The URL where your Klaudii server is running.</div>
+  <label for="url-input">Local Klaudii Server URLs</label>
+  <textarea id="url-input" rows="3" placeholder="http://localhost:9876"></textarea>
+  <div class="hint">One URL per line. Kloud Konnect servers are discovered automatically when you're logged in.</div>
 
   <div class="section">
     <label>When clicking "Open"</label>

@@ -13,7 +13,11 @@
     "http://localhost:*/*",
     "https://localhost:*/*",
     "http://127.0.0.1:*/*",
-    "https://claude.ai/*"
+    "http://10.*.*.*:*/*",
+    "http://192.168.*.*:*/*",
+    "http://172.16.*.*:*/*",
+    "https://claude.ai/*",
+    "https://konnect.klaudii.com/*"
   ],
   "side_panel": {
     "default_path": "sidepanel.html"
@@ -25,6 +29,11 @@
     {
       "matches": ["https://claude.ai/*"],
       "js": ["content.js"],
+      "run_at": "document_idle"
+    },
+    {
+      "matches": ["https://konnect.klaudii.com/*"],
+      "js": ["connect-bridge.js"],
       "run_at": "document_idle"
     }
   ],
