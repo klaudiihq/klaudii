@@ -29,6 +29,40 @@ function cleanPhrase(project) {
 const PERM_BADGE_LABELS = { yolo: "bypass", ask: "ask", strict: "plan" };
 const PERM_MODE_LABELS = { yolo: "Bypass Permissions", ask: "Ask Permissions", strict: "Plan Mode" };
 
+const CHAT_MODES = ["gemini", "claude-local", "claude-remote"];
+const CHAT_MODE_LABELS = { "gemini": "Gemini", "claude-local": "Claude Local", "claude-remote": "Claude Remote" };
+
+function relativeTime(ts) {
+  if (!ts) return null;
+  const diff = Math.floor((Date.now() - ts) / 1000);
+  if (diff < 5) return "just now";
+  if (diff < 60) return `${diff}s ago`;
+  if (diff < 3600) return `${Math.floor(diff / 60)}m ago`;
+  if (diff < 86400) return `${Math.floor(diff / 3600)}h ago`;
+  return `${Math.floor(diff / 86400)}d ago`;
+}
+
+async function cycleChatMode(event, project) {
+  event.stopPropagation();
+  const card = document.getElementById(`card-${project}`);
+  if (!card) return;
+  const current = card.dataset.chatMode || "claude-local";
+  const idx = CHAT_MODES.indexOf(current);
+  const next = CHAT_MODES[(idx + 1) % CHAT_MODES.length];
+  card.dataset.chatMode = next;
+  const pill = card.querySelector(".chat-mode-pill");
+  if (pill) {
+    pill.dataset.mode = next;
+    pill.className = `chat-mode-pill mode-${next}`;
+    pill.innerHTML = `<span class="mode-dot"></span>${CHAT_MODE_LABELS[next]}`;
+  }
+  await fetch(`/api/workspace-state/${encodeURIComponent(project)}`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ mode: next }),
+  });
+}
+
 async function api(path, opts = {}) {
   const res = await fetch(API + path, {
     headers: { "Content-Type": "application/json" },
@@ -153,17 +187,13 @@ function renderSessions(sessions, procs) {
         <button class="btn btn-sm danger" onclick="stopSession('${esc(s.project)}')">Stop</button>
         <button class="btn btn-sm" onclick="restartSession('${esc(s.project)}')">Restart</button>
         ${s.ttyd ? `<button class="btn btn-sm" onclick='openTerminal(${s.ttyd.port}, ${sessionData})'>Terminal</button>` : ""}
-        <button class="btn btn-sm" onclick="toggleHistory('${esc(s.project)}')">History</button>
-        <button class="btn btn-sm" onclick="openGeminiChat('${esc(s.project)}', '${esc(s.projectPath)}')">Gemini</button>
-        <button class="btn btn-sm" onclick="openGeminiChat('${esc(s.project)}', '${esc(s.projectPath)}', 'claude')">Claude</button>`;
+        <button class="btn btn-sm" onclick="toggleHistory('${esc(s.project)}')">History</button>`;
     } else if (status === "exited") {
       panelItems = `
         <button class="btn btn-sm primary" onclick="restartSession('${esc(s.project)}')">Restart</button>
         <button class="btn btn-sm danger" onclick="stopSession('${esc(s.project)}')">Clean up</button>
         ${s.ttyd ? `<button class="btn btn-sm" onclick='openTerminal(${s.ttyd.port}, ${sessionData})'>Terminal</button>` : ""}
-        <button class="btn btn-sm" onclick="toggleHistory('${esc(s.project)}')">History</button>
-        <button class="btn btn-sm" onclick="openGeminiChat('${esc(s.project)}', '${esc(s.projectPath)}')">Gemini</button>
-        <button class="btn btn-sm" onclick="openGeminiChat('${esc(s.project)}', '${esc(s.projectPath)}', 'claude')">Claude</button>`;
+        <button class="btn btn-sm" onclick="toggleHistory('${esc(s.project)}')">History</button>`;
     } else {
       const modeOptions = Object.entries(PERM_MODE_LABELS).map(([val, label]) =>
         `<option value="${val}"${val === mode ? " selected" : ""}>${label}</option>`
@@ -178,15 +208,31 @@ function renderSessions(sessions, procs) {
         <button class="btn btn-sm primary" onclick="startSession('${esc(s.project)}', {continueSession:true})">Continue</button>
         <button class="btn btn-sm" onclick="startSession('${esc(s.project)}')">New Session</button>
         <button class="btn btn-sm" onclick="toggleHistory('${esc(s.project)}')">History</button>
-        <button class="btn btn-sm" onclick="openGeminiChat('${esc(s.project)}', '${esc(s.projectPath)}')">Gemini</button>
-        <button class="btn btn-sm" onclick="openGeminiChat('${esc(s.project)}', '${esc(s.projectPath)}', 'claude')">Claude</button>
         <button class="btn btn-sm danger" onclick="removeWorkspace(this, '${esc(s.project)}', ${!!(g && (g.dirtyFiles || g.unpushed))})">Remove</button>`;
     }
 
     const isPanelOpen = openPanelProject === s.project;
 
+    // Chat mode pill
+    const chatMode = s.chatMode || "claude-local";
+    const chatActive = !!s.chatActive;
+    const modePill = `<button class="chat-mode-pill mode-${esc(chatMode)}${chatActive ? " streaming" : ""}" data-mode="${esc(chatMode)}" onclick="cycleChatMode(event, '${esc(s.project)}')" title="Chat mode — click to change">${chatActive ? '<span class="mode-pulse"></span>' : '<span class="mode-dot"></span>'}${esc(CHAT_MODE_LABELS[chatMode] || chatMode)}</button>`;
+
+    // Remote timing row (started / last activity)
+    let remoteTimingRow = "";
+    if (chatMode === "claude-remote") {
+      const startedAt = s.tmux && s.tmux.created ? relativeTime(s.tmux.created * 1000) : null;
+      const lastAct = s.lastActivity ? relativeTime(s.lastActivity) : null;
+      if (startedAt || lastAct) {
+        const parts = [];
+        if (startedAt) parts.push(`started ${startedAt}`);
+        if (lastAct) parts.push(`last activity ${lastAct}`);
+        remoteTimingRow = `<div class="remote-timing">${parts.join(" · ")}</div>`;
+      }
+    }
+
     return `
-    <div class="card" id="card-${esc(s.project)}" data-project="${esc(s.project)}">
+    <div class="card" id="card-${esc(s.project)}" data-project="${esc(s.project)}" data-chat-mode="${esc(chatMode)}" data-project-path="${esc(s.projectPath || "")}" data-claude-url="${esc(s.claudeUrl || "")}">
       <div class="card-accent ${status}"></div>
       <div class="card-body">
         <div class="card-header">
@@ -195,10 +241,12 @@ function renderSessions(sessions, procs) {
             ${branchLink ? `<span class="card-subtitle">${branchLink}</span>` : ""}
           </div>
           <div class="card-badges">
+            ${modePill}
             ${permBadge}
             <span class="card-status ${status}">${status}</span>
           </div>
         </div>
+        ${remoteTimingRow}
         ${gitBar}
         ${statsRow}
         <div class="card-actions-panel${isPanelOpen ? "" : " hidden"}" id="panel-${esc(s.project)}">
@@ -1144,13 +1192,10 @@ function toggleTheme() {
   document.getElementById("theme-toggle").textContent = isLight ? "🌙" : "☀";
 }
 
-// --- Sidebar card click (workspace switching in chat mode) ---
+// --- Card click: open chat in workspace's stored mode ---
 
 document.getElementById("sessions-list").addEventListener("click", (e) => {
-  // Only active in chat-open mode
-  if (!document.body.classList.contains("chat-open")) return;
-
-  // Ignore clicks on buttons, links, selects, and inputs
+  // Ignore clicks on buttons, links, selects, inputs, and the action panel
   if (e.target.closest("button, a, select, input, .card-actions-panel")) return;
 
   const card = e.target.closest(".card");
@@ -1159,17 +1204,23 @@ document.getElementById("sessions-list").addEventListener("click", (e) => {
   const project = card.dataset.project;
   if (!project) return;
 
+  const chatMode = card.dataset.chatMode || "claude-local";
+  const projectPath = card.dataset.projectPath || "";
+  const claudeUrl = card.dataset.claudeUrl || "";
+
   // Highlight the active workspace card
   document.querySelectorAll(".card.active-workspace").forEach(c => c.classList.remove("active-workspace"));
   card.classList.add("active-workspace");
 
-  // Resolve workspace path and switch chat
-  api("/api/sessions").then(sessions => {
-    const s = sessions.find(x => x.project === project);
-    if (s) {
-      openGeminiChat(project, s.projectPath, geminiActiveCli);
-    }
-  });
+  if (chatMode === "claude-remote") {
+    // Open claude.ai in a new tab
+    if (claudeUrl) window.open(claudeUrl, "_blank");
+    return;
+  }
+
+  // Map stored mode to cli param expected by openGeminiChat
+  const cli = chatMode === "gemini" ? "gemini" : "claude";
+  openGeminiChat(project, projectPath, cli);
 });
 
 // --- Init ---

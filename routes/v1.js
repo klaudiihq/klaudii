@@ -21,8 +21,9 @@ module.exports = function createV1Router(deps) {
     sessionTracker,
     projects, // { getProjects, getProject, addProject, removeProject, setPermissionMode }
     config,
-    gemini,      // optional — Gemini CLI chat backend
-    claudeChat,  // optional — Claude CLI chat backend
+    gemini,         // optional — Gemini CLI chat backend
+    claudeChat,     // optional — Claude CLI chat backend
+    workspaceState, // optional — per-workspace chat mode/session/draft persistence
   } = deps;
 
   const router = express.Router();
@@ -180,6 +181,14 @@ module.exports = function createV1Router(deps) {
         status = tmux.isClaudeAlive(tmuxName) ? "running" : "exited";
       }
 
+      // Chat mode + streaming state
+      const wsState = workspaceState ? workspaceState.getWorkspace(project.name) : {};
+      const chatMode = wsState.mode || "claude-local";
+      const chatActive =
+        (chatMode === "gemini" && gemini && gemini.isActive(project.name)) ||
+        (chatMode === "claude-local" && claudeChat && claudeChat.isActive(project.name)) ||
+        false;
+
       return {
         project: project.name,
         projectPath: project.path,
@@ -193,10 +202,28 @@ module.exports = function createV1Router(deps) {
         remoteUrl,
         sessionCount: tracked.length,
         lastActivity,
+        chatMode,
+        chatActive,
       };
     });
 
     res.json(sessions);
+  });
+
+  // --- Workspace chat state (mode / session / draft) ---
+
+  router.get("/workspace-state/:workspace", (req, res) => {
+    if (!workspaceState) return res.json({ mode: "claude-local", sessionNum: null, draft: "" });
+    const state = workspaceState.getWorkspace(decodeURIComponent(req.params.workspace));
+    res.json(state);
+  });
+
+  router.patch("/workspace-state/:workspace", (req, res) => {
+    if (!workspaceState) return res.status(501).json({ error: "workspace-state not available" });
+    const workspace = decodeURIComponent(req.params.workspace);
+    const { mode, sessionNum, draft, draftMode, draftSession } = req.body;
+    workspaceState.setState(workspace, { mode, sessionNum, draft, draftMode, draftSession });
+    res.json(workspaceState.getWorkspace(workspace));
   });
 
   router.get("/history", (req, res) => {

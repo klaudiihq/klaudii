@@ -135,6 +135,18 @@ async function geminiSwitchSession(num) {
 
   geminiSessionNum = num;
 
+  // Persist session number server-side
+  if (geminiWorkspace) {
+    fetch(`/api/workspace-state/${encodeURIComponent(geminiWorkspace)}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        sessionNum: num,
+        draftMode: geminiActiveCli === "claude" ? "claude-local" : "gemini",
+      }),
+    }).catch(() => {});
+  }
+
   // Update URL
   const cur = getChatParams();
   setChatParams({ ...cur, session: num });
@@ -254,6 +266,37 @@ async function geminiFetchQuota() {
 // Current streaming assistant message element
 let geminiCurrentMsgEl = null;
 let geminiCurrentMsgText = "";
+
+// Draft sync
+let geminiDraftTimer = null;
+
+function geminiSaveDraft(text) {
+  if (!geminiWorkspace) return;
+  clearTimeout(geminiDraftTimer);
+  geminiDraftTimer = setTimeout(() => {
+    fetch(`/api/workspace-state/${encodeURIComponent(geminiWorkspace)}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        draft: text,
+        draftMode: geminiActiveCli === "claude" ? "claude-local" : "gemini",
+        draftSession: geminiSessionNum,
+      }),
+    }).catch(() => {});
+  }, 400);
+}
+
+async function geminiRestoreDraft() {
+  if (!geminiWorkspace) return;
+  try {
+    const res = await fetch(`/api/workspace-state/${encodeURIComponent(geminiWorkspace)}`);
+    const state = await res.json();
+    const input = document.getElementById("gemini-input");
+    if (input && state.draft) {
+      input.value = state.draft;
+    }
+  } catch { /* non-fatal */ }
+}
 
 // --- WebSocket ---
 
@@ -847,10 +890,13 @@ async function geminiShowChat() {
     }
   }
 
-  // Enable input
+  // Enable input and restore draft
   geminiSetStreaming(false);
   const input = document.getElementById("gemini-input");
-  if (input) input.focus();
+  if (input) {
+    await geminiRestoreDraft();
+    input.focus();
+  }
 }
 
 // --- Overlay controls ---
@@ -878,11 +924,30 @@ async function openGeminiChat(project, projectPath, cli) {
   const inputEl = document.getElementById("gemini-input");
   if (inputEl) inputEl.placeholder = `Message ${cliLabel}...`;
 
-  // Reset streaming/session state
+  // Reset streaming state
   geminiCurrentMsgEl = null;
   geminiCurrentMsgText = "";
-  geminiSessionNum = null;
   geminiSetStreaming(false);
+
+  // Restore last session from server state (non-blocking — geminiShowChat uses it)
+  geminiSessionNum = null;
+  if (project) {
+    try {
+      const wsRes = await fetch(`/api/workspace-state/${encodeURIComponent(project)}`);
+      const wsState = await wsRes.json();
+      const stateMode = geminiActiveCli === "claude" ? "claude-local" : "gemini";
+      if (wsState.sessionNum != null) {
+        geminiSessionNum = wsState.sessionNum;
+        glog(`openChat: restoring session#${geminiSessionNum} from server state`);
+      }
+      // Record that this workspace is in this mode
+      fetch(`/api/workspace-state/${encodeURIComponent(project)}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ mode: stateMode }),
+      }).catch(() => {});
+    } catch { /* non-fatal */ }
+  }
 
   // Force model list refresh for the new CLI backend
   geminiModelsFetched = false;
@@ -1050,9 +1115,10 @@ function sendGeminiMessage() {
   // Render user bubble
   geminiAppendMessage("user", message, false);
 
-  // Clear input
+  // Clear input and draft
   input.value = "";
   input.style.height = "auto";
+  geminiSaveDraft("");
 
   // Start streaming — show thinking indicator until first content arrives
   geminiSetStreaming(true);
@@ -1222,6 +1288,11 @@ window.addEventListener("popstate", () => {
     }
     document.body.classList.remove("chatonly", "chat-open");
   }
+});
+
+// Draft sync — save as user types
+document.getElementById("gemini-input")?.addEventListener("input", (e) => {
+  geminiSaveDraft(e.target.value);
 });
 
 // Auto-open chat from URL params on page load

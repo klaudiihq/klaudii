@@ -13,6 +13,7 @@ const sessionTracker = require("./lib/session-tracker");
 const createV1Router = require("./routes/v1");
 const gemini = require("./lib/gemini");
 const claudeChat = require("./lib/claude-chat");
+const workspaceState = require("./lib/workspace-state");
 
 let config = loadConfig();
 const app = express();
@@ -35,6 +36,7 @@ app.use(
     config,
     gemini,
     claudeChat,
+    workspaceState,
   })
 );
 

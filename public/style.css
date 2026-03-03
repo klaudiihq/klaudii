@@ -381,6 +381,61 @@ h2 {
   color: var(--text-muted);
 }
 
+/* --- Chat mode pill --- */
+
+.chat-mode-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 9px;
+  padding: 2px 6px;
+  border-radius: 999px;
+  font-weight: 500;
+  letter-spacing: 0.03em;
+  border: none;
+  cursor: pointer;
+  background: var(--bg-2);
+  color: var(--text-faint);
+  transition: background 0.15s, color 0.15s;
+}
+.chat-mode-pill:hover { background: var(--bg-3); color: var(--text); }
+
+.mode-dot {
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: currentColor;
+  flex-shrink: 0;
+}
+
+.mode-pulse {
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: currentColor;
+  flex-shrink: 0;
+  animation: mode-pulse 1.2s ease-in-out infinite;
+}
+
+@keyframes mode-pulse {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50% { opacity: 0.4; transform: scale(1.4); }
+}
+
+.chat-mode-pill.mode-gemini         { color: var(--s-blue-text); background: var(--s-blue-bg); }
+.chat-mode-pill.mode-claude-local   { color: var(--s-yellow); background: var(--s-yellow-bg); }
+.chat-mode-pill.mode-claude-remote  { color: var(--s-green); background: var(--s-green-bg); }
+.chat-mode-pill.mode-gemini:hover        { filter: brightness(1.1); }
+.chat-mode-pill.mode-claude-local:hover  { filter: brightness(1.1); }
+.chat-mode-pill.mode-claude-remote:hover { filter: brightness(1.1); }
+
+/* Remote timing row */
+.remote-timing {
+  font-size: 10px;
+  color: var(--text-faint);
+  margin-bottom: 4px;
+}
+
 /* --- Permission badge (compact pill) --- */
 
 .perm-badge {
