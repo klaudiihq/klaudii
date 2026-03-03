@@ -1,0 +1,163 @@
+name: Build Mac App
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: macos-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      # ── Node (for npm ci) ─────────────────────────────────────────
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      # ── Import Developer ID certificate ──────────────────────────
+      - name: Import signing certificate
+        env:
+          CERTIFICATE_P12:       ${{ secrets.APPLE_CERTIFICATE_P12 }}
+          CERTIFICATE_PASSWORD:  ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          KEYCHAIN_PASSWORD:     ${{ secrets.KEYCHAIN_PASSWORD }}
+        run: |
+          KEYCHAIN=build.keychain
+          security create-keychain  -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN"
+          security default-keychain -s "$KEYCHAIN"
+          security unlock-keychain  -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN"
+          echo "$CERTIFICATE_P12" | base64 --decode > cert.p12
+          security import cert.p12 -k "$KEYCHAIN" \
+            -P "$CERTIFICATE_PASSWORD" -T /usr/bin/codesign
+          security set-key-partition-list \
+            -S apple-tool:,apple: -s -k "$KEYCHAIN_PASSWORD" "$KEYCHAIN"
+          rm cert.p12
+
+      # ── Download + lipo universal Node binary ─────────────────────
+      - name: Download Node.js universal binary
+        run: |
+          NODE_VERSION=22.14.0
+          for ARCH in arm64 x64; do
+            curl -fsSL \
+              "https://nodejs.org/dist/v${NODE_VERSION}/node-v${NODE_VERSION}-darwin-${ARCH}.tar.gz" \
+              | tar xz "node-v${NODE_VERSION}-darwin-${ARCH}/bin/node" \
+                       --strip-components=2
+            mv node "node-${ARCH}"
+          done
+          lipo -create node-arm64 node-x64 -output node-universal
+          chmod +x node-universal
+
+      # ── Compile Swift app as universal binary ─────────────────────
+      - name: Compile KlaudiiMenu.swift (universal)
+        run: |
+          for ARCH in arm64 x86_64; do
+            swiftc \
+              -target "${ARCH}-apple-macosx11.0" \
+              -o "KlaudiiMenu-${ARCH}" \
+              mac/menubar/KlaudiiMenu.swift \
+              -framework Cocoa
+          done
+          lipo -create KlaudiiMenu-arm64 KlaudiiMenu-x86_64 -output KlaudiiMenu
+
+      # ── Generate AppIcon.icns ─────────────────────────────────────
+      - name: Generate app icon
+        run: |
+          brew install librsvg
+          bash mac/make-icns.sh brand/icon-glass.svg AppIcon.icns
+
+      # ── Assemble .app bundle ──────────────────────────────────────
+      - name: Assemble Klaudii.app
+        run: |
+          APP=Klaudii.app
+          mkdir -p "$APP/Contents/MacOS"
+          mkdir -p "$APP/Contents/Resources/server"
+
+          # Metadata
+          cp mac/Info.plist "$APP/Contents/Info.plist"
+
+          # Executable
+          cp KlaudiiMenu "$APP/Contents/MacOS/Klaudii"
+          chmod +x "$APP/Contents/MacOS/Klaudii"
+
+          # App icon
+          cp AppIcon.icns "$APP/Contents/Resources/AppIcon.icns"
+
+          # Bundled Node
+          cp node-universal "$APP/Contents/Resources/node"
+          chmod +x "$APP/Contents/Resources/node"
+
+          # Server source (exclude dev/build artefacts)
+          rsync -a \
+            --exclude=node_modules \
+            --exclude=.git \
+            --exclude=config.json \
+            --exclude=sessions.json \
+            --exclude=gemini-sessions.json \
+            --exclude=claude-chat-sessions.json \
+            --exclude="*.log" \
+            --exclude=dist \
+            --exclude=brand \
+            --exclude=screenshots \
+            --exclude=mac \
+            --exclude=iOS \
+            --exclude=extension \
+            --exclude=.github \
+            . "$APP/Contents/Resources/server/"
+
+          # Production npm deps inside the bundle
+          cd "$APP/Contents/Resources/server"
+          npm ci --omit=dev --silent
+
+      # ── Sign .app ─────────────────────────────────────────────────
+      - name: Sign Klaudii.app
+        env:
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        run: |
+          codesign --deep --force --options runtime \
+            --sign "Developer ID Application: $APPLE_TEAM_ID" \
+            --entitlements mac/entitlements.plist \
+            Klaudii.app
+
+      # ── Create .dmg ───────────────────────────────────────────────
+      - name: Create Klaudii.dmg
+        run: |
+          hdiutil create \
+            -volname "Klaudii" \
+            -srcfolder Klaudii.app \
+            -ov -format UDZO \
+            Klaudii.dmg
+
+      # ── Sign .dmg ─────────────────────────────────────────────────
+      - name: Sign Klaudii.dmg
+        env:
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        run: |
+          codesign --sign "Developer ID Application: $APPLE_TEAM_ID" Klaudii.dmg
+
+      # ── Notarize + staple ─────────────────────────────────────────
+      - name: Notarize
+        env:
+          APPLE_ID:           ${{ secrets.APPLE_ID }}
+          APPLE_APP_PASSWORD: ${{ secrets.APPLE_APP_PASSWORD }}
+          APPLE_TEAM_ID:      ${{ secrets.APPLE_TEAM_ID }}
+        run: |
+          xcrun notarytool submit Klaudii.dmg \
+            --apple-id     "$APPLE_ID" \
+            --password     "$APPLE_APP_PASSWORD" \
+            --team-id      "$APPLE_TEAM_ID" \
+            --wait
+          xcrun stapler staple Klaudii.dmg
+
+      # ── Publish to GitHub Release ─────────────────────────────────
+      - name: Upload to release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: Klaudii.dmg
+          generate_release_notes: true
