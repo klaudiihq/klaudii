@@ -241,6 +241,26 @@ h2 {
   border-color: var(--border-active);
 }
 
+.sort-dir-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: transparent;
+  color: var(--text-faint);
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.sort-dir-btn:hover {
+  color: var(--text-dim);
+  background: var(--bg-hover);
+}
+
 /* =========================================================
    Badge
    ========================================================= */

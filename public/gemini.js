@@ -8,12 +8,25 @@
 const G = "[gemini-ui]";
 function glog(...args) { console.log(G, new Date().toISOString(), ...args); }
 
+// --- Helpers ---
+function chatMsgTime(ts) {
+  if (!ts) return null;
+  const d = new Date(ts);
+  const now = new Date();
+  const time = d.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
+  if (d.toDateString() === now.toDateString()) return time;
+  const date = d.toLocaleDateString([], { month: "short", day: "numeric", ...(d.getFullYear() !== now.getFullYear() && { year: "numeric" }) });
+  return `${date}, ${time}`;
+}
+
 // --- State ---
 
 let geminiWs = null;
 let geminiWorkspace = null;
 let geminiWorkspacePath = null;
 let geminiStreaming = false;
+let geminiOpenedWhileStreaming = false; // true when chat opened mid-stream
+let geminiStreamPollTimer = null;       // setInterval handle for polling in-flight reply
 let geminiActiveCli = "gemini"; // "gemini" or "claude"
 let geminiSessionNum = null; // current session number (1, 2, 3...)
 
@@ -267,34 +280,97 @@ async function geminiFetchQuota() {
 let geminiCurrentMsgEl = null;
 let geminiCurrentMsgText = "";
 
+// --- Image attachments ---
+
+let geminiPendingImages = []; // [{ id, dataUrl, name }]
+let geminiImageIdCounter = 0;
+
+function geminiAddImage(dataUrl, name) {
+  const id = ++geminiImageIdCounter;
+  geminiPendingImages.push({ id, dataUrl, name: name || `image${id}` });
+  geminiRenderImageStrip();
+}
+
+function geminiRemoveImage(id) {
+  geminiPendingImages = geminiPendingImages.filter((i) => i.id !== id);
+  geminiRenderImageStrip();
+}
+
+function geminiClearImages() {
+  geminiPendingImages = [];
+  geminiRenderImageStrip();
+}
+
+function geminiRenderImageStrip() {
+  const strip = document.getElementById("gemini-image-strip");
+  const attachBtn = document.getElementById("gemini-attach");
+  if (!strip) return;
+  if (geminiPendingImages.length === 0) {
+    strip.classList.add("hidden");
+    strip.innerHTML = "";
+    if (attachBtn) attachBtn.classList.remove("has-images");
+    return;
+  }
+  strip.classList.remove("hidden");
+  if (attachBtn) attachBtn.classList.add("has-images");
+  strip.innerHTML = geminiPendingImages.map((img) =>
+    `<div class="gemini-img-thumb" title="${esc(img.name)}">
+      <img src="${img.dataUrl}" alt="${esc(img.name)}">
+      <button class="gemini-img-remove" onclick="geminiRemoveImage(${img.id})" title="Remove">×</button>
+    </div>`
+  ).join("");
+}
+
+function geminiHandleFileInput(event) {
+  const files = Array.from(event.target.files || []);
+  files.forEach((file) => geminiLoadImageFile(file));
+  event.target.value = ""; // reset so same file can be re-added
+}
+
+function geminiLoadImageFile(file) {
+  if (!file.type.startsWith("image/")) return;
+  const reader = new FileReader();
+  reader.onload = (e) => geminiAddImage(e.target.result, file.name);
+  reader.readAsDataURL(file);
+}
+
+// Only show attach button when in claude-local mode (direct API supports images)
+function geminiUpdateAttachVisibility() {
+  const btn = document.getElementById("gemini-attach");
+  const fileInput = document.getElementById("gemini-file-input");
+  if (!btn) return;
+  const show = geminiActiveCli === "claude";
+  btn.style.display = show ? "" : "none";
+  if (fileInput) fileInput.disabled = !show;
+  if (!show) geminiClearImages();
+}
+
 // Draft sync
 let geminiDraftTimer = null;
 
 function geminiSaveDraft(text) {
   if (!geminiWorkspace) return;
   clearTimeout(geminiDraftTimer);
+  // Capture identity at schedule time so a workspace switch within the debounce
+  // window doesn't redirect the save to the wrong chat.
+  const workspace = geminiWorkspace;
+  const draftMode = geminiActiveCli === "claude" ? "claude-local" : "gemini";
+  const draftSession = geminiSessionNum;
   geminiDraftTimer = setTimeout(() => {
-    fetch(`/api/workspace-state/${encodeURIComponent(geminiWorkspace)}`, {
+    fetch(`/api/workspace-state/${encodeURIComponent(workspace)}`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        draft: text,
-        draftMode: geminiActiveCli === "claude" ? "claude-local" : "gemini",
-        draftSession: geminiSessionNum,
-      }),
+      body: JSON.stringify({ draft: text, draftMode, draftSession }),
     }).catch(() => {});
   }, 400);
 }
 
-async function geminiRestoreDraft() {
+async function geminiRestoreDraft(prefetchedState = null) {
   if (!geminiWorkspace) return;
   try {
-    const res = await fetch(`/api/workspace-state/${encodeURIComponent(geminiWorkspace)}`);
-    const state = await res.json();
+    const state = prefetchedState || await fetch(`/api/workspace-state/${encodeURIComponent(geminiWorkspace)}`).then(r => r.json());
     const input = document.getElementById("gemini-input");
-    if (input && state.draft) {
-      input.value = state.draft;
-    }
+    if (input && state.draft) input.value = state.draft;
   } catch { /* non-fatal */ }
 }
 
@@ -315,6 +391,15 @@ function geminiConnect() {
   geminiWs.onclose = (evt) => {
     glog("ws-close code=" + evt.code, "reason=" + (evt.reason || ""));
     geminiUpdateStatus(false);
+    // If a stream was in progress, clear it so the UI doesn't hang
+    if (geminiStreaming) {
+      geminiRemoveThinking();
+      geminiSetStreaming(false);
+      geminiCurrentMsgEl = null;
+      geminiCurrentMsgText = "";
+      geminiAppendError("Connection lost — response may be incomplete.");
+    }
+    geminiStopStreamPoll();
     // Reconnect after 2s
     setTimeout(geminiConnect, 2000);
   };
@@ -439,6 +524,8 @@ function handleGeminiEvent(event) {
         history.push({ role: "assistant", content: geminiCurrentMsgText });
         geminiHistory[event.workspace] = history;
       }
+      // Stamp the assistant bubble with completion time
+      geminiStampMessageTime(geminiCurrentMsgEl, Date.now());
       // Only reset if still streaming (stop already resets immediately)
       if (geminiStreaming) geminiSetStreaming(false);
       geminiCurrentMsgEl = null;
@@ -479,13 +566,31 @@ function handleGeminiEvent(event) {
 
 // --- DOM rendering ---
 
-function geminiAppendMessage(role, content, streaming) {
+function geminiAppendMessage(role, content, streaming, images, ts) {
   const container = document.getElementById("gemini-messages");
   const div = document.createElement("div");
   div.className = `gemini-msg ${role}${streaming ? " gemini-streaming" : ""}`;
 
   if (role === "user") {
-    div.textContent = content;
+    const bubble = document.createElement("div");
+    bubble.className = "user-bubble";
+    // Render any attached images above the message text
+    if (images && images.length) {
+      const imgRow = document.createElement("div");
+      imgRow.className = "gemini-msg-images";
+      images.forEach((img) => {
+        const im = document.createElement("img");
+        im.src = img.dataUrl;
+        im.className = "gemini-msg-img";
+        im.alt = img.name || "attached image";
+        imgRow.appendChild(im);
+      });
+      bubble.appendChild(imgRow);
+    }
+    const textNode = document.createElement("span");
+    textNode.textContent = content;
+    bubble.appendChild(textNode);
+    div.appendChild(bubble);
   } else {
     const md = document.createElement("div");
     md.className = "md-content";
@@ -493,9 +598,31 @@ function geminiAppendMessage(role, content, streaming) {
     div.appendChild(md);
   }
 
+  const timeStr = chatMsgTime(ts);
+  if (timeStr) {
+    const tsEl = document.createElement("div");
+    tsEl.className = "gemini-msg-ts";
+    tsEl.textContent = timeStr;
+    div.appendChild(tsEl);
+  }
+
   container.appendChild(div);
   geminiScrollToBottom();
   return div;
+}
+
+/** Stamp a timestamp onto an already-rendered message element (used when assistant stream completes). */
+function geminiStampMessageTime(el, ts) {
+  if (!el || !ts) return;
+  const timeStr = chatMsgTime(ts);
+  if (!timeStr) return;
+  let tsEl = el.querySelector(".gemini-msg-ts");
+  if (!tsEl) {
+    tsEl = document.createElement("div");
+    tsEl.className = "gemini-msg-ts";
+    el.appendChild(tsEl);
+  }
+  tsEl.textContent = timeStr;
 }
 
 /**
@@ -615,20 +742,20 @@ function geminiUpdateToolResult(toolId, status, output, error) {
       }
     }
 
-    // Add output to body
+    // Add output to body and auto-expand the pill
     const trimmed = (error || output || "").trim();
-    if (trimmed) {
-      const body = pill.querySelector(".gemini-tool-body");
-      if (body) {
-        const section = document.createElement("div");
-        section.className = "gemini-tool-section";
-        section.innerHTML = `<div class="gemini-tool-section-label">${isError ? "Error" : "Output"}</div>`;
-        const pre = document.createElement("pre");
-        pre.textContent = trimmed.length > 5000 ? trimmed.slice(0, 5000) + "\n...(truncated)" : trimmed;
-        section.appendChild(pre);
-        body.appendChild(section);
-      }
+    const body = pill.querySelector(".gemini-tool-body");
+    if (trimmed && body) {
+      const section = document.createElement("div");
+      section.className = "gemini-tool-section";
+      section.innerHTML = `<div class="gemini-tool-section-label">${isError ? "Error" : "Output"}</div>`;
+      const pre = document.createElement("pre");
+      pre.textContent = trimmed.length > 5000 ? trimmed.slice(0, 5000) + "\n...(truncated)" : trimmed;
+      section.appendChild(pre);
+      body.appendChild(section);
     }
+    // Auto-expand so output is immediately visible
+    pill.open = true;
   } else {
     // No matching pill — standalone fallback
     const details = document.createElement("details");
@@ -876,25 +1003,111 @@ async function geminiSaveApiKey() {
   }
 }
 
-async function geminiShowChat() {
+// Stop any in-progress stream-poll and remove the waiting indicator.
+function geminiStopStreamPoll() {
+  if (geminiStreamPollTimer) {
+    clearInterval(geminiStreamPollTimer);
+    geminiStreamPollTimer = null;
+  }
+  const el = document.getElementById("gemini-poll-thinking");
+  if (el) el.remove();
+}
+
+// Show "Waiting for response…" dots and poll history every 2 s until the
+// in-flight assistant reply arrives (or the server says streaming is done).
+function geminiStartStreamPoll(historyLengthAtOpen) {
+  geminiStopStreamPoll();
+
+  const container = document.getElementById("gemini-messages");
+  const thinkingEl = document.createElement("div");
+  thinkingEl.id = "gemini-poll-thinking";
+  thinkingEl.className = "gemini-thinking";
+  thinkingEl.innerHTML =
+    `<div class="gemini-thinking-dots"><span></span><span></span><span></span></div>` +
+    `<span class="gemini-thinking-label">Waiting for response\u2026</span>`;
+  container.appendChild(thinkingEl);
+  thinkingEl.scrollIntoView({ behavior: "smooth", block: "end" });
+
+  const ws = geminiWorkspace;
+  const sn = geminiSessionNum;
+
+  geminiStreamPollTimer = setInterval(async () => {
+    try {
+      const history = await geminiFetchHistory(ws, sn);
+      if (history.length > historyLengthAtOpen) {
+        geminiStopStreamPoll();
+        const newMsgs = history.slice(historyLengthAtOpen);
+        for (const msg of newMsgs) {
+          if (msg.role === "tool_use") {
+            try {
+              const d = JSON.parse(msg.content);
+              geminiAppendToolUse(d.tool_name, d.tool_id, d.parameters);
+            } catch { /* ignore */ }
+          } else if (msg.role === "tool_result") {
+            try {
+              const d = JSON.parse(msg.content);
+              geminiUpdateToolResult(d.tool_id, d.status, d.output);
+            } catch { /* ignore */ }
+          } else {
+            geminiAppendMessage(msg.role, msg.content, false, null, msg.ts);
+          }
+        }
+        container.scrollTop = container.scrollHeight;
+        return;
+      }
+      // Also bail if the server says streaming stopped (e.g. error)
+      const wsRes = await fetch(`/api/workspace-state/${encodeURIComponent(ws)}`);
+      const wsState = await wsRes.json();
+      if (!wsState.streaming) {
+        geminiStopStreamPoll();
+      }
+    } catch { /* ignore transient poll errors */ }
+  }, 2000);
+}
+
+async function geminiShowChat(wsState = null) {
   glog("showChat: workspace=" + geminiWorkspace + " session#" + geminiSessionNum);
   const container = document.getElementById("gemini-messages");
   container.innerHTML = "";
 
-  // Fetch sessions list and conversation history from server
+  // Fetch sessions list and conversation history in parallel
   if (geminiWorkspace) {
-    await geminiFetchSessions(geminiWorkspace);
-    const history = await geminiFetchHistory(geminiWorkspace, geminiSessionNum);
+    const sessionNumAtCall = geminiSessionNum;
+    const [, history] = await Promise.all([
+      geminiFetchSessions(geminiWorkspace),
+      geminiFetchHistory(geminiWorkspace, sessionNumAtCall),
+    ]);
     for (const msg of history) {
-      geminiAppendMessage(msg.role, msg.content, false);
+      if (msg.role === "tool_use") {
+        try {
+          const d = JSON.parse(msg.content);
+          geminiAppendToolUse(d.tool_name, d.tool_id, d.parameters);
+        } catch { /* ignore */ }
+      } else if (msg.role === "tool_result") {
+        try {
+          const d = JSON.parse(msg.content);
+          geminiUpdateToolResult(d.tool_id, d.status, d.output);
+        } catch { /* ignore */ }
+      } else {
+        geminiAppendMessage(msg.role, msg.content, false, null, msg.ts);
+      }
+    }
+
+    // If a stream was in-flight when we opened, poll until the reply lands
+    if (geminiOpenedWhileStreaming) {
+      geminiOpenedWhileStreaming = false;
+      const lastMsg = history[history.length - 1];
+      if (lastMsg && lastMsg.role === "user") {
+        geminiStartStreamPoll(history.length);
+      }
     }
   }
 
-  // Enable input and restore draft
+  // Enable input and restore draft (pass pre-fetched state to avoid a duplicate round-trip)
   geminiSetStreaming(false);
   const input = document.getElementById("gemini-input");
   if (input) {
-    await geminiRestoreDraft();
+    await geminiRestoreDraft(wsState);
     input.focus();
   }
 }
@@ -924,22 +1137,26 @@ async function openGeminiChat(project, projectPath, cli) {
   const inputEl = document.getElementById("gemini-input");
   if (inputEl) inputEl.placeholder = `Message ${cliLabel}...`;
 
-  // Reset streaming state
+  // Reset streaming state and image attachments
   geminiCurrentMsgEl = null;
   geminiCurrentMsgText = "";
   geminiSetStreaming(false);
+  geminiClearImages();
+  geminiUpdateAttachVisibility();
 
   // Restore last session from server state (non-blocking — geminiShowChat uses it)
   geminiSessionNum = null;
+  let wsState = null;
   if (project) {
     try {
       const wsRes = await fetch(`/api/workspace-state/${encodeURIComponent(project)}`);
-      const wsState = await wsRes.json();
+      wsState = await wsRes.json();
       const stateMode = geminiActiveCli === "claude" ? "claude-local" : "gemini";
       if (wsState.sessionNum != null) {
         geminiSessionNum = wsState.sessionNum;
         glog(`openChat: restoring session#${geminiSessionNum} from server state`);
       }
+      geminiOpenedWhileStreaming = wsState.streaming || false;
       // Record that this workspace is in this mode
       fetch(`/api/workspace-state/${encodeURIComponent(project)}`, {
         method: "PATCH",
@@ -988,7 +1205,7 @@ async function openGeminiChat(project, projectPath, cli) {
   }
 
   if (cachedAuth && cachedAuth.loggedIn) {
-    geminiShowChat();
+    geminiShowChat(wsState);
   } else if (cachedAuth && !cachedAuth.loggedIn) {
     // Check if workspace has an API key (fast local fetch)
     try {
@@ -996,7 +1213,7 @@ async function openGeminiChat(project, projectPath, cli) {
       const keyRes = await fetch(`${keyBase}/apikey/${encodeURIComponent(project)}`);
       const keyData = await keyRes.json();
       if (keyData.hasKey) {
-        geminiShowChat();
+        geminiShowChat(wsState);
       } else {
         geminiShowAuthPanel();
       }
@@ -1010,18 +1227,19 @@ async function openGeminiChat(project, projectPath, cli) {
       const data = await res.json();
       const authData = data[authField];
       if (authData && authData.loggedIn) {
-        geminiShowChat();
+        geminiShowChat(wsState);
       } else {
         geminiShowAuthPanel();
       }
     } catch {
-      geminiShowChat();
+      geminiShowChat(wsState);
     }
   }
 }
 
 function closeGeminiChat() {
   glog("closeChat");
+  geminiStopStreamPoll();
   document.getElementById("gemini-overlay").classList.add("hidden");
   document.body.classList.remove("chat-open");
 
@@ -1106,14 +1324,17 @@ function sendGeminiMessage() {
     return;
   }
 
+  // Discard any in-progress reload-poll — user is sending a new message
+  geminiStopStreamPoll();
+
   glog(`send: workspace=${geminiWorkspace} msgLen=${message.length} wsState=${geminiWs ? geminiWs.readyState : "null"}`);
 
   // Add to local cache (server persists when WS receives the message)
   if (!geminiHistory[geminiWorkspace]) geminiHistory[geminiWorkspace] = [];
   geminiHistory[geminiWorkspace].push({ role: "user", content: message });
 
-  // Render user bubble
-  geminiAppendMessage("user", message, false);
+  // Render user bubble (with any pending images above the text)
+  geminiAppendMessage("user", message, false, geminiPendingImages.slice(), Date.now());
 
   // Clear input and draft
   input.value = "";
@@ -1131,9 +1352,18 @@ function sendGeminiMessage() {
   const model = modelSelect ? modelSelect.value : "";
 
   if (geminiWs && geminiWs.readyState === WebSocket.OPEN) {
-    const payload = { type: "send", workspace: geminiWorkspace, message, model: model || undefined, cli: geminiActiveCli };
+    const images = geminiPendingImages.map((i) => i.dataUrl);
+    const payload = {
+      type: "send",
+      workspace: geminiWorkspace,
+      message,
+      model: model || undefined,
+      cli: geminiActiveCli,
+      ...(images.length ? { images } : {}),
+    };
     glog("send: ws.send", JSON.stringify(payload).slice(0, 200));
     geminiWs.send(JSON.stringify(payload));
+    geminiClearImages();
   } else {
     glog("send: ws not open, showing error");
     geminiAppendError("Not connected to server");
@@ -1294,6 +1524,40 @@ window.addEventListener("popstate", () => {
 document.getElementById("gemini-input")?.addEventListener("input", (e) => {
   geminiSaveDraft(e.target.value);
 });
+
+// Paste images from clipboard into chat
+document.getElementById("gemini-input")?.addEventListener("paste", (e) => {
+  if (geminiActiveCli !== "claude") return;
+  const items = Array.from(e.clipboardData?.items || []);
+  const imageItems = items.filter((item) => item.type.startsWith("image/"));
+  if (imageItems.length === 0) return;
+  e.preventDefault();
+  imageItems.forEach((item) => {
+    const file = item.getAsFile();
+    if (file) geminiLoadImageFile(file);
+  });
+});
+
+// Drag-and-drop images onto the chat panel
+const geminiPanel = document.querySelector(".gemini-panel");
+if (geminiPanel) {
+  geminiPanel.addEventListener("dragover", (e) => {
+    if (geminiActiveCli !== "claude") return;
+    const hasImage = Array.from(e.dataTransfer.items || []).some((i) => i.type.startsWith("image/"));
+    if (!hasImage) return;
+    e.preventDefault();
+    geminiPanel.classList.add("drag-over");
+  });
+  geminiPanel.addEventListener("dragleave", (e) => {
+    if (!geminiPanel.contains(e.relatedTarget)) geminiPanel.classList.remove("drag-over");
+  });
+  geminiPanel.addEventListener("drop", (e) => {
+    geminiPanel.classList.remove("drag-over");
+    if (geminiActiveCli !== "claude") return;
+    e.preventDefault();
+    Array.from(e.dataTransfer.files || []).forEach((file) => geminiLoadImageFile(file));
+  });
+}
 
 // Auto-open chat from URL params on page load
 initFromUrlParams();

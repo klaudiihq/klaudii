@@ -42,6 +42,18 @@ function relativeTime(ts) {
   return `${Math.floor(diff / 86400)}d ago`;
 }
 
+function absoluteTime(ts) {
+  if (!ts) return null;
+  const d = new Date(ts);
+  const now = new Date();
+  const sameYear = d.getFullYear() === now.getFullYear();
+  const sameDay = d.toDateString() === now.toDateString();
+  const time = d.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
+  if (sameDay) return time;
+  const date = d.toLocaleDateString([], { month: "short", day: "numeric", ...(!sameYear && { year: "numeric" }) });
+  return `${date}, ${time}`;
+}
+
 async function cycleChatMode(event, project) {
   event.stopPropagation();
   const card = document.getElementById(`card-${project}`);
@@ -81,27 +93,34 @@ function setSort(mode) {
   refresh();
 }
 
+function toggleSortDir() {
+  sortDir = sortDir === "desc" ? "asc" : "desc";
+  localStorage.setItem("klaudii-sort-dir", sortDir);
+  updateSortButtons();
+  refresh();
+}
+
 function updateSortButtons() {
   document.querySelectorAll(".sort-btn").forEach((b) => b.classList.remove("active"));
   const active = document.getElementById(`sort-${sortMode}`);
   if (active) active.classList.add("active");
+  const dirBtn = document.getElementById("sort-dir-btn");
+  if (dirBtn) {
+    dirBtn.innerHTML = sortDir === "desc"
+      ? `<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><polyline points="19 12 12 19 5 12"/></svg>`
+      : `<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="19" x2="12" y2="5"/><polyline points="5 12 12 5 19 12"/></svg>`;
+    dirBtn.title = sortDir === "desc" ? "Newest first" : "Oldest first";
+  }
 }
 
 function sortSessions(sessions) {
-  const statusOrder = { running: 0, exited: 1, stopped: 2 };
   const dir = sortDir === "asc" ? 1 : -1;
   return [...sessions].sort((a, b) => {
-    // Running/exited always float to top regardless of direction
-    const sa = statusOrder[a.status] ?? 2;
-    const sb = statusOrder[b.status] ?? 2;
-    if (sa !== sb) return sa - sb;
-
     if (sortMode === "alpha") {
       return dir * a.project.localeCompare(b.project);
     }
-    // activity: use lastActivity, fall back to tmux session creation time
-    const ta = a.lastActivity || (a.tmux && a.tmux.created) || 0;
-    const tb = b.lastActivity || (b.tmux && b.tmux.created) || 0;
+    const ta = a.lastActivity || (a.tmux && a.tmux.created ? a.tmux.created * 1000 : 0);
+    const tb = b.lastActivity || (b.tmux && b.tmux.created ? b.tmux.created * 1000 : 0);
     return dir * (ta - tb);
   });
 }
@@ -218,18 +237,9 @@ function renderSessions(sessions, procs) {
     const chatActive = !!s.chatActive;
     const modePill = `<button class="chat-mode-pill mode-${esc(chatMode)}${chatActive ? " streaming" : ""}" data-mode="${esc(chatMode)}" onclick="cycleChatMode(event, '${esc(s.project)}')" title="Chat mode — click to change">${chatActive ? '<span class="mode-pulse"></span>' : '<span class="mode-dot"></span>'}${esc(CHAT_MODE_LABELS[chatMode] || chatMode)}</button>`;
 
-    // Remote timing row (started / last activity)
-    let remoteTimingRow = "";
-    if (chatMode === "claude-remote") {
-      const startedAt = s.tmux && s.tmux.created ? relativeTime(s.tmux.created * 1000) : null;
-      const lastAct = s.lastActivity ? relativeTime(s.lastActivity) : null;
-      if (startedAt || lastAct) {
-        const parts = [];
-        if (startedAt) parts.push(`started ${startedAt}`);
-        if (lastAct) parts.push(`last activity ${lastAct}`);
-        remoteTimingRow = `<div class="remote-timing">${parts.join(" · ")}</div>`;
-      }
-    }
+    // Activity timestamp row
+    const lastAct = s.lastActivity ? absoluteTime(s.lastActivity) : null;
+    const activityRow = lastAct ? `<div class="remote-timing">${lastAct}</div>` : "";
 
     return `
     <div class="card" id="card-${esc(s.project)}" data-project="${esc(s.project)}" data-chat-mode="${esc(chatMode)}" data-project-path="${esc(s.projectPath || "")}" data-claude-url="${esc(s.claudeUrl || "")}">
@@ -246,7 +256,7 @@ function renderSessions(sessions, procs) {
             <span class="card-status ${status}">${status}</span>
           </div>
         </div>
-        ${remoteTimingRow}
+        ${activityRow}
         ${gitBar}
         ${statsRow}
         <div class="card-actions-panel${isPanelOpen ? "" : " hidden"}" id="panel-${esc(s.project)}">

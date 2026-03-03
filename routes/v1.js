@@ -176,6 +176,8 @@ module.exports = function createV1Router(deps) {
         claude.getProjectLastActivity(project.path) || 0,
         tracked.length ? tracked[0].startedAt : 0,
         workspaceState ? workspaceState.getLastChatActivity(project.name) : 0,
+        gemini ? gemini.getLastMessageTime(project.name) : 0,
+        claudeChat ? claudeChat.getLastMessageTime(project.name) : 0,
       );
 
       let status = "stopped";
@@ -186,10 +188,7 @@ module.exports = function createV1Router(deps) {
       // Chat mode + streaming state
       const wsState = workspaceState ? workspaceState.getWorkspace(project.name) : {};
       const chatMode = wsState.mode || "claude-local";
-      const chatActive =
-        (chatMode === "gemini" && gemini && gemini.isActive(project.name)) ||
-        (chatMode === "claude-local" && claudeChat && claudeChat.isActive(project.name)) ||
-        false;
+      const chatActive = workspaceState ? workspaceState.isStreaming(project.name) : false;
 
       return {
         project: project.name,
@@ -216,8 +215,9 @@ module.exports = function createV1Router(deps) {
 
   router.get("/workspace-state/:workspace", (req, res) => {
     if (!workspaceState) return res.json({ mode: "claude-local", sessionNum: null, draft: "" });
-    const state = workspaceState.getWorkspace(decodeURIComponent(req.params.workspace));
-    res.json(state);
+    const workspace = decodeURIComponent(req.params.workspace);
+    const state = workspaceState.getWorkspace(workspace);
+    res.json({ ...state, streaming: workspaceState.isStreaming(workspace) });
   });
 
   router.patch("/workspace-state/:workspace", (req, res) => {
