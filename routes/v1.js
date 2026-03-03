@@ -172,9 +172,11 @@ module.exports = function createV1Router(deps) {
       const remoteUrl = git.getRemoteUrl(project.path);
 
       const tracked = sessionTracker.getSessions(project.name);
-      const lastActivity =
-        claude.getProjectLastActivity(project.path) ||
-        (tracked.length ? tracked[0].startedAt : 0);
+      const lastActivity = Math.max(
+        claude.getProjectLastActivity(project.path) || 0,
+        tracked.length ? tracked[0].startedAt : 0,
+        workspaceState ? workspaceState.getLastChatActivity(project.name) : 0,
+      );
 
       let status = "stopped";
       if (tmuxSession) {
