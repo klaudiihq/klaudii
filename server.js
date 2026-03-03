@@ -10,6 +10,16 @@ const processes = require("./lib/processes");
 const sessionTracker = require("./lib/session-tracker");
 const createV1Router = require("./routes/v1");
 
+process.on('uncaughtException', (err) => {
+  console.error('[fatal] Uncaught exception:', err);
+  process.exit(1);
+});
+
+process.on('unhandledRejection', (reason) => {
+  console.error('[fatal] Unhandled rejection:', reason);
+  process.exit(1);
+});
+
 const config = loadConfig();
 const app = express();
 app.use(express.json());
@@ -56,7 +66,7 @@ const connector = require("./konnect/client");
 connector.init(app, config);
 
 const PORT = config.port || 9876;
-app.listen(PORT, "0.0.0.0", () => {
+const server = app.listen(PORT, "0.0.0.0", () => {
   console.log(`Klaudii manager running at http://0.0.0.0:${PORT}`);
   console.log(`  tmux: ${tmux.isTmuxInstalled() ? "installed" : "NOT FOUND — run: brew install tmux"}`);
   console.log(`  ttyd: ${ttyd.isTtydInstalled() ? "installed" : "NOT FOUND — run: brew install ttyd"}`);
@@ -64,4 +74,9 @@ app.listen(PORT, "0.0.0.0", () => {
   if (recovered.length) {
     console.log(`  recovered ${recovered.length} ttyd instance(s): ${recovered.map(r => `${r.project}:${r.port}`).join(", ")}`);
   }
+});
+
+server.on('error', (err) => {
+  console.error('[fatal] HTTP server error:', err);
+  process.exit(1);
 });
