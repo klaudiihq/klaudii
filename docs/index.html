@@ -24,7 +24,7 @@
       <span>Klaudii <span class="topbar-docs-label">Docs</span></span>
     </a>
     <div class="topbar-right">
-      <a href="https://github.com/bryantinsley/klaudii" class="topbar-link">GitHub</a>
+      <a href="https://github.com/klaudiihq/klaudii" class="topbar-link">GitHub</a>
       <a href="/" class="topbar-link">Home</a>
     </div>
     <button class="sidebar-toggle" id="sidebar-toggle" aria-label="Toggle sidebar">
@@ -438,7 +438,7 @@ fly deploy</code></pre>
       <section id="ext-install">
         <h2>Chrome Extension Installation</h2>
         <ol>
-          <li>Download <code>klaudii-extension.zip</code> from <a href="https://github.com/bryantinsley/klaudii/releases">releases</a></li>
+          <li>Download <code>klaudii-extension.zip</code> from <a href="https://github.com/klaudiihq/klaudii/releases">releases</a></li>
           <li>Unzip to a permanent location (e.g., <code>~/klaudii-extension/</code>)</li>
           <li>Open <code>chrome://extensions</code></li>
           <li>Enable <strong>Developer mode</strong> (top right toggle)</li>
@@ -529,7 +529,12 @@ fly deploy</code></pre>
         </table>
 
         <div class="callout callout-warn">
-          <strong>Important:</strong> The <code>tmuxSocket</code> path must be an absolute path (e.g., <code>/Users/you/.claude/klaudii-tmux.sock</code>). Relative paths or <code>~</code> expansion will break under launchd because the background service sees a different working directory and HOME than your shell.
+          <strong>Important:</strong> All paths in <code>config.json</code> must be fully-qualified absolute paths (e.g., <code>/Users/you/repos</code>, <code>/Users/you/.klaudii/tmux.sock</code>).
+          <ul style="margin:0.5rem 0 0 1rem">
+            <li><strong>Do not use <code>~</code></strong> — launchd agents cannot resolve tilde expansion.</li>
+            <li><strong>Do not use <code>/tmp/</code></strong> — macOS gives each launchd agent a private <code>/tmp</code> directory (<code>$TMPDIR</code>), so files written to <code>/tmp/</code> from your shell are invisible to the server and vice versa.</li>
+            <li><strong>Do not use relative paths</strong> — the working directory under launchd differs from your shell.</li>
+          </ul>
         </div>
       </section>
 
@@ -599,7 +604,8 @@ Express server (server.js)
         <h3>tmux socket mismatch</h3>
         <ul>
           <li>The most common cause of "can't find sessions" is the tmux socket path differing between your shell and the launchd agent</li>
-          <li>Verify <code>config.json</code> has an <strong>absolute</strong> <code>tmuxSocket</code> path (no <code>~</code>, no relative paths)</li>
+          <li>Verify <code>config.json</code> has an <strong>absolute</strong> <code>tmuxSocket</code> path — no <code>~</code>, no <code>/tmp/</code>, no relative paths</li>
+          <li>Remember: macOS assigns each launchd agent a <strong>private <code>/tmp</code></strong>, so a socket in <code>/tmp/</code> from your shell won't be visible to the server</li>
           <li>Check both environments see the same socket: <code>ls -la $(cat ~/.klaudii/config.json | python3 -c "import sys,json; print(json.load(sys.stdin)['tmuxSocket'])")</code></li>
         </ul>
       </section>
