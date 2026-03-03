@@ -46,13 +46,17 @@ let konnectErrors = [];         // [{ name, error }] — servers that failed ver
 let selectedServer = "all";     // "all" | { type:"local", url } | { type:"konnect", id, name }
 let sessionsByProject = {};     // project → session (with _serverUrl or _konnectId)
 
+// Server polling stats: key -> { failures: 0, status: "unknown"|"online"|"offline" }
+let serverStats = {};
+
 let pollTimer = null;
 let approvalFastPollTimer = null;
 let lastSessions = [];
 let lastProcs = [];
+let firstLoadDone = false; // Tracks if the initial poll attempt has finished
 let activeTabUrl = null;
 let sortMode = localStorage.getItem("sortMode") || "activity";
-let branchFirst = localStorage.getItem("branchFirst") === "true";
+let branchFirst = false;
 let openMode = "inplace";
 let attentionFlash = false;
 let autoApprove = false;
@@ -75,7 +79,7 @@ let addRepos = [];          // cached list from /api/github/repos
 // --- Init ---
 
 async function init() {
-  const config = await chrome.storage.sync.get(["klaudiiUrl", "klaudiiUrls", "openMode", "attentionFlash", "autoApprove", "themeMode"]);
+  const config = await chrome.storage.sync.get(["klaudiiUrl", "klaudiiUrls", "openMode", "attentionFlash", "autoApprove", "themeMode", "branchFirst"]);
 
   // Migrate from single klaudiiUrl to klaudiiUrls list
   if (config.klaudiiUrls && config.klaudiiUrls.length) {
@@ -88,6 +92,7 @@ async function init() {
   openMode = config.openMode || "inplace";
   attentionFlash = config.attentionFlash === true;
   autoApprove = config.autoApprove === true;
+  branchFirst = config.branchFirst === true;
   themeMode = config.themeMode || "auto";
   applyTheme();
 
@@ -126,7 +131,10 @@ async function init() {
   document.getElementById("btn-dashboard").addEventListener("click", openDashboard);
   document.getElementById("btn-refresh").addEventListener("click", refresh);
   document.getElementById("btn-settings").addEventListener("click", openSettings);
-  document.getElementById("btn-configure").addEventListener("click", openSettings);
+  document.getElementById("btn-configure").addEventListener("click", () => {
+    if (!settingsOpen) openSettings();
+  });
+  initSettingsListeners();
 
   const btnAutoApprove = document.getElementById("btn-auto-approve");
   const chkAutoApproveAll = document.getElementById("chk-auto-approve-all");
@@ -136,6 +144,7 @@ async function init() {
     autoApprove = chkAutoApproveAll.checked;
     btnAutoApprove.classList.toggle("active", autoApprove);
     chrome.storage.sync.set({ autoApprove });
+    updateUI();
   });
   // Allow clicking anywhere on the footer row to toggle
   btnAutoApprove.addEventListener("click", (e) => {
@@ -158,23 +167,32 @@ async function init() {
       document.querySelectorAll(".sort-btn[data-sort]").forEach((b) =>
         b.classList.toggle("active", b.dataset.sort === sortMode)
       );
-      renderSessions(lastSessions, lastProcs);
+      updateUI();
     });
   });
   document.querySelectorAll(".sort-btn[data-sort]").forEach((b) =>
     b.classList.toggle("active", b.dataset.sort === sortMode)
   );
 
-  // Branch-first name order toggle
-  const btnNameOrder = document.getElementById("btn-name-order");
-  btnNameOrder.textContent = branchFirst ? "branch" : "repo";
-  btnNameOrder.classList.toggle("active", branchFirst);
-  btnNameOrder.addEventListener("click", () => {
-    branchFirst = !branchFirst;
-    localStorage.setItem("branchFirst", branchFirst);
-    btnNameOrder.textContent = branchFirst ? "branch" : "repo";
-    btnNameOrder.classList.toggle("active", branchFirst);
-    renderSessions(lastSessions, lastProcs);
+  // React to settings changes from options page
+  chrome.storage.onChanged.addListener((changes, area) => {
+    if (area !== "sync") return;
+    if (changes.klaudiiUrls || changes.klaudiiUrl) {
+      if (changes.klaudiiUrls) klaudiiUrls = changes.klaudiiUrls.newValue;
+      if (changes.klaudiiUrl) klaudiiUrl = changes.klaudiiUrl.newValue;
+      updateUI();
+      refresh();
+    }
+    if (changes.branchFirst) {
+      branchFirst = changes.branchFirst.newValue === true;
+      updateUI();
+    }
+    if (changes.attentionFlash) {
+      attentionFlash = changes.attentionFlash.newValue === true;
+    }
+    if (changes.openMode) {
+      openMode = changes.openMode.newValue || "inplace";
+    }
   });
 
   // Server picker toggle
@@ -204,11 +222,10 @@ async function init() {
     localStorage.setItem("selectedServer", JSON.stringify(selectedServer));
     document.getElementById("server-picker-menu").classList.add("hidden");
     document.getElementById("btn-server-picker").classList.remove("open");
-    renderServerPicker();
-    refresh();
+    updateUI();
   });
 
-  renderServerPicker();
+  updateUI();
   trackActiveTab();
   await refresh();
   pollTimer = setInterval(refresh, 5000);
@@ -218,6 +235,18 @@ async function init() {
 }
 
 // --- API ---
+
+function recordServerResult(key, ok) {
+  if (!serverStats[key]) serverStats[key] = { failures: 0, status: "unknown" };
+  const s = serverStats[key];
+  if (ok) {
+    s.failures = 0;
+    s.status = "online";
+  } else {
+    s.failures++;
+    if (s.failures >= 3) s.status = "offline";
+  }
+}
 
 async function api(path, opts = {}, serverUrl) {
   const base = (serverUrl || klaudiiUrls[0] || DEFAULT_KLAUDII_URL).replace(/\/+$/, "");
@@ -420,8 +449,7 @@ async function fetchKonnectData() {
 
   // Verify each online server with a test API call before showing it
   await verifyKonnectServers();
-  renderServerPicker();
-  renderKonnectWarning();
+  updateUI();
 }
 
 async function verifyKonnectServers() {
@@ -497,8 +525,12 @@ function renderServerPicker() {
     const items = klaudiiUrls.map((url, i) => {
       const short = url.replace(/^https?:\/\//, "").replace(/\/+$/, "");
       const isSel = selectedServer.type === "local" && selectedServer.url === url;
+      const stats = serverStats[`local:${url}`] || { status: "unknown" };
+      const dotClass = stats.status === "online" ? "online" : (stats.status === "offline" ? "offline" : "");
+
       return `<button class="server-picker-item${isSel ? " selected" : ""}" data-server-key="local:${i}">
         <span class="sp-name">${esc(short)}</span>
+        <span class="sp-dot ${dotClass}"></span>
       </button>`;
     }).join("");
     html += `<div class="server-picker-section"><div class="server-picker-heading">Local</div>${items}</div>`;
@@ -508,12 +540,14 @@ function renderServerPicker() {
   if (konnectServers.length) {
     const items = konnectServers.map((srv) => {
       const isSel = selectedServer.type === "konnect" && selectedServer.id === srv.id;
-      const isUp = srv.verified === true;
+      const stats = serverStats[`konnect:${srv.id}`] || { status: srv.verified ? "online" : "unknown" };
+      const dotClass = stats.status === "online" ? "online" : (stats.status === "offline" ? "offline" : "");
+
       return `<button class="server-picker-item${isSel ? " selected" : ""}"
         data-server-key="konnect:${esc(srv.id)}">
         ${CLOUD_SVG}
         <span class="sp-name">${esc(srv.name)}</span>
-        <span class="sp-dot ${isUp ? "online" : "offline"}"></span>
+        <span class="sp-dot ${dotClass}"></span>
       </button>`;
     }).join("");
     html += `<div class="server-picker-section"><div class="server-picker-heading">Kloud Konnect</div>${items}</div>`;
@@ -565,71 +599,133 @@ function renderKonnectWarning() {
 
 // --- Data loading ---
 
+// Persistent cache to prevent flashing on temporary poll failures
+let sessionsCache = new Map(); // serverKey -> sessions[]
+let procsCache = new Map();    // serverKey -> procs[]
+
+function getFilteredData() {
+  const sessions = lastSessions;
+  const procs = lastProcs;
+  if (selectedServer !== "all") {
+    if (selectedServer.type === "local") {
+      return {
+        sessions: lastSessions.filter((s) => s._serverUrl === selectedServer.url),
+        procs: lastProcs.filter((p) => p._serverUrl === selectedServer.url)
+      };
+    } else if (selectedServer.type === "konnect") {
+      return {
+        sessions: lastSessions.filter((s) => s._konnectId === selectedServer.id),
+        procs: lastProcs.filter((p) => p._konnectId === selectedServer.id)
+      };
+    }
+  }
+  return { sessions, procs };
+}
+
+function updateUI() {
+  const { sessions, procs } = getFilteredData();
+  const showServerBadge = lastSessions.some((s) => s._konnectId) || klaudiiUrls.length > 1;
+
+  if (firstLoadDone) {
+    document.getElementById("loading-overlay").classList.add("hidden");
+  }
+
+  renderSessions(sessions, procs, showServerBadge);
+  renderUnmanaged(procs);
+  renderServerPicker();
+  renderKonnectWarning();
+}
+
 async function refresh() {
-  const allSessions = [];
-  const allProcs = [];
-  const seen = new Set(); // session IDs to deduplicate (same session reachable via local + Konnect)
   let anyOk = false;
+  const seenSessions = new Set();
 
   const fetchLocal = async (url) => {
-    const [sessions, procs] = await Promise.all([
-      api("/api/sessions", {}, url),
-      api("/api/processes", {}, url),
-    ]);
-    for (const s of sessions) {
-      const key = s.id || s.project;
-      if (!seen.has(key)) {
-        seen.add(key);
-        allSessions.push({ ...s, _serverUrl: url });
+    const key = `local:${url}`;
+    try {
+      const [sessions, procs] = await Promise.all([
+        api("/api/sessions", {}, url),
+        api("/api/processes", {}, url),
+      ]);
+      recordServerResult(key, true);
+      sessionsCache.set(key, sessions.map(s => ({ ...s, _serverUrl: url })));
+      procsCache.set(key, procs.map(p => ({ ...p, _serverUrl: url })));
+      anyOk = true;
+      return true;
+    } catch {
+      recordServerResult(key, false);
+      // If server is officially "offline" (3+ failures), clear its cache
+      if (serverStats[key]?.status === "offline") {
+        sessionsCache.delete(key);
+        procsCache.delete(key);
       }
+      return false;
     }
-    allProcs.push(...procs.map((p) => ({ ...p, _serverUrl: url })));
-    anyOk = true;
   };
 
   const fetchKonnect = async (kSrv) => {
-    const [sessions, procs] = await Promise.all([
-      konnectApi(kSrv.id, "/api/sessions"),
-      konnectApi(kSrv.id, "/api/processes"),
-    ]);
-    for (const s of sessions) {
-      const key = s.id || s.project;
-      if (!seen.has(key)) {
-        seen.add(key);
-        allSessions.push({ ...s, _konnectId: kSrv.id, _konnectName: kSrv.name });
+    const key = `konnect:${kSrv.id}`;
+    try {
+      const [sessions, procs] = await Promise.all([
+        konnectApi(kSrv.id, "/api/sessions"),
+        konnectApi(kSrv.id, "/api/processes"),
+      ]);
+      recordServerResult(key, true);
+      sessionsCache.set(key, sessions.map(s => ({ ...s, _konnectId: kSrv.id, _konnectName: kSrv.name })));
+      procsCache.set(key, procs.map(p => ({ ...p, _konnectId: kSrv.id, _konnectName: kSrv.name })));
+      anyOk = true;
+      return true;
+    } catch {
+      recordServerResult(key, false);
+      if (serverStats[key]?.status === "offline") {
+        sessionsCache.delete(key);
+        procsCache.delete(key);
       }
+      return false;
     }
-    allProcs.push(...procs.map((p) => ({ ...p, _konnectId: kSrv.id, _konnectName: kSrv.name })));
-    anyOk = true;
   };
 
   const tasks = [];
-  if (selectedServer === "all") {
-    for (const url of klaudiiUrls) tasks.push(fetchLocal(url));
-    for (const kSrv of konnectServers.filter((s) => s.online)) tasks.push(fetchKonnect(kSrv));
-  } else if (selectedServer.type === "local") {
-    tasks.push(fetchLocal(selectedServer.url));
-  } else if (selectedServer.type === "konnect") {
-    const kSrv = konnectServers.find((s) => s.id === selectedServer.id);
-    if (kSrv) tasks.push(fetchKonnect(kSrv));
-  }
+  for (const url of klaudiiUrls) tasks.push(fetchLocal(url));
+  for (const kSrv of konnectServers.filter((s) => s.online)) tasks.push(fetchKonnect(kSrv));
 
   if (tasks.length === 0) {
-    // No servers configured yet
     setConnected(true);
+    sessionsCache.clear();
+    procsCache.clear();
     lastSessions = [];
     lastProcs = [];
-    renderSessions([], [], false);
-    renderUnmanaged([]);
+    updateUI();
     return;
   }
 
   await Promise.allSettled(tasks);
 
-  if (!anyOk) {
-    setConnected(false);
-    return;
+  // Clean up cache for servers no longer in config
+  const currentKeys = new Set([
+    ...klaudiiUrls.map(url => `local:${url}`),
+    ...konnectServers.filter(s => s.online).map(s => `konnect:${s.id}`)
+  ]);
+  for (const key of sessionsCache.keys()) {
+    if (!currentKeys.has(key)) {
+      sessionsCache.delete(key);
+      procsCache.delete(key);
+    }
   }
+
+  // Reconstruct lastSessions and lastProcs from cache
+  const allSessions = [];
+  for (const sessions of sessionsCache.values()) {
+    for (const s of sessions) {
+      const id = s.id || s.project;
+      if (!seenSessions.has(id)) {
+        seenSessions.add(id);
+        allSessions.push(s);
+      }
+    }
+  }
+  
+  const allProcs = Array.from(procsCache.values()).flat();
 
   // Update project → session lookup for action routing
   sessionsByProject = {};
@@ -637,10 +733,10 @@ async function refresh() {
 
   lastSessions = allSessions;
   lastProcs = allProcs;
-  setConnected(true);
-  const showServerBadge = allSessions.some((s) => s._konnectId) || klaudiiUrls.length > 1;
-  renderSessions(allSessions, allProcs, showServerBadge);
-  renderUnmanaged(allProcs);
+  
+  firstLoadDone = true;
+  setConnected(anyOk);
+  updateUI();
   checkApprovalStates(allSessions);
 }
 
@@ -697,7 +793,7 @@ async function checkApprovalStates(sessions) {
       if (result?.clicked) {
         if (!sessionAutoApproved[s.project]) {
           sessionAutoApproved[s.project] = true;
-          renderSessions(lastSessions, lastProcs);
+          updateUI();
           setTimeout(() => { delete sessionAutoApproved[s.project]; }, 5000);
         }
       } else if (result?.found) {
@@ -709,7 +805,7 @@ async function checkApprovalStates(sessions) {
   }
   const changed = sessions.some((s) => !!newStates[s.project] !== !!sessionNeedsInput[s.project]);
   sessionNeedsInput = newStates;
-  if (changed) renderSessions(lastSessions, lastProcs);
+  if (changed) updateUI();
 
   const anyNeedsInput = Object.values(sessionNeedsInput).some(Boolean) || Object.values(sessionAutoApproved).some(Boolean);
   if (anyNeedsInput && !approvalFastPollTimer) {
@@ -741,7 +837,7 @@ function updateOpenTabs() {
     if (win?.id) query.windowId = win.id;
     chrome.tabs.query(query, (tabs) => {
       openTabs = new Map((tabs || []).filter((t) => t.url).map((t) => [t.url.split("?")[0], t.id]));
-      if (lastSessions.length) renderSessions(lastSessions, lastProcs);
+      if (lastSessions.length) updateUI();
     });
   });
 }
@@ -829,7 +925,11 @@ function renderCard(s, proc, showServerBadge = false) {
     ? `<a class="git-link" href="${esc(s.remoteUrl + "/tree/" + gitBranch)}" target="_blank" rel="noreferrer" title="View branch on GitHub">${gitSvg(10)}</a>`
     : "";
 
+  // Pencil edit button
+  const editBtn = `<button class="card-edit-btn" data-action="toggle-panel" data-project="${esc(s.project)}" title="Options">${PENCIL_SVG}</button>`;
+
   // Git status row (clean phrases + dirty/unpushed)
+  // When not running, pencil sits inline in the git bar to save vertical space
   let gitStatusRow = "";
   if (g) {
     const items = [];
@@ -839,14 +939,13 @@ function renderCard(s, proc, showServerBadge = false) {
       items.push(`<span class="git-clean">${esc(cleanPhrase(s.project))}</span>`);
     }
     if (g.unpushed) items.push(`<span class="git-unpushed">${g.unpushed} unpushed</span>`);
-    gitStatusRow = `<div class="git-bar">${items.join("")}</div>`;
+    gitStatusRow = `<div class="git-bar">${items.join("")}${!proc ? editBtn : ""}</div>`;
   }
 
   // Subtitle line (branch)
   const subtitle = gitBranch || branch;
 
   // Process stats with icons + pencil edit button on the right
-  const editBtn = `<button class="card-edit-btn" data-action="toggle-panel" data-project="${esc(s.project)}" title="Options">${PENCIL_SVG}</button>`;
   let statsRow = "";
   if (proc) {
     const statParts = [];
@@ -854,7 +953,8 @@ function renderCard(s, proc, showServerBadge = false) {
     statParts.push(`<span class="proc-stat">${STAT_MEM_SVG} ${proc.memMB} MB</span>`);
     if (proc.uptime) statParts.push(`<span class="proc-stat">${STAT_CLOCK_SVG} ${esc(proc.uptime)}</span>`);
     statsRow = `<div class="proc-stats">${statParts.join("")}${editBtn}</div>`;
-  } else {
+  } else if (!g) {
+    // No git info and no process — pencil still needs a home
     statsRow = `<div class="proc-stats">${editBtn}</div>`;
   }
 
@@ -1191,7 +1291,6 @@ document.addEventListener("click", async (e) => {
       closeAllPanels(); // close any other open panels
       if (!isOpen) {
         panel.classList.remove("hidden");
-        schedulePanelAutoClose(panel);
       }
       break;
     }
@@ -1216,29 +1315,9 @@ document.addEventListener("click", async (e) => {
   }
 });
 
-// --- Panel auto-close ---
-
-let panelAutoCloseTimer = null;
-let panelAutoCloseTarget = null;
-
 function closeAllPanels() {
   document.querySelectorAll(".card-actions-panel:not(.hidden)").forEach((p) => p.classList.add("hidden"));
-  if (panelAutoCloseTimer) { clearTimeout(panelAutoCloseTimer); panelAutoCloseTimer = null; }
-  panelAutoCloseTarget = null;
 }
-
-function schedulePanelAutoClose(panel) {
-  if (panelAutoCloseTimer) clearTimeout(panelAutoCloseTimer);
-  panelAutoCloseTarget = panel;
-  panelAutoCloseTimer = setTimeout(() => closeAllPanels(), 15000);
-}
-
-// Reset auto-close timer on any click inside an action panel
-document.addEventListener("click", (e) => {
-  if (e.target.closest(".card-actions-panel") && panelAutoCloseTarget) {
-    schedulePanelAutoClose(panelAutoCloseTarget);
-  }
-});
 
 // --- Mode select + per-session auto-approve (change events) ---
 
@@ -1462,8 +1541,117 @@ function openDashboard() {
   });
 }
 
+// --- Inline settings panel ---
+
+let settingsOpen = false;
+
 function openSettings() {
-  chrome.runtime.openOptionsPage();
+  const panel = document.getElementById("settings-panel");
+  const main = document.getElementById("main-content");
+  const sortBar = document.querySelector(".sort-bar");
+  const addForm = document.getElementById("add-workspace-form");
+
+  settingsOpen = !settingsOpen;
+
+  if (settingsOpen) {
+    // Populate current values
+    chrome.storage.sync.get(["klaudiiUrl", "klaudiiUrls", "openMode", "attentionFlash", "branchFirst"], (config) => {
+      let urls = config.klaudiiUrls;
+      if (!urls || !urls.length) urls = [config.klaudiiUrl || DEFAULT_KLAUDII_URL];
+      document.getElementById("settings-urls").value = urls.join("\n");
+
+      const mode = config.openMode || "inplace";
+      const radio = document.querySelector(`input[name="settings-openMode"][value="${mode}"]`);
+      if (radio) radio.checked = true;
+
+      document.getElementById("settings-branch-first").checked = config.branchFirst === true;
+      document.getElementById("settings-attention-flash").checked = config.attentionFlash === true;
+    });
+
+    panel.classList.remove("hidden");
+    main.classList.add("hidden");
+    sortBar.classList.add("hidden");
+    addForm.classList.add("hidden");
+  } else {
+    panel.classList.add("hidden");
+    main.classList.remove("hidden");
+    sortBar.classList.remove("hidden");
+  }
+}
+
+function saveSettings() {
+  const raw = document.getElementById("settings-urls").value;
+  let urls = raw.split("\n").map((u) => u.trim().replace(/\/+$/, "")).filter(Boolean);
+  if (!urls.length) urls.push(DEFAULT_KLAUDII_URL);
+
+  const openModeVal = document.querySelector('input[name="settings-openMode"]:checked')?.value || "inplace";
+  const branchFirstVal = document.getElementById("settings-branch-first").checked;
+  const attentionFlashVal = document.getElementById("settings-attention-flash").checked;
+
+  chrome.storage.sync.set({
+    klaudiiUrls: urls,
+    klaudiiUrl: urls[0],
+    openMode: openModeVal,
+    branchFirst: branchFirstVal,
+    attentionFlash: attentionFlashVal,
+  });
+
+  // Apply locally immediately
+  klaudiiUrls = urls;
+  klaudiiUrl = urls[0];
+  openMode = openModeVal;
+  branchFirst = branchFirstVal;
+  attentionFlash = attentionFlashVal;
+
+  updateUI();
+  refresh();
+}
+
+function initSettingsListeners() {
+  // Auto-save on every change
+  document.getElementById("settings-urls").addEventListener("change", saveSettings);
+  document.querySelectorAll('input[name="settings-openMode"]').forEach((r) =>
+    r.addEventListener("change", saveSettings)
+  );
+  document.getElementById("settings-branch-first").addEventListener("change", saveSettings);
+  document.getElementById("settings-attention-flash").addEventListener("change", saveSettings);
+
+  // Test connection
+  document.getElementById("btn-settings-test").addEventListener("click", async () => {
+    const raw = document.getElementById("settings-urls").value;
+    let urls = raw.split("\n").map((u) => u.trim().replace(/\/+$/, "")).filter(Boolean);
+    if (!urls.length) urls.push(DEFAULT_KLAUDII_URL);
+
+    const statusEl = document.getElementById("settings-status");
+    statusEl.textContent = `Testing ${urls.length} server(s)...`;
+    statusEl.className = "settings-status";
+
+    const results = await Promise.allSettled(
+      urls.map(async (url) => {
+        const res = await fetch(url + "/api/health");
+        const data = await res.json();
+        if (!data.ok) throw new Error("health check failed");
+        return { url, data };
+      })
+    );
+
+    const ok = results.filter((r) => r.status === "fulfilled").map((r) => r.value);
+
+    if (ok.length === urls.length) {
+      const details = ok.map(({ url, data }) => {
+        const parts = [data.tmux && "tmux", data.ttyd && "ttyd"].filter(Boolean).join(", ");
+        return `${url} ok${parts ? ` (${parts})` : ""}`;
+      }).join("; ");
+      statusEl.textContent = details;
+      statusEl.className = "settings-status ok";
+    } else if (ok.length > 0) {
+      statusEl.textContent = `${ok.length}/${urls.length} reachable.`;
+      statusEl.className = "settings-status err";
+    } else {
+      statusEl.textContent = "Cannot reach any Klaudii server.";
+      statusEl.className = "settings-status err";
+    }
+  });
 }
 
 // --- Toast notifications ---
