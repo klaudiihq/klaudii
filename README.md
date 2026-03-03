@@ -1,4 +1,5 @@
 # Klaudii
+*Sounds like Kloudy*
 
 A web dashboard for managing multiple [Claude Code](https://docs.anthropic.com/en/docs/claude-code) sessions across your projects.
 
@@ -49,3 +50,7 @@ Edit `config.json` (created by the installer) to add workspaces manually:
 ## Menu bar
 
 The optional menu bar app puts a **Kii** icon in your macOS menu bar with a quick link to open the dashboard. To have it launch at login, add `mac/menubar/KlaudiiMenu` to System Settings > General > Login Items.
+
+---
+
+Klaudii is an independent tool and is not affiliated with, endorsed by, or sponsored by Anthropic, Google, or OpenAI. All product names, logos, and brands are property of their respective owners.
