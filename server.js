@@ -13,10 +13,26 @@ const sessionTracker = require("./lib/session-tracker");
 const createV1Router = require("./routes/v1");
 const gemini = require("./lib/gemini");
 const claudeChat = require("./lib/claude-chat");
+const setup = require("./lib/setup");
 
 let config = loadConfig();
 const app = express();
 app.use(express.json());
+
+// --- Setup / limp-mode routes (registered before static middleware) ---
+setup.start();
+
+app.get("/", (_req, res, next) => {
+  if (setup.limpMode) return res.sendFile(path.join(__dirname, "public", "setup.html"));
+  next();
+});
+app.get("/api/setup/status",   (_req, res) => res.json(setup.getStatus()));
+app.get("/api/setup/stream",   (req, res)  => setup.addSseClient(req, res));
+app.post("/api/setup/install", (_req, res) => {
+  setup.installMissing().catch(() => {});
+  res.json({ ok: true });
+});
+
 app.use(express.static(path.join(__dirname, "public")));
 
 // --- Mount v1 API routes ---
@@ -376,8 +392,44 @@ sessionTracker.recoverUrls(() => {
 const connector = require("./konnect/client");
 connector.init(app, config);
 
-const PORT = process.env.PORT || config.port || 9876;
 const server = http.createServer(app);
+
+// --- Port hunting ---
+const net = require("net");
+const os  = require("os");
+
+function tryPort(port) {
+  return new Promise((resolve, reject) => {
+    const probe = net.createServer();
+    probe.unref();
+    probe.once("error", reject);
+    probe.listen(port, "0.0.0.0", () => probe.close(() => resolve(port)));
+  });
+}
+
+async function findPort(preferred = 9876, max = 9950) {
+  for (let p = preferred; p <= max; p++) {
+    try { return await tryPort(p); } catch {}
+  }
+  throw new Error("No available port found in range 9876–9950");
+}
+
+function writePortFile(port) {
+  const dir = path.join(os.homedir(), "Library", "Application Support", "com.klaudii.server");
+  try {
+    require("fs").mkdirSync(dir, { recursive: true });
+    require("fs").writeFileSync(path.join(dir, "port"), String(port));
+  } catch {}
+}
+
+function clearPortFile() {
+  const f = path.join(os.homedir(), "Library", "Application Support", "com.klaudii.server", "port");
+  try { require("fs").unlinkSync(f); } catch {}
+}
+
+process.on("exit",    clearPortFile);
+process.on("SIGINT",  () => { clearPortFile(); process.exit(); });
+process.on("SIGTERM", () => { clearPortFile(); process.exit(); });
 
 // --- Gemini WebSocket ---
 
@@ -491,8 +543,11 @@ wss.on("connection", (ws) => {
   });
 });
 
-server.listen(PORT, "0.0.0.0", () => {
-  console.log(`Klaudii manager running at http://0.0.0.0:${PORT}`);
+const preferredPort = Number(process.env.PORT || config.port || 9876);
+findPort(preferredPort).then((PORT) => {
+  server.listen(PORT, "0.0.0.0", () => {
+    writePortFile(PORT);
+    console.log(`Klaudii manager running at http://0.0.0.0:${PORT}`);
   console.log(`  tmux: ${tmux.isTmuxInstalled() ? "installed" : "NOT FOUND — run: brew install tmux"}`);
   console.log(`  ttyd: ${ttyd.isTtydInstalled() ? "installed" : "NOT FOUND — run: brew install ttyd"}`);
   console.log(`  gemini: ${gemini.isInstalled(config) ? "installed" : "not found"}`);
@@ -515,5 +570,9 @@ server.listen(PORT, "0.0.0.0", () => {
   gemini.startQuotaRefresh();
 
   // Start periodic claude-chat auth probe (immediate + every 5 min)
-  claudeChat.startAuthCheck(config);
+    claudeChat.startAuthCheck(config);
+  });
+}).catch((err) => {
+  console.error(`Fatal: ${err.message}`);
+  process.exit(1);
 });
