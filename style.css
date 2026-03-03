@@ -227,7 +227,7 @@ img { max-width: 100%; display: block; }
 /* ---- HERO ---- */
 .hero {
   position: relative;
-  padding: 10rem 0 4rem;
+  padding: 5rem 0 4rem;
   text-align: center;
   overflow: hidden;
 }
