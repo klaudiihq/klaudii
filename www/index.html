@@ -1,0 +1,772 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Klaudii — The Operating System for AI-Assisted Development</title>
+  <meta name="description" content="Run dozens of Claude Code instances in parallel, monitor them in real-time, access them from anywhere. The professional multi-session Claude Code manager for macOS.">
+  <meta name="theme-color" content="#0a0a0f">
+  <meta property="og:title" content="Klaudii — The Operating System for AI-Assisted Development">
+  <meta property="og:description" content="Run dozens of Claude Code instances in parallel, monitor them in real-time, access them from anywhere.">
+  <meta property="og:type" content="website">
+  <meta property="og:url" content="https://www.klaudii.com">
+  <meta name="twitter:card" content="summary_large_image">
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 512 512'><defs><linearGradient id='kg' x1='256' y1='80' x2='256' y2='432' gradientUnits='userSpaceOnUse'><stop offset='0%25' stop-color='%2386efac'/><stop offset='50%25' stop-color='%234ade80'/><stop offset='100%25' stop-color='%2322c55e'/></linearGradient></defs><rect x='132' y='100' width='40' height='312' rx='20' fill='url(%23kg)'/><line x1='188' y1='256' x2='362' y2='120' stroke='url(%23kg)' stroke-width='40' stroke-linecap='round'/><line x1='188' y1='256' x2='362' y2='392' stroke='url(%23kg)' stroke-width='40' stroke-linecap='round'/></svg>">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+  <!-- NAV -->
+  <nav class="nav" id="nav">
+    <div class="nav-inner">
+      <a href="/" class="nav-logo">
+        <svg class="nav-logo-icon" viewBox="0 0 512 512" xmlns="http://www.w3.org/2000/svg">
+          <defs><linearGradient id="logo-grad" x1="256" y1="80" x2="256" y2="432" gradientUnits="userSpaceOnUse"><stop offset="0%" stop-color="#86efac"/><stop offset="50%" stop-color="#4ade80"/><stop offset="100%" stop-color="#22c55e"/></linearGradient></defs>
+          <rect x="132" y="100" width="40" height="312" rx="20" fill="url(#logo-grad)"/>
+          <line x1="188" y1="256" x2="362" y2="120" stroke="url(#logo-grad)" stroke-width="40" stroke-linecap="round"/>
+          <line x1="188" y1="256" x2="362" y2="392" stroke="url(#logo-grad)" stroke-width="40" stroke-linecap="round"/>
+        </svg>
+        <span>Klaudii</span>
+      </a>
+      <div class="nav-links" id="nav-links">
+        <a href="#features" data-section="features">Features</a>
+        <a href="#security" data-section="security">Security</a>
+        <a href="#setup" data-section="setup">Setup</a>
+        <a href="#pricing" data-section="pricing">Pricing</a>
+        <a href="/docs" class="nav-link-muted">Docs</a>
+        <div class="nav-indicator" id="nav-indicator"></div>
+      </div>
+      <div class="nav-actions">
+        <a href="https://konnect.klaudii.com" class="btn btn-ghost">Dashboard</a>
+        <a href="#setup" class="btn btn-green">Get Started</a>
+      </div>
+      <button class="nav-mobile-toggle" id="nav-toggle" aria-label="Toggle menu">
+        <span></span><span></span><span></span>
+      </button>
+    </div>
+    <div class="nav-mobile" id="nav-mobile">
+      <a href="#features">Features</a>
+      <a href="#security">Security</a>
+      <a href="#setup">Setup</a>
+      <a href="#pricing">Pricing</a>
+      <a href="https://konnect.klaudii.com">Dashboard</a>
+      <a href="#setup" class="btn btn-primary" style="margin-top:0.5rem">Get Started</a>
+    </div>
+  </nav>
+
+  <!-- HERO -->
+  <section class="hero">
+    <div class="hero-glow"></div>
+    <div class="container">
+      <div class="hero-badge">Now in public beta</div>
+      <h1 class="hero-title">
+        The command center for<br>
+        <span class="gradient-text">AI-assisted development</span>
+      </h1>
+      <p class="hero-subtitle">
+        Run dozens of Claude Code instances in parallel. Monitor them in real-time.
+        Access them from anywhere. One dashboard to rule them all.
+      </p>
+      <div class="hero-actions">
+        <a href="#setup" class="btn btn-primary btn-lg">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 17l6 4V7l-6-4v14z"/><path d="M14 17l6 4V7l-6-4v14z"/></svg>
+          Install in 30 seconds
+        </a>
+        <a href="#features" class="btn btn-ghost btn-lg">See how it works</a>
+      </div>
+
+      <!-- HERO TERMINAL MOCKUP -->
+      <div class="hero-visual">
+        <div class="terminal">
+          <div class="terminal-bar">
+            <div class="terminal-dots">
+              <span class="dot dot-red"></span>
+              <span class="dot dot-yellow"></span>
+              <span class="dot dot-green"></span>
+            </div>
+            <span class="terminal-title">Terminal</span>
+          </div>
+          <div class="terminal-body">
+            <div class="terminal-line">
+              <span class="terminal-prompt">$</span>
+              <span class="terminal-cmd" id="typed-cmd"></span>
+              <span class="terminal-cursor" id="cursor">|</span>
+            </div>
+            <div class="terminal-output" id="terminal-output"></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- LOGOS / SOCIAL PROOF -->
+  <section class="logos-section">
+    <div class="container">
+      <p class="logos-label">Built for developers who ship with Claude Code</p>
+      <div class="logos-row">
+        <div class="logo-item">tmux</div>
+        <div class="logo-item">ttyd</div>
+        <div class="logo-item">Node.js</div>
+        <div class="logo-item">Express</div>
+        <div class="logo-item">GitHub</div>
+        <div class="logo-item">Fly.io</div>
+        <div class="logo-item">Chrome</div>
+        <div class="logo-item">macOS</div>
+      </div>
+    </div>
+  </section>
+
+  <!-- FEATURES -->
+  <section class="features" id="features">
+    <div class="container">
+
+      <!-- FEATURE 1: Multi-Session -->
+      <div class="feature-block">
+        <div class="feature-text">
+          <div class="feature-label">Multi-Session Management</div>
+          <h2 class="feature-title">Run an army of Claudes.<br>From a single tab.</h2>
+          <p class="feature-desc">
+            Each Claude Code instance runs in its own isolated tmux session with a dedicated git worktree.
+            Start a dozen sessions across different repos and branches. Watch them all work in parallel.
+            See real-time CPU, memory, and uptime for every process tree.
+          </p>
+          <ul class="feature-list">
+            <li>One-click workspace creation from any GitHub repo</li>
+            <li>Automatic git worktree isolation per branch</li>
+            <li>Real-time resource monitoring across process trees</li>
+            <li>Session history with instant resumption</li>
+          </ul>
+        </div>
+        <div class="feature-visual">
+          <div class="mock-dashboard">
+            <div class="mock-header">
+              <div class="mock-header-left">
+                <div class="mock-logo-sm"></div>
+                <span>Klaudii</span>
+              </div>
+              <div class="mock-header-right">
+                <div class="mock-btn-sm">+ New Session</div>
+              </div>
+            </div>
+            <div class="mock-cards">
+              <div class="mock-card">
+                <div class="mock-card-top">
+                  <span class="mock-badge running">running</span>
+                  <span class="mock-card-name">api-server <span class="mock-branch">feature/auth</span></span>
+                </div>
+                <div class="mock-card-stats">
+                  <span>CPU 34%</span>
+                  <span>MEM 287MB</span>
+                  <span>2h 14m</span>
+                </div>
+                <div class="mock-card-git">
+                  <span class="mock-git-clean">clean</span>
+                  <span>3 unpushed</span>
+                </div>
+                <div class="mock-card-actions">
+                  <span class="mock-action-btn">Terminal</span>
+                  <span class="mock-action-btn">Stop</span>
+                  <span class="mock-action-btn">Open</span>
+                </div>
+              </div>
+              <div class="mock-card">
+                <div class="mock-card-top">
+                  <span class="mock-badge running">running</span>
+                  <span class="mock-card-name">frontend <span class="mock-branch">redesign-v2</span></span>
+                </div>
+                <div class="mock-card-stats">
+                  <span>CPU 12%</span>
+                  <span>MEM 154MB</span>
+                  <span>45m</span>
+                </div>
+                <div class="mock-card-git">
+                  <span class="mock-git-dirty">4 changed</span>
+                  <span>1 unpushed</span>
+                </div>
+                <div class="mock-card-actions">
+                  <span class="mock-action-btn">Terminal</span>
+                  <span class="mock-action-btn">Stop</span>
+                  <span class="mock-action-btn">Open</span>
+                </div>
+              </div>
+              <div class="mock-card mock-card-dim">
+                <div class="mock-card-top">
+                  <span class="mock-badge stopped">stopped</span>
+                  <span class="mock-card-name">ml-pipeline <span class="mock-branch">data-cleanup</span></span>
+                </div>
+                <div class="mock-card-stats">
+                  <span class="muted">idle</span>
+                </div>
+                <div class="mock-card-actions">
+                  <span class="mock-action-btn">Continue</span>
+                  <span class="mock-action-btn">History</span>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- FEATURE 2: Web Terminal -->
+      <div class="feature-block feature-block-reverse">
+        <div class="feature-text">
+          <div class="feature-label">Web Terminal Access</div>
+          <h2 class="feature-title">See exactly what<br>Claude sees.</h2>
+          <p class="feature-desc">
+            Every running session has a full web terminal powered by ttyd.
+            Watch Claude work in real-time, send input when needed, and never
+            leave your browser. Works on desktop and mobile Safari.
+          </p>
+          <ul class="feature-list">
+            <li>Full tmux terminal in the browser via ttyd</li>
+            <li>Real-time streaming of Claude's output</li>
+            <li>Interactive — send commands, approve actions</li>
+            <li>iOS Safari compatible for mobile access</li>
+          </ul>
+        </div>
+        <div class="feature-visual">
+          <div class="mock-terminal-full">
+            <div class="terminal-bar">
+              <div class="terminal-dots">
+                <span class="dot dot-red"></span>
+                <span class="dot dot-yellow"></span>
+                <span class="dot dot-green"></span>
+              </div>
+              <span class="terminal-title">api-server (feature/auth)</span>
+            </div>
+            <div class="terminal-body terminal-body-tall">
+              <div class="term-line"><span class="term-claude">Claude</span> I'll implement the JWT authentication middleware. Let me start by reading the existing auth setup.</div>
+              <div class="term-line dim">  Read: src/middleware/auth.ts</div>
+              <div class="term-line dim">  Read: src/config/jwt.ts</div>
+              <div class="term-line"><span class="term-claude">Claude</span> I see the current implementation uses session-based auth. I'll add JWT as an alternative.</div>
+              <div class="term-line dim">  Write: src/middleware/jwt-auth.ts</div>
+              <div class="term-line dim">  Edit: src/routes/api.ts (3 changes)</div>
+              <div class="term-line"><span class="term-claude">Claude</span> Now let me add the token refresh endpoint and update the tests.</div>
+              <div class="term-line dim">  Write: src/routes/auth/refresh.ts</div>
+              <div class="term-line dim">  Bash: npm test -- --grep "auth"</div>
+              <div class="term-line success">  12 passing (0.8s)</div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- FEATURE 3: Git-Native -->
+      <div class="feature-block">
+        <div class="feature-text">
+          <div class="feature-label">Git-Native Workflow</div>
+          <h2 class="feature-title">Every branch gets<br>its own universe.</h2>
+          <p class="feature-desc">
+            Klaudii uses git worktrees to give each branch a completely isolated working directory.
+            No stashing. No conflicts. Just click a repo, name a branch, and Claude starts working
+            in a clean, isolated checkout.
+          </p>
+          <ul class="feature-list">
+            <li>Automatic worktree creation from GitHub repos</li>
+            <li>Real-time git status on every workspace card</li>
+            <li>Safe removal: won't delete with uncommitted work</li>
+            <li>Direct links to GitHub repos and branches</li>
+          </ul>
+        </div>
+        <div class="feature-visual">
+          <div class="git-flow-visual">
+            <div class="git-repo-card">
+              <div class="git-repo-icon">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M15 22v-4a4.8 4.8 0 0 0-1-3.5c3 0 6-2 6-5.5.08-1.25-.27-2.48-1-3.5.28-1.15.28-2.35 0-3.5 0 0-1 0-3 1.5-2.64-.5-5.36-.5-8 0C6 2 5 2 5 2c-.3 1.15-.3 2.35 0 3.5A5.403 5.403 0 0 0 4 9c0 3.5 3 5.5 6 5.5-.39.49-.68 1.05-.85 1.65S8.93 17.38 9 18v4"/><path d="M9 18c-4.51 2-5-2-7-2"/></svg>
+              </div>
+              <span>my-saas-app</span>
+            </div>
+            <div class="git-branches">
+              <div class="git-branch-line">
+                <div class="git-branch-dot active"></div>
+                <div class="git-branch-card">
+                  <span class="git-branch-name">feature/auth</span>
+                  <span class="mock-badge running">running</span>
+                </div>
+              </div>
+              <div class="git-branch-line">
+                <div class="git-branch-dot active"></div>
+                <div class="git-branch-card">
+                  <span class="git-branch-name">fix/payment-bug</span>
+                  <span class="mock-badge running">running</span>
+                </div>
+              </div>
+              <div class="git-branch-line">
+                <div class="git-branch-dot"></div>
+                <div class="git-branch-card">
+                  <span class="git-branch-name">refactor/database</span>
+                  <span class="mock-badge stopped">stopped</span>
+                </div>
+              </div>
+              <div class="git-branch-line">
+                <div class="git-branch-dot"></div>
+                <div class="git-branch-card">
+                  <span class="git-branch-name">test/e2e-coverage</span>
+                  <span class="mock-badge stopped">stopped</span>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- FEATURE 4: Permissions -->
+      <div class="feature-block feature-block-reverse">
+        <div class="feature-text">
+          <div class="feature-label">Permission Controls</div>
+          <h2 class="feature-title">Trust levels<br>per workspace.</h2>
+          <p class="feature-desc">
+            Not every project deserves the same level of autonomy. Set permission modes
+            per workspace: let Claude go full speed on personal projects, require approval
+            on client work, and lock down read-only for analysis tasks.
+          </p>
+          <ul class="feature-list">
+            <li><strong>Yolo</strong> — Claude auto-approves everything. Max speed.</li>
+            <li><strong>Ask</strong> — Claude prompts for each action. Human in the loop.</li>
+            <li><strong>Strict</strong> — Read-only tools only. Maximum safety.</li>
+          </ul>
+        </div>
+        <div class="feature-visual">
+          <div class="permissions-visual">
+            <div class="perm-card">
+              <div class="perm-header">
+                <span class="perm-name">personal-blog</span>
+                <div class="perm-toggle">
+                  <span class="perm-opt perm-active-yolo">Yolo</span>
+                  <span class="perm-opt">Ask</span>
+                  <span class="perm-opt">Strict</span>
+                </div>
+              </div>
+              <div class="perm-desc">Claude runs unattended. Ship fast, fix later.</div>
+            </div>
+            <div class="perm-card">
+              <div class="perm-header">
+                <span class="perm-name">client-portal</span>
+                <div class="perm-toggle">
+                  <span class="perm-opt">Yolo</span>
+                  <span class="perm-opt perm-active-ask">Ask</span>
+                  <span class="perm-opt">Strict</span>
+                </div>
+              </div>
+              <div class="perm-desc">Claude pauses for approval on each action.</div>
+            </div>
+            <div class="perm-card">
+              <div class="perm-header">
+                <span class="perm-name">prod-database</span>
+                <div class="perm-toggle">
+                  <span class="perm-opt">Yolo</span>
+                  <span class="perm-opt">Ask</span>
+                  <span class="perm-opt perm-active-strict">Strict</span>
+                </div>
+              </div>
+              <div class="perm-desc">Read-only. Claude can look but not touch.</div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+    </div>
+  </section>
+
+  <!-- KLOUD KONNECT / SECURITY -->
+  <section class="security" id="security">
+    <div class="container">
+      <div class="section-header">
+        <div class="feature-label">Kloud Konnect</div>
+        <h2 class="section-title">Access your Klaudii<br>from <span class="gradient-text">anywhere</span>.</h2>
+        <p class="section-subtitle">
+          No port forwarding. No VPN. No Tailscale. Just open your browser
+          and connect to your home machine with zero-trust end-to-end encryption.
+        </p>
+      </div>
+
+      <!-- E2E Encryption Diagram -->
+      <div class="e2e-diagram">
+        <div class="e2e-node">
+          <div class="e2e-icon">
+            <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="5" y="2" width="14" height="20" rx="2" ry="2"/><line x1="12" y1="18" x2="12.01" y2="18"/></svg>
+          </div>
+          <div class="e2e-label">Your phone</div>
+          <div class="e2e-sublabel">AES-256-GCM encrypt</div>
+        </div>
+        <div class="e2e-arrow">
+          <div class="e2e-arrow-line"></div>
+          <div class="e2e-arrow-label">Encrypted blob</div>
+        </div>
+        <div class="e2e-node e2e-relay">
+          <div class="e2e-icon">
+            <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg>
+          </div>
+          <div class="e2e-label">Relay</div>
+          <div class="e2e-sublabel">Sees nothing</div>
+        </div>
+        <div class="e2e-arrow">
+          <div class="e2e-arrow-line"></div>
+          <div class="e2e-arrow-label">Encrypted blob</div>
+        </div>
+        <div class="e2e-node">
+          <div class="e2e-icon">
+            <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="2" y="3" width="20" height="14" rx="2" ry="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>
+          </div>
+          <div class="e2e-label">Your Mac</div>
+          <div class="e2e-sublabel">AES-256-GCM decrypt</div>
+        </div>
+      </div>
+
+      <!-- Security Cards -->
+      <div class="security-grid">
+        <div class="security-card">
+          <div class="security-card-icon">
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+          </div>
+          <h3>Zero-trust encryption</h3>
+          <p>Every API request is encrypted with AES-256-GCM using keys derived via HKDF. The relay is a dumb pipe — it forwards encrypted blobs it can never read.</p>
+        </div>
+        <div class="security-card">
+          <div class="security-card-icon">
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+          </div>
+          <h3>QR code pairing</h3>
+          <p>Pair your phone in seconds. The 256-bit connection key transfers via QR code and never touches the relay. Scan once, connected forever.</p>
+        </div>
+        <div class="security-card">
+          <div class="security-card-icon">
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M21 2l-2 2m-7.61 7.61a5.5 5.5 0 1 1-7.778 7.778 5.5 5.5 0 0 1 7.777-7.777zm0 0L15.5 7.5m0 0l3 3L22 7l-3-3m-3.5 3.5L19 4"/></svg>
+          </div>
+          <h3>Ed25519 authentication</h3>
+          <p>Your server proves its identity using Ed25519 signatures. No shared secrets, no passwords. Cryptographic verification on every connection.</p>
+        </div>
+        <div class="security-card">
+          <div class="security-card-icon">
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg>
+          </div>
+          <h3>Access from any device</h3>
+          <p>Phone, tablet, office laptop, coffee shop WiFi — sign in with Google, pick your server, and you're looking at your dashboard. Works everywhere.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- CHROME EXTENSION -->
+  <section class="extension-section">
+    <div class="container">
+      <div class="feature-block feature-block-reverse">
+        <div class="feature-text">
+          <div class="feature-label">Chrome Extension</div>
+          <h2 class="feature-title">Manage sessions<br>without leaving the browser.</h2>
+          <p class="feature-desc">
+            The Klaudii side panel lives right in Chrome. See all your workspaces,
+            start and stop sessions, jump to terminals, and auto-rename your claude.ai
+            tabs so you actually know which conversation is which.
+          </p>
+          <ul class="feature-list">
+            <li>Side panel with all workspace status at a glance</li>
+            <li>One-click session switching in your browser</li>
+            <li>Auto-renames claude.ai tabs to repo (branch) format</li>
+            <li>Session history and resumption from the panel</li>
+          </ul>
+        </div>
+        <div class="feature-visual">
+          <div class="mock-extension">
+            <div class="mock-ext-header">
+              <div class="mock-ext-logo"></div>
+              <span>Klaudii</span>
+              <div class="mock-ext-status">Connected</div>
+            </div>
+            <div class="mock-ext-cards">
+              <div class="mock-ext-card">
+                <div class="mock-ext-card-row">
+                  <span class="mock-badge running">running</span>
+                  <span class="mock-ext-name">api-server</span>
+                </div>
+                <div class="mock-ext-branch">feature/auth</div>
+                <div class="mock-ext-actions">
+                  <span>Open</span>
+                  <span>Terminal</span>
+                  <span>Stop</span>
+                </div>
+              </div>
+              <div class="mock-ext-card">
+                <div class="mock-ext-card-row">
+                  <span class="mock-badge running">running</span>
+                  <span class="mock-ext-name">frontend</span>
+                </div>
+                <div class="mock-ext-branch">redesign-v2</div>
+                <div class="mock-ext-actions">
+                  <span>Open</span>
+                  <span>Terminal</span>
+                  <span>Stop</span>
+                </div>
+              </div>
+              <div class="mock-ext-card">
+                <div class="mock-ext-card-row">
+                  <span class="mock-badge stopped">stopped</span>
+                  <span class="mock-ext-name">ml-pipeline</span>
+                </div>
+                <div class="mock-ext-branch">data-cleanup</div>
+                <div class="mock-ext-actions">
+                  <span>Continue</span>
+                  <span>History</span>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- STATS BAND -->
+  <section class="stats-band">
+    <div class="container">
+      <div class="stats-grid">
+        <div class="stat">
+          <div class="stat-value">30s</div>
+          <div class="stat-label">Install time</div>
+        </div>
+        <div class="stat">
+          <div class="stat-value">256-bit</div>
+          <div class="stat-label">AES-GCM encryption</div>
+        </div>
+        <div class="stat">
+          <div class="stat-value">0</div>
+          <div class="stat-label">Ports to forward</div>
+        </div>
+        <div class="stat">
+          <div class="stat-value">&infin;</div>
+          <div class="stat-label">Parallel sessions</div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- SETUP -->
+  <section class="setup" id="setup">
+    <div class="container">
+      <div class="section-header">
+        <div class="feature-label">Get Started</div>
+        <h2 class="section-title">One command.<br>That's it.</h2>
+        <p class="section-subtitle">
+          Install Klaudii on your Mac, open your browser, and start running
+          Claude Code sessions. The whole thing takes about 30 seconds.
+        </p>
+      </div>
+
+      <div class="setup-terminal">
+        <div class="terminal">
+          <div class="terminal-bar">
+            <div class="terminal-dots">
+              <span class="dot dot-red"></span>
+              <span class="dot dot-yellow"></span>
+              <span class="dot dot-green"></span>
+            </div>
+            <span class="terminal-title">Terminal</span>
+            <button class="copy-btn" id="copy-btn" onclick="copyInstall()">Copy</button>
+          </div>
+          <div class="terminal-body">
+            <div class="terminal-line">
+              <span class="terminal-prompt">$</span>
+              <span class="terminal-cmd-static">curl -fsSL https://klaudii.com/setup.sh | bash</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="setup-steps">
+        <div class="setup-step">
+          <div class="setup-step-num">1</div>
+          <div class="setup-step-content">
+            <h3>Install</h3>
+            <p>The script checks for Node.js, installs tmux and ttyd via Homebrew, sets up a launchd agent that auto-starts on login, and opens your dashboard.</p>
+          </div>
+        </div>
+        <div class="setup-step">
+          <div class="setup-step-num">2</div>
+          <div class="setup-step-content">
+            <h3>Create a workspace</h3>
+            <p>Click <strong>+ New Session</strong>, pick a GitHub repo, name a branch. Klaudii clones, creates a worktree, and starts Claude automatically.</p>
+          </div>
+        </div>
+        <div class="setup-step">
+          <div class="setup-step-num">3</div>
+          <div class="setup-step-content">
+            <h3>Go remote (optional)</h3>
+            <p>Click <strong>Kloud Konnect</strong>, scan the QR code on your phone, and access your entire dashboard from anywhere with E2E encryption.</p>
+          </div>
+        </div>
+      </div>
+
+      <div class="setup-reqs">
+        <h4>Requirements</h4>
+        <div class="reqs-list">
+          <span class="req-item">macOS 12+</span>
+          <span class="req-item">Node.js 18+</span>
+          <span class="req-item">Homebrew</span>
+          <span class="req-item">Claude Code CLI</span>
+          <span class="req-item">GitHub CLI (gh)</span>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- PRICING -->
+  <section class="pricing" id="pricing">
+    <div class="container">
+      <div class="section-header">
+        <div class="feature-label">Pricing</div>
+        <h2 class="section-title">Free to start.<br>Pro when you're ready.</h2>
+        <p class="section-subtitle">
+          Klaudii runs locally on your Mac for free. Kloud Konnect, the Chrome extension,
+          and the iOS app unlock the full experience.
+        </p>
+      </div>
+
+      <div class="pricing-grid">
+        <div class="pricing-card">
+          <div class="pricing-tier">Free</div>
+          <div class="pricing-price">$0</div>
+          <div class="pricing-period">forever</div>
+          <ul class="pricing-features">
+            <li>Unlimited local sessions</li>
+            <li>Web terminal access</li>
+            <li>Git-native workflow</li>
+            <li>Resource monitoring</li>
+            <li>Session history & resumption</li>
+            <li>Permission controls</li>
+            <li>GitHub integration</li>
+            <li>macOS menu bar app</li>
+          </ul>
+          <a href="#setup" class="btn btn-ghost btn-block">Install free</a>
+        </div>
+        <div class="pricing-card pricing-card-pro">
+          <div class="pricing-popular">Most popular</div>
+          <div class="pricing-tier">Pro</div>
+          <div class="pricing-price">$4.95</div>
+          <div class="pricing-period">per month</div>
+          <ul class="pricing-features">
+            <li>Everything in Free, plus:</li>
+            <li class="pricing-highlight">Kloud Konnect remote access</li>
+            <li class="pricing-highlight">Chrome extension</li>
+            <li class="pricing-highlight">iOS app</li>
+            <li>E2E encrypted cloud relay</li>
+            <li>QR code pairing</li>
+            <li>Multi-device access</li>
+            <li>Priority support</li>
+          </ul>
+          <a href="https://konnect.klaudii.com" class="btn btn-primary btn-block">Start free trial</a>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- HOW IT WORKS (ARCHITECTURE) -->
+  <section class="architecture">
+    <div class="container">
+      <div class="section-header">
+        <div class="feature-label">Under the Hood</div>
+        <h2 class="section-title">Simple architecture.<br>Serious power.</h2>
+        <p class="section-subtitle">
+          Klaudii is a lightweight Node.js server that orchestrates tmux, ttyd, and git.
+          No Docker. No Kubernetes. No cloud dependency. Just your Mac doing what it does best.
+        </p>
+      </div>
+
+      <div class="arch-diagram">
+        <div class="arch-layer">
+          <div class="arch-label">Browser</div>
+          <div class="arch-items">
+            <div class="arch-item">Dashboard UI</div>
+            <div class="arch-item">Chrome Extension</div>
+            <div class="arch-item">Kloud Konnect</div>
+          </div>
+        </div>
+        <div class="arch-connector">
+          <svg width="24" height="40" viewBox="0 0 24 40"><path d="M12 0v40" stroke="rgba(124,91,245,0.4)" stroke-width="2" stroke-dasharray="4 4"/></svg>
+        </div>
+        <div class="arch-layer">
+          <div class="arch-label">Server</div>
+          <div class="arch-items">
+            <div class="arch-item">Express API</div>
+            <div class="arch-item">Session Tracker</div>
+            <div class="arch-item">Process Monitor</div>
+          </div>
+        </div>
+        <div class="arch-connector">
+          <svg width="24" height="40" viewBox="0 0 24 40"><path d="M12 0v40" stroke="rgba(124,91,245,0.4)" stroke-width="2" stroke-dasharray="4 4"/></svg>
+        </div>
+        <div class="arch-layer">
+          <div class="arch-label">System</div>
+          <div class="arch-items">
+            <div class="arch-item">tmux sessions</div>
+            <div class="arch-item">ttyd terminals</div>
+            <div class="arch-item">git worktrees</div>
+            <div class="arch-item">Claude Code CLI</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- FINAL CTA -->
+  <section class="final-cta">
+    <div class="container">
+      <div class="cta-glow"></div>
+      <h2 class="section-title">Stop juggling terminal tabs.<br>Start <span class="gradient-text">orchestrating</span>.</h2>
+      <p class="section-subtitle">
+        Install Klaudii in 30 seconds and turn your Mac into a
+        multi-Claude development powerhouse.
+      </p>
+      <div class="hero-actions">
+        <a href="#setup" class="btn btn-primary btn-lg">Get started free</a>
+        <a href="/docs" class="btn btn-ghost btn-lg">Read the docs</a>
+      </div>
+    </div>
+  </section>
+
+  <!-- FOOTER -->
+  <footer class="footer">
+    <div class="container">
+      <div class="footer-grid">
+        <div class="footer-brand">
+          <div class="nav-logo">
+            <svg class="nav-logo-icon" viewBox="0 0 512 512" xmlns="http://www.w3.org/2000/svg">
+              <defs><linearGradient id="logo-grad2" x1="256" y1="80" x2="256" y2="432" gradientUnits="userSpaceOnUse"><stop offset="0%" stop-color="#86efac"/><stop offset="50%" stop-color="#4ade80"/><stop offset="100%" stop-color="#22c55e"/></linearGradient></defs>
+              <rect x="132" y="100" width="40" height="312" rx="20" fill="url(#logo-grad2)"/>
+              <line x1="188" y1="256" x2="362" y2="120" stroke="url(#logo-grad2)" stroke-width="40" stroke-linecap="round"/>
+              <line x1="188" y1="256" x2="362" y2="392" stroke="url(#logo-grad2)" stroke-width="40" stroke-linecap="round"/>
+            </svg>
+            <span>Klaudii</span>
+          </div>
+          <p class="footer-tagline">The operating system for<br>AI-assisted development.</p>
+        </div>
+        <div class="footer-col">
+          <h4>Product</h4>
+          <a href="#features">Features</a>
+          <a href="#security">Kloud Konnect</a>
+          <a href="#pricing">Pricing</a>
+          <a href="#setup">Install</a>
+        </div>
+        <div class="footer-col">
+          <h4>Resources</h4>
+          <a href="/docs">Documentation</a>
+          <a href="https://github.com/klaudiihq/klaudii">GitHub</a>
+          <a href="https://github.com/klaudiihq/klaudii/releases">Changelog</a>
+        </div>
+        <div class="footer-col">
+          <h4>Company</h4>
+          <a href="https://konnect.klaudii.com/privacy">Privacy Policy</a>
+          <a href="https://konnect.klaudii.com/tos">Terms of Service</a>
+          <a href="mailto:hello@klaudii.com">Contact</a>
+        </div>
+      </div>
+      <div class="footer-bottom">
+        <span>&copy; 2025 Klaudii. All rights reserved.</span>
+      </div>
+    </div>
+  </footer>
+
+  <script src="script.js"></script>
+</body>
+</html>

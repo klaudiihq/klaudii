@@ -185,7 +185,7 @@ Klaudii is currently trapped on `localhost:9876`. A cloud rendezvous service bre
 ### Rendezvous service
 - [ ] Lightweight cloud relay (Cloud Run, Fly.io, or a single VPS) that Klaudii servers register with
 - [ ] Klaudii server maintains a persistent WebSocket to the relay, heartbeating once per second
-- [ ] Relay assigns a stable URL per machine (e.g., `bryants-mbp.klaudii.dev`)
+- [ ] Relay assigns a stable URL per machine (e.g., `my-machine.klaudii.dev`)
 - [ ] Clients connect to the relay URL — relay multiplexes WebSocket connections to the right Klaudii server
 - [ ] Server pushes state updates to relay every 10 seconds (only when clients are connected, relay signals demand)
 - [ ] End-to-end encryption between client and Klaudii server — relay is a dumb pipe
@@ -202,7 +202,7 @@ Klaudii is currently trapped on `localhost:9876`. A cloud rendezvous service bre
 - [ ] Mobile-optimized web dashboard — works today but needs responsive polish for phone-sized screens
 - [ ] iOS app (SwiftUI) — native workspace cards, push notifications for session events, start/stop/restart
 - [ ] Watch complication — glanceable session count and status
-- [ ] iOS Shortcuts integration — "Hey Siri, start my filmschoolapp workspace"
+- [ ] iOS Shortcuts integration — "Hey Siri, start my project workspace"
 - [ ] Push notifications via APNs — session completed, session crashed, review needed
 
 ### Protocol

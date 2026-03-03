@@ -1,0 +1,307 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Klaudii — Kloud Konnect</title>
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 512 512'><defs><linearGradient id='kg' x1='256' y1='80' x2='256' y2='432' gradientUnits='userSpaceOnUse'><stop offset='0%25' stop-color='%2386efac'/><stop offset='50%25' stop-color='%234ade80'/><stop offset='100%25' stop-color='%2322c55e'/></linearGradient></defs><rect x='132' y='100' width='40' height='312' rx='20' fill='url(%23kg)'/><line x1='188' y1='256' x2='362' y2='120' stroke='url(%23kg)' stroke-width='40' stroke-linecap='round'/><line x1='188' y1='256' x2='362' y2='392' stroke='url(%23kg)' stroke-width='40' stroke-linecap='round'/></svg>">
+  <link rel="stylesheet" href="/konnect.css">
+  <link rel="stylesheet" href="/dashboard/style.css">
+</head>
+<body>
+  <!-- Pairing code modal -->
+  <div id="pair-modal" class="pair-modal-overlay" style="display:none">
+    <div class="pair-modal">
+      <h2>Pairing Code</h2>
+      <p class="pair-modal-sub">Enter this in your local Klaudii to konnect</p>
+      <div class="pairing-code-display">
+        <div class="code" id="pair-modal-code"></div>
+        <div class="expires" id="pair-modal-expires"></div>
+      </div>
+      <ul class="pair-steps">
+        <li><span class="pair-step-num">1</span>Open <strong>http://localhost:9876</strong> on your home machine</li>
+        <li><span class="pair-step-num">2</span>Click the <strong>Kloud Konnect</strong> button in the header</li>
+        <li><span class="pair-step-num">3</span>Enter the code above and click <strong>Pair</strong></li>
+        <li><span class="pair-step-num">4</span>Scan the QR code that appears to complete the konnection</li>
+      </ul>
+      <div class="pair-modal-footer">
+        <button class="btn btn-sm btn-ghost" onclick="closePairModal()">Done</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Nav bar -->
+  <nav class="nav">
+    <div class="nav-inner">
+      <div class="nav-left">
+        <a href="https://www.klaudii.com" class="nav-logo" id="nav-logo">
+          <svg class="nav-logo-icon" viewBox="0 0 512 512" xmlns="http://www.w3.org/2000/svg">
+            <defs><linearGradient id="lg" x1="256" y1="80" x2="256" y2="432" gradientUnits="userSpaceOnUse"><stop offset="0%" stop-color="#86efac"/><stop offset="50%" stop-color="#4ade80"/><stop offset="100%" stop-color="#22c55e"/></linearGradient></defs>
+            <rect x="132" y="100" width="40" height="312" rx="20" fill="url(#lg)"/>
+            <line x1="188" y1="256" x2="362" y2="120" stroke="url(#lg)" stroke-width="40" stroke-linecap="round"/>
+            <line x1="188" y1="256" x2="362" y2="392" stroke="url(#lg)" stroke-width="40" stroke-linecap="round"/>
+          </svg>
+          <span id="nav-title">Klaudii</span>
+        </a>
+      </div>
+      <div class="nav-center" id="server-selector" style="display:none">
+        <button class="server-selector-btn" onclick="toggleServerMenu(event)">
+          <span id="server-selector-name"></span>
+          <svg class="chevron" width="14" height="14" viewBox="0 0 12 12"><path d="M3 4.5L6 7.5L9 4.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" fill="none"/></svg>
+        </button>
+        <div class="dropdown server-dropdown" id="server-dropdown"></div>
+      </div>
+      <div class="nav-right">
+        <div class="user-menu" id="user-menu">
+          <button class="user-menu-btn" onclick="toggleUserMenu(event)">
+            <span id="user-name">...</span>
+            <svg class="chevron" width="12" height="12" viewBox="0 0 12 12"><path d="M3 4.5L6 7.5L9 4.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" fill="none"/></svg>
+          </button>
+          <div class="dropdown user-dropdown" id="user-dropdown">
+            <button class="dropdown-item" onclick="logout()">Sign Out</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </nav>
+
+  <!-- Server picker view -->
+  <div id="picker-view">
+    <div class="server-picker">
+      <h2>
+        Your Servers
+        <button class="btn btn-sm btn-primary" onclick="addServer()">+ Add Server</button>
+      </h2>
+      <div id="server-list"></div>
+      <p style="margin-top: 2rem; font-size: 0.75rem; color: #444; text-align: center;">
+        <a href="/privacy" style="color:#444;">Privacy Policy</a> &middot; <a href="/tos" style="color:#444;">Terms of Service</a>
+      </p>
+    </div>
+
+    <footer class="konnect-footer">
+      <span class="copyright">&copy; 2025 Klaudii</span>
+      <a href="https://www.klaudii.com">Home</a>
+      <a href="https://www.klaudii.com/docs">Docs</a>
+      <a href="https://github.com/klaudiihq/klaudii">GitHub</a>
+    </footer>
+  </div>
+
+  <!-- Dashboard view (when a server is selected) -->
+  <div id="dashboard-view" style="display:none">
+    <iframe id="dashboard-frame" src=""></iframe>
+  </div>
+
+  <script src="/cloud.js"></script>
+  <script>
+    let currentUser = null;
+    let currentServerId = null;
+    let cachedServers = [];
+
+    async function init() {
+      try {
+        const resp = await fetch("/auth/me");
+        if (!resp.ok) { window.location.href = "/"; return; }
+        currentUser = await resp.json();
+        document.getElementById("user-name").textContent = currentUser.name || currentUser.email;
+        await loadServers();
+
+        // Auto-reconnect to last used server if it's online and we have a key
+        const lastServer = localStorage.getItem("klaudii-last-server");
+        if (lastServer) {
+          try {
+            const { id, name } = JSON.parse(lastServer);
+            const server = cachedServers.find(s => s.id === id);
+            if (server && server.online && hasConnectionKey(id)) {
+              selectServer(id, name);
+              return;
+            }
+          } catch {}
+        }
+      } catch { window.location.href = "/"; }
+    }
+
+    async function loadServers() {
+      const resp = await fetch("/api/servers");
+      cachedServers = await resp.json();
+      renderServerList();
+    }
+
+    function renderServerList() {
+      const list = document.getElementById("server-list");
+
+      if (cachedServers.length === 0) {
+        list.innerHTML = `
+          <div class="empty-state">
+            <h3>No servers konnected</h3>
+            <p>Add your first Klaudii server to access it from anywhere.</p>
+            <div class="pair-action">
+              <button class="btn btn-primary" onclick="addServer()">Add Server</button>
+            </div>
+          </div>
+        `;
+        return;
+      }
+
+      list.innerHTML = cachedServers.map(s => {
+        const hasKey = hasConnectionKey(s.id);
+        const lastSeen = s.lastSeen ? formatTimeAgo(s.lastSeen * 1000) : "never";
+        const clickAction = s.online && hasKey ? `selectServer('${s.id}', '${esc(s.name)}')` : (!hasKey ? `enterKey('${s.id}')` : "");
+        return `
+          <div class="server-card" onclick="${clickAction}">
+            <div style="flex:1; min-width:0">
+              <div class="server-name">${esc(s.name)}</div>
+              <div class="server-meta">${s.online ? "Online" : `Last seen ${lastSeen}`}</div>
+              ${!hasKey ? '<div class="no-key-warning">Konnection key needed — click to enter</div>' : ""}
+            </div>
+            <div style="display:flex; align-items:center; gap:0.75rem; flex-shrink:0">
+              <div class="status-dot ${s.online ? "online" : "offline"}"></div>
+              <button class="delete-server-btn" onclick="event.stopPropagation(); deleteServer('${s.id}', '${esc(s.name)}')" title="Remove server">&#x2715;</button>
+            </div>
+          </div>
+        `;
+      }).join("");
+    }
+
+    function renderServerDropdown() {
+      const dd = document.getElementById("server-dropdown");
+      const items = cachedServers.map(s => {
+        const active = s.id === currentServerId ? " active" : "";
+        const hasKey = hasConnectionKey(s.id);
+        const clickable = s.online && hasKey;
+        return `
+          <button class="dropdown-item server-dropdown-item${active}" onclick="${clickable ? `switchServer('${s.id}', '${esc(s.name)}')` : ""}" ${!clickable ? "disabled" : ""}>
+            <span class="server-dropdown-name">${esc(s.name)}</span>
+            <span class="status-dot ${s.online ? "online" : "offline"}"></span>
+          </button>
+        `;
+      }).join("");
+      dd.innerHTML = items
+        + `<div class="dropdown-divider"></div>`
+        + `<button class="dropdown-item" onclick="showPickerView(); closeAllDropdowns()">All Servers</button>`
+        + `<button class="dropdown-item" onclick="addServer()">+ Add Server</button>`;
+    }
+
+    async function deleteServer(id, name) {
+      if (!confirm(`Remove "${name}"? This cannot be undone.`)) return;
+      const keys = JSON.parse(localStorage.getItem("klaudii-connection-keys") || "{}");
+      delete keys[id];
+      localStorage.setItem("klaudii-connection-keys", JSON.stringify(keys));
+      await fetch(`/api/servers/${id}`, { method: "DELETE" });
+      loadServers();
+    }
+
+    function hasConnectionKey(serverId) {
+      const keys = JSON.parse(localStorage.getItem("klaudii-connection-keys") || "{}");
+      return !!keys[serverId];
+    }
+
+    function getConnectionKey(serverId) {
+      const keys = JSON.parse(localStorage.getItem("klaudii-connection-keys") || "{}");
+      return keys[serverId] || null;
+    }
+
+    async function addServer() {
+      closeAllDropdowns();
+      const resp = await fetch("/api/pairing/create", { method: "POST" });
+      const { code, expiresIn } = await resp.json();
+      document.getElementById("pair-modal-code").textContent = code;
+      document.getElementById("pair-modal-expires").textContent =
+        `Expires in ${Math.floor(expiresIn / 60)} minutes`;
+      document.getElementById("pair-modal").style.display = "flex";
+    }
+
+    function closePairModal() {
+      document.getElementById("pair-modal").style.display = "none";
+      loadServers();
+    }
+
+    function enterKey(serverId) { window.location.href = `/pair.html?serverId=${serverId}`; }
+
+    function selectServer(serverId, serverName) {
+      currentServerId = serverId;
+      const key = getConnectionKey(serverId);
+      if (!key) { enterKey(serverId); return; }
+
+      // Remember last selected server
+      localStorage.setItem("klaudii-last-server", JSON.stringify({ id: serverId, name: serverName }));
+
+      // Show server selector in nav center
+      document.getElementById("server-selector").style.display = "flex";
+      document.getElementById("server-selector-name").textContent = serverName;
+      renderServerDropdown();
+
+      document.getElementById("picker-view").style.display = "none";
+      document.getElementById("dashboard-view").style.display = "block";
+      initCloudTunnel(serverId, key, currentUser.id);
+    }
+
+    function switchServer(serverId, serverName) {
+      closeAllDropdowns();
+      if (serverId === currentServerId) return;
+      disconnectCloudTunnel();
+      document.getElementById("dashboard-frame").src = "";
+      selectServer(serverId, serverName);
+    }
+
+    function showPickerView() {
+      currentServerId = null;
+      disconnectCloudTunnel();
+      document.getElementById("dashboard-view").style.display = "none";
+      document.getElementById("picker-view").style.display = "";
+      document.getElementById("dashboard-frame").src = "";
+      document.getElementById("server-selector").style.display = "none";
+      loadServers();
+    }
+
+    // --- Dropdowns ---
+    function toggleServerMenu(e) {
+      e.preventDefault();
+      e.stopPropagation();
+      const dd = document.getElementById("server-dropdown");
+      const wasOpen = dd.classList.contains("open");
+      closeAllDropdowns();
+      if (!wasOpen) {
+        renderServerDropdown();
+        dd.classList.add("open");
+      }
+    }
+
+    function toggleUserMenu(e) {
+      e.stopPropagation();
+      const dd = document.getElementById("user-dropdown");
+      const wasOpen = dd.classList.contains("open");
+      closeAllDropdowns();
+      if (!wasOpen) dd.classList.add("open");
+    }
+
+    function closeAllDropdowns() {
+      document.querySelectorAll(".dropdown.open").forEach(d => d.classList.remove("open"));
+    }
+
+    document.addEventListener("click", () => closeAllDropdowns());
+
+    async function logout() {
+      await fetch("/auth/logout", { method: "POST" });
+      window.location.href = "/";
+    }
+
+    function esc(str) {
+      const el = document.createElement("span");
+      el.textContent = str;
+      return el.innerHTML;
+    }
+
+    function formatTimeAgo(ts) {
+      const diff = Date.now() - ts;
+      const min = Math.floor(diff / 60000);
+      if (min < 1) return "just now";
+      if (min < 60) return `${min}m ago`;
+      const hr = Math.floor(min / 60);
+      if (hr < 24) return `${hr}h ago`;
+      return `${Math.floor(hr / 24)}d ago`;
+    }
+
+    init();
+  </script>
+</body>
+</html>

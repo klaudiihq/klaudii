@@ -1,8 +1,33 @@
 const API = "";
 let refreshTimer = null;
 let currentTerminalSession = null;
+let lastHealthData = null;
 let sortMode = localStorage.getItem("klaudii-sort") || "activity";
 let sortDir = localStorage.getItem("klaudii-sort-dir") || "desc";
+let openPanelProject = null;
+let panelAutoCloseTimer = null;
+
+// --- SVG icon constants (matching extension) ---
+const STAT_CPU_SVG = `<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="4" width="16" height="16" rx="2"/><rect x="9" y="9" width="6" height="6"/><line x1="9" y1="1" x2="9" y2="4"/><line x1="15" y1="1" x2="15" y2="4"/><line x1="9" y1="20" x2="9" y2="23"/><line x1="15" y1="20" x2="15" y2="23"/><line x1="20" y1="9" x2="23" y2="9"/><line x1="20" y1="14" x2="23" y2="14"/><line x1="1" y1="9" x2="4" y2="9"/><line x1="1" y1="14" x2="4" y2="14"/></svg>`;
+const STAT_MEM_SVG = `<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="6" width="20" height="12" rx="2"/><line x1="6" y1="12" x2="6" y2="12.01"/><line x1="10" y1="12" x2="10" y2="12.01"/><line x1="14" y1="12" x2="14" y2="12.01"/><line x1="18" y1="12" x2="18" y2="12.01"/></svg>`;
+const STAT_CLOCK_SVG = `<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>`;
+const PENCIL_SVG = `<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 3a2.83 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"/><path d="m15 5 4 4"/></svg>`;
+
+const CLEAN_PHRASES = [
+  "squeaky clean", "pristine", "untouched", "clean as a whistle",
+  "spotless", "mint condition", "not a scratch", "fresh",
+  "zero diff", "nothing to see here", "all clear", "clean slate",
+  "immaculate", "tidy", "ship-shape",
+];
+
+function cleanPhrase(project) {
+  let hash = 0;
+  for (let i = 0; i < project.length; i++) hash += project.charCodeAt(i);
+  return CLEAN_PHRASES[Math.abs(hash) % CLEAN_PHRASES.length];
+}
+
+const PERM_BADGE_LABELS = { yolo: "bypass", ask: "ask", strict: "plan" };
+const PERM_MODE_LABELS = { yolo: "Bypass Permissions", ask: "Ask Permissions", strict: "Plan Mode" };
 
 async function api(path, opts = {}) {
   const res = await fetch(API + path, {
@@ -22,19 +47,10 @@ function setSort(mode) {
   refresh();
 }
 
-function toggleSortDir() {
-  sortDir = sortDir === "desc" ? "asc" : "desc";
-  localStorage.setItem("klaudii-sort-dir", sortDir);
-  updateSortButtons();
-  refresh();
-}
-
 function updateSortButtons() {
   document.querySelectorAll(".sort-btn").forEach((b) => b.classList.remove("active"));
   const active = document.getElementById(`sort-${sortMode}`);
   if (active) active.classList.add("active");
-  const dirBtn = document.getElementById("sort-dir");
-  if (dirBtn) dirBtn.textContent = sortDir === "desc" ? "↓" : "↑";
 }
 
 function sortSessions(sessions) {
@@ -76,71 +92,145 @@ function renderSessions(sessions, procs) {
     }
   }
 
-  container.innerHTML = sessions
-    .map(
-      (s) => {
-        const parts = s.project.split("--");
-        const repo = parts[0];
-        const branch = parts.length > 1 ? parts.slice(1).join("--") : null;
-        const sessionData = esc(JSON.stringify(s).replace(/'/g, "&#39;"));
-        const proc = procByProject[s.project];
-        const pm = s.permissionMode || "yolo";
-        const g = s.git;
-        const gitBranch = g ? g.branch : branch;
-        const ghUrl = s.remoteUrl || null;
-        const ghBranchUrl = ghUrl && gitBranch ? `${ghUrl}/tree/${esc(gitBranch)}` : ghUrl;
-        return `
-    <div class="card" id="card-${esc(s.project)}">
-      <div class="card-header">
-        <span class="card-title">
-          ${ghUrl ? `<a href="${esc(ghUrl)}" target="_blank" class="card-repo-link">${esc(repo)}</a>` : `<span class="card-repo-link">${esc(repo)}</span>`}${gitBranch ? (ghBranchUrl ? ` <a href="${esc(ghBranchUrl)}" target="_blank" class="card-branch-link">${esc(gitBranch)}</a>` : ` <span class="card-branch-link">${esc(gitBranch)}</span>`) : ""}
-        </span>
-        <span class="card-status ${s.status || (s.running ? "running" : "stopped")}">
-          ${s.status || (s.running ? "running" : "stopped")}
-        </span>
-      </div>
-      ${g ? `<div class="git-status-bar">
-        ${g.dirtyFiles ? `<span class="git-dirty" onclick="openGitStatus('${esc(s.project)}')">${g.dirtyFiles} changed</span>` : '<span class="git-clean">clean</span>'}
-        ${g.unpushed ? `<span class="git-unpushed">${g.unpushed} unpushed</span>` : ""}
-        <button class="btn btn-sm" onclick="openGitStatus('${esc(s.project)}')">git status</button>
-      </div>` : ""}
-      ${proc ? `<div class="proc-stats">${proc.cpu}% cpu &middot; ${proc.memMB} MB${proc.uptime ? ` &middot; ${esc(proc.uptime)}` : ""}${s.sessionCount ? ` &middot; ${s.sessionCount} session${s.sessionCount === 1 ? "" : "s"}` : ""}</div>` : (s.sessionCount ? `<div class="proc-stats">${s.sessionCount} session${s.sessionCount === 1 ? "" : "s"}</div>` : "")}
-      ${s.status === "stopped" ? `<div class="permission-toggle">
-        <button class="perm-btn${pm === 'yolo' ? ' active yolo' : ''}" onclick="setPermission('${esc(s.project)}', 'yolo')" title="Auto-approve all actions">Yolo</button>
-        <button class="perm-btn${pm === 'ask' ? ' active ask' : ''}" onclick="setPermission('${esc(s.project)}', 'ask')" title="Approve each action in terminal">Ask</button>
-        <button class="perm-btn${pm === 'strict' ? ' active strict' : ''}" onclick="setPermission('${esc(s.project)}', 'strict')" title="Read-only tools only">Strict</button>
-      </div>` : `<div class="permission-toggle locked">
-        <span class="perm-badge ${pm}">${pm}</span>
-      </div>`}
-      <div class="card-actions">
-        ${
-          s.status === "running"
-            ? `
-          ${s.claudeUrl ? `<a class="btn success" href="${esc(s.claudeUrl)}" target="_blank">Open</a>` : ""}
-          <button class="btn danger" onclick="stopSession('${esc(s.project)}')">Stop</button>
-          <button class="btn primary" onclick="restartSession('${esc(s.project)}')">Restart</button>
-          ${s.ttyd ? `<button class="btn" onclick='openTerminal(${s.ttyd.port}, ${sessionData})'>Terminal</button>` : ""}
-        `
-          : s.status === "exited"
-            ? `
-          <button class="btn primary" onclick="restartSession('${esc(s.project)}')">Restart</button>
-          <button class="btn danger" onclick="stopSession('${esc(s.project)}')">Clean up</button>
-          ${s.ttyd ? `<button class="btn" onclick='openTerminal(${s.ttyd.port}, ${sessionData})'>Terminal</button>` : ""}
-        `
-            : `
-          <button class="btn primary" onclick="startSession('${esc(s.project)}', {continueSession:true})">Continue</button>
-          <button class="btn btn-sm" onclick="startSession('${esc(s.project)}')">New</button>
-          <button class="btn btn-sm danger" onclick="removeWorkspace(this, '${esc(s.project)}', ${!!(g && (g.dirtyFiles || g.unpushed))})">Remove</button>
-        `
-        }
-        <button class="btn btn-sm" onclick="toggleHistory('${esc(s.project)}')">History</button>
-      </div>
-      <div class="history-list hidden" id="history-${esc(s.project)}"></div>
-    </div>
-  `;
+  container.innerHTML = sessions.map((s) => {
+    const parts = s.project.split("--");
+    const repo = parts[0];
+    const branch = parts.length > 1 ? parts.slice(1).join("--") : null;
+    const sessionData = esc(JSON.stringify(s).replace(/'/g, "&#39;"));
+    const proc = procByProject[s.project];
+    const mode = s.permissionMode || "yolo";
+    const g = s.git;
+    const gitBranch = g ? g.branch : branch;
+    const ghUrl = s.remoteUrl || null;
+    const status = s.status || (s.running ? "running" : "stopped");
+    const isRunning = status === "running" || status === "exited";
+
+    // Git links
+    const repoLink = ghUrl
+      ? `<a href="${esc(ghUrl)}" target="_blank" class="card-repo-link">${esc(repo)}</a>`
+      : `<span class="card-repo-link">${esc(repo)}</span>`;
+    const branchLink = gitBranch
+      ? (ghUrl ? `<a href="${esc(ghUrl + "/tree/" + gitBranch)}" target="_blank" class="card-branch-link">${esc(gitBranch)}</a>` : `<span class="card-branch-link">${esc(gitBranch)}</span>`)
+      : "";
+
+    // Git status row
+    let gitBar = "";
+    if (g) {
+      const items = [];
+      if (g.dirtyFiles) {
+        items.push(`<span class="git-dirty" onclick="openGitStatus('${esc(s.project)}')">${g.dirtyFiles} file${g.dirtyFiles === 1 ? "" : "s"} touched</span>`);
+      } else {
+        items.push(`<span class="git-clean">${esc(cleanPhrase(s.project))}</span>`);
       }
-    )
-    .join("");
+      if (g.unpushed) items.push(`<span class="git-unpushed">${g.unpushed} unpushed</span>`);
+      gitBar = `<div class="git-bar">${items.join("")}</div>`;
+    }
+
+    // Permission badge (shown when running)
+    const permBadge = isRunning ? `<span class="perm-badge perm-${mode}">${PERM_BADGE_LABELS[mode] || mode}</span>` : "";
+
+    // Process stats with SVG icons + pencil edit button
+    const editBtn = `<button class="card-edit-btn" onclick="toggleActionPanel('${esc(s.project)}')" title="Options">${PENCIL_SVG}</button>`;
+    let statsRow = "";
+    if (proc) {
+      const statParts = [];
+      statParts.push(`<span class="proc-stat">${STAT_CPU_SVG} ${proc.cpu}%</span>`);
+      statParts.push(`<span class="proc-stat">${STAT_MEM_SVG} ${proc.memMB} MB</span>`);
+      if (proc.uptime) statParts.push(`<span class="proc-stat">${STAT_CLOCK_SVG} ${esc(proc.uptime)}</span>`);
+      if (s.sessionCount) statParts.push(`<span class="proc-stat">${s.sessionCount} session${s.sessionCount === 1 ? "" : "s"}</span>`);
+      statsRow = `<div class="proc-stats">${statParts.join("")}${editBtn}</div>`;
+    } else {
+      const extraStats = [];
+      if (s.sessionCount) extraStats.push(`<span class="proc-stat">${s.sessionCount} session${s.sessionCount === 1 ? "" : "s"}</span>`);
+      statsRow = `<div class="proc-stats">${extraStats.join("")}${editBtn}</div>`;
+    }
+
+    // Inline action panel
+    let panelItems = "";
+    if (status === "running") {
+      panelItems = `
+        ${s.claudeUrl ? `<a class="btn btn-sm success" href="${esc(s.claudeUrl)}" target="_blank">Open</a>` : ""}
+        <button class="btn btn-sm danger" onclick="stopSession('${esc(s.project)}')">Stop</button>
+        <button class="btn btn-sm" onclick="restartSession('${esc(s.project)}')">Restart</button>
+        ${s.ttyd ? `<button class="btn btn-sm" onclick='openTerminal(${s.ttyd.port}, ${sessionData})'>Terminal</button>` : ""}
+        <button class="btn btn-sm" onclick="toggleHistory('${esc(s.project)}')">History</button>
+        <button class="btn btn-sm" onclick="openGeminiChat('${esc(s.project)}', '${esc(s.projectPath)}')">Gemini</button>
+        <button class="btn btn-sm" onclick="openGeminiChat('${esc(s.project)}', '${esc(s.projectPath)}', 'claude')">Claude</button>`;
+    } else if (status === "exited") {
+      panelItems = `
+        <button class="btn btn-sm primary" onclick="restartSession('${esc(s.project)}')">Restart</button>
+        <button class="btn btn-sm danger" onclick="stopSession('${esc(s.project)}')">Clean up</button>
+        ${s.ttyd ? `<button class="btn btn-sm" onclick='openTerminal(${s.ttyd.port}, ${sessionData})'>Terminal</button>` : ""}
+        <button class="btn btn-sm" onclick="toggleHistory('${esc(s.project)}')">History</button>
+        <button class="btn btn-sm" onclick="openGeminiChat('${esc(s.project)}', '${esc(s.projectPath)}')">Gemini</button>
+        <button class="btn btn-sm" onclick="openGeminiChat('${esc(s.project)}', '${esc(s.projectPath)}', 'claude')">Claude</button>`;
+    } else {
+      const modeOptions = Object.entries(PERM_MODE_LABELS).map(([val, label]) =>
+        `<option value="${val}"${val === mode ? " selected" : ""}>${label}</option>`
+      ).join("");
+      panelItems = `
+        <div class="panel-mode-row">
+          <span class="panel-mode-label">Startup Mode</span>
+          <select class="mode-select" onchange="setPermission('${esc(s.project)}', this.value)">
+            ${modeOptions}
+          </select>
+        </div>
+        <button class="btn btn-sm primary" onclick="startSession('${esc(s.project)}', {continueSession:true})">Continue</button>
+        <button class="btn btn-sm" onclick="startSession('${esc(s.project)}')">New Session</button>
+        <button class="btn btn-sm" onclick="toggleHistory('${esc(s.project)}')">History</button>
+        <button class="btn btn-sm" onclick="openGeminiChat('${esc(s.project)}', '${esc(s.projectPath)}')">Gemini</button>
+        <button class="btn btn-sm" onclick="openGeminiChat('${esc(s.project)}', '${esc(s.projectPath)}', 'claude')">Claude</button>
+        <button class="btn btn-sm danger" onclick="removeWorkspace(this, '${esc(s.project)}', ${!!(g && (g.dirtyFiles || g.unpushed))})">Remove</button>`;
+    }
+
+    const isPanelOpen = openPanelProject === s.project;
+
+    return `
+    <div class="card" id="card-${esc(s.project)}" data-project="${esc(s.project)}">
+      <div class="card-accent ${status}"></div>
+      <div class="card-body">
+        <div class="card-header">
+          <div class="card-names">
+            <span class="card-title">${repoLink}</span>
+            ${branchLink ? `<span class="card-subtitle">${branchLink}</span>` : ""}
+          </div>
+          <div class="card-badges">
+            ${permBadge}
+            <span class="card-status ${status}">${status}</span>
+          </div>
+        </div>
+        ${gitBar}
+        ${statsRow}
+        <div class="card-actions-panel${isPanelOpen ? "" : " hidden"}" id="panel-${esc(s.project)}">
+          ${panelItems}
+        </div>
+        <div class="history-list hidden" id="history-${esc(s.project)}"></div>
+      </div>
+    </div>`;
+  }).join("");
+}
+
+function toggleActionPanel(project) {
+  // Close previously open panel if different
+  if (openPanelProject && openPanelProject !== project) {
+    const prev = document.getElementById(`panel-${openPanelProject}`);
+    if (prev) prev.classList.add("hidden");
+  }
+  clearTimeout(panelAutoCloseTimer);
+
+  const panel = document.getElementById(`panel-${project}`);
+  if (!panel) return;
+
+  const isHidden = panel.classList.toggle("hidden");
+  openPanelProject = isHidden ? null : project;
+
+  // Auto-close after 15 seconds
+  if (!isHidden) {
+    panelAutoCloseTimer = setTimeout(() => {
+      panel.classList.add("hidden");
+      if (openPanelProject === project) openPanelProject = null;
+    }, 15000);
+  }
 }
 
 // --- Actions ---
@@ -493,6 +583,7 @@ async function refresh() {
       api("/api/processes"),
     ]);
 
+    lastHealthData = health;
     const badge = document.getElementById("status-badge");
 
     if (health.ok && health.tmux && health.ttyd) {
@@ -518,13 +609,23 @@ async function refresh() {
     }
     if (health.claudeAuth) {
       if (health.claudeAuth.loggedIn) {
-        const label = health.claudeAuth.email ? esc(health.claudeAuth.email) : "authenticated";
+        const label = health.claudeAuth.email ? esc(health.claudeAuth.email) : (health.claudeAuth.authMethod === "api_key" ? "API key" : "authenticated");
         authRows.push(`<span class="auth-row ok" title="${label}"><span class="auth-dot ok"></span>Claude</span>`);
       } else {
         authRows.push('<span class="auth-row error" title="Run: claude auth login"><span class="auth-dot error"></span>Claude</span>');
       }
     } else if (health.claudeAuth === null) {
       authRows.push('<span class="auth-row error" title="Claude CLI not installed"><span class="auth-dot error"></span>Claude</span>');
+    }
+    if (health.geminiAuth) {
+      if (!health.geminiAuth.installed) {
+        authRows.push('<span class="auth-row error" title="Run: brew install gemini-cli"><span class="auth-dot error"></span>Gemini</span>');
+      } else if (health.geminiAuth.loggedIn) {
+        const geminiTitle = health.geminiAuth.email ? esc(health.geminiAuth.email) : (health.geminiAuth.method === "api_key" ? "API key" : "OAuth");
+        authRows.push(`<span class="auth-row ok" title="${geminiTitle}"><span class="auth-dot ok"></span>Gemini</span>`);
+      } else {
+        authRows.push('<span class="auth-row error clickable" title="Click to authenticate" onclick="openGeminiChat(null, null)"><span class="auth-dot error"></span>Gemini</span>');
+      }
     }
     authEl.innerHTML = (authRows.length ? '<span class="auth-title">auth</span>' : '') + authRows.join("");
 
@@ -541,9 +642,11 @@ async function refresh() {
 
 let allRepos = [];
 let selectedRepo = null;
+let selectedRepoOwner = null;
 
 async function openNewSessionModal() {
   selectedRepo = null;
+  selectedRepoOwner = null;
   document.getElementById("branch-form").classList.add("hidden");
   document.getElementById("repo-search").value = "";
   document.getElementById("branch-input").value = "";
@@ -583,7 +686,7 @@ function closeModal(event) {
 function filterRepos() {
   const q = document.getElementById("repo-search").value.toLowerCase();
   const filtered = allRepos.filter((r) =>
-    r.name.toLowerCase().includes(q) || (r.description || "").toLowerCase().includes(q)
+    r.name.toLowerCase().includes(q) || (r.owner || "").toLowerCase().includes(q) || (r.description || "").toLowerCase().includes(q)
   );
   renderRepoList(filtered);
 }
@@ -598,9 +701,9 @@ function renderRepoList(repos) {
   container.innerHTML = repos
     .map(
       (r) => `
-    <div class="repo-item ${selectedRepo === r.name ? "selected" : ""}" onclick="selectRepo('${esc(r.name)}')">
+    <div class="repo-item ${selectedRepo === r.name && selectedRepoOwner === r.owner ? "selected" : ""}" onclick="selectRepo('${esc(r.name)}', '${esc(r.owner || "")}')">
       <div>
-        <div class="repo-name">${esc(r.name)}</div>
+        <div class="repo-name">${r.owner ? `<span class="repo-owner">${esc(r.owner)}/</span>` : ""}${esc(r.name)}</div>
         ${r.description ? `<div class="repo-desc">${esc(r.description)}</div>` : ""}
       </div>
       <div class="repo-badges">
@@ -613,8 +716,9 @@ function renderRepoList(repos) {
     .join("");
 }
 
-function selectRepo(name) {
+function selectRepo(name, owner) {
   selectedRepo = name;
+  selectedRepoOwner = owner || null;
   renderRepoList(allRepos.filter((r) => {
     const q = document.getElementById("repo-search").value.toLowerCase();
     return r.name.toLowerCase().includes(q) || (r.description || "").toLowerCase().includes(q);
@@ -639,7 +743,7 @@ async function createNewSession() {
   try {
     const result = await api("/api/sessions/new", {
       method: "POST",
-      body: { repo: selectedRepo, branch },
+      body: { repo: selectedRepo, owner: selectedRepoOwner, branch },
     });
 
     if (result.error) {
@@ -1040,6 +1144,34 @@ function toggleTheme() {
   document.getElementById("theme-toggle").textContent = isLight ? "🌙" : "☀";
 }
 
+// --- Sidebar card click (workspace switching in chat mode) ---
+
+document.getElementById("sessions-list").addEventListener("click", (e) => {
+  // Only active in chat-open mode
+  if (!document.body.classList.contains("chat-open")) return;
+
+  // Ignore clicks on buttons, links, selects, and inputs
+  if (e.target.closest("button, a, select, input, .card-actions-panel")) return;
+
+  const card = e.target.closest(".card");
+  if (!card) return;
+
+  const project = card.dataset.project;
+  if (!project) return;
+
+  // Highlight the active workspace card
+  document.querySelectorAll(".card.active-workspace").forEach(c => c.classList.remove("active-workspace"));
+  card.classList.add("active-workspace");
+
+  // Resolve workspace path and switch chat
+  api("/api/sessions").then(sessions => {
+    const s = sessions.find(x => x.project === project);
+    if (s) {
+      openGeminiChat(project, s.projectPath, geminiActiveCli);
+    }
+  });
+});
+
 // --- Init ---
 
 if (localStorage.getItem("klaudii-theme") === "light") {
@@ -1047,11 +1179,17 @@ if (localStorage.getItem("klaudii-theme") === "light") {
   document.getElementById("theme-toggle").textContent = "🌙";
 }
 
-refresh();
-refreshCloudStatus();
-refreshTimer = setInterval(() => {
+// Skip all dashboard polling in chatonly mode — only chat overlay is visible
+if (new URLSearchParams(window.location.search).get("mode") === "chatonly") {
+  // Fetch health once (for auth status used by gemini.js)
+  api("/api/health").then(h => { lastHealthData = h; }).catch(() => {});
+} else {
   refresh();
   refreshCloudStatus();
-}, 10000);
-refreshUsage();
-setInterval(refreshUsage, 60000);
+  refreshTimer = setInterval(() => {
+    refresh();
+    refreshCloudStatus();
+  }, 10000);
+  refreshUsage();
+  setInterval(refreshUsage, 60000);
+}
