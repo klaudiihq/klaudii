@@ -491,6 +491,29 @@ wss.on("connection", (ws) => {
   });
 });
 
+// --- Crash recovery: replay orphaned stream logs from last run ---
+
+gemini.recoverStreams();
+claudeChat.recoverStreams();
+
+// --- Graceful shutdown: flush partial streams before exit ---
+
+function gracefulShutdown(signal) {
+  console.log(`[server] ${signal} received, shutting down...`);
+  gemini.stopAllProcesses();
+  claudeChat.stopAllProcesses();
+  // Small delay for close handlers to persist history and delete log files
+  setTimeout(() => {
+    // Recover anything that didn't flush in time
+    gemini.recoverStreams();
+    claudeChat.recoverStreams();
+    process.exit(0);
+  }, 200);
+}
+
+process.on("SIGTERM", () => gracefulShutdown("SIGTERM"));
+process.on("SIGINT", () => gracefulShutdown("SIGINT"));
+
 server.listen(PORT, "0.0.0.0", () => {
   console.log(`Klaudii manager running at http://0.0.0.0:${PORT}`);
   console.log(`  tmux: ${tmux.isTmuxInstalled() ? "installed" : "NOT FOUND — run: brew install tmux"}`);
