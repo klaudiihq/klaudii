@@ -469,16 +469,18 @@ function handleGeminiEvent(event) {
         geminiCurrentMsgText += text;
         glog(`handle: message delta=${event.delta || false} contentLen=${text.length} totalLen=${geminiCurrentMsgText.length}`);
 
-        if (!geminiCurrentMsgEl) {
+        if (!geminiCurrentMsgEl && geminiCurrentMsgText) {
           glog("handle: creating assistant message element");
           geminiCurrentMsgEl = geminiAppendMessage("assistant", "", true);
         }
 
-        const mdEl = geminiCurrentMsgEl.querySelector(".md-content");
-        if (mdEl) {
-          mdEl.innerHTML = geminiRenderMarkdown(geminiCurrentMsgText);
+        if (geminiCurrentMsgEl) {
+          const mdEl = geminiCurrentMsgEl.querySelector(".md-content");
+          if (mdEl) {
+            mdEl.innerHTML = geminiRenderMarkdown(geminiCurrentMsgText);
+          }
+          geminiScrollToBottom();
         }
-        geminiScrollToBottom();
       } else {
         glog(`handle: message role=${event.role} (skipping — user echo)`);
       }
@@ -490,9 +492,14 @@ function handleGeminiEvent(event) {
       const toolId = event.tool_id || "";
       const params = event.parameters || event.args || event.input || {};
       glog(`handle: tool_use name=${toolName} id=${toolId}`);
-      // Remove streaming indicator before nulling the reference
+      // Remove or discard the current message element before the tool pill
       if (geminiCurrentMsgEl) {
-        geminiCurrentMsgEl.classList.remove("gemini-streaming");
+        if (!geminiCurrentMsgText) {
+          // Empty bubble (e.g. whitespace-only delta before a tool call) — remove it
+          geminiCurrentMsgEl.remove();
+        } else {
+          geminiCurrentMsgEl.classList.remove("gemini-streaming");
+        }
       }
       // After a tool call, force a new message element for subsequent text
       geminiCurrentMsgEl = null;
@@ -669,6 +676,60 @@ function geminiToolDescription(name, params) {
 }
 
 /**
+ * Render a completed tool pill directly from history data (tool_use + tool_result combined).
+ * Creates the pill in its final open state without the two-step running→done dance.
+ */
+function geminiRenderCompletedTool(toolName, toolId, params, status, output) {
+  const container = document.getElementById("gemini-messages");
+  const isError = status === "error";
+  const details = document.createElement("details");
+  details.className = `gemini-tool ${isError ? "error" : "success"}`;
+  details.dataset.toolId = toolId || "";
+  details.dataset.toolName = toolName || "";
+
+  const desc = geminiToolDescription(toolName, params);
+  const summary = document.createElement("summary");
+  const icon = isError ? "\u2717" : "\u2713";
+  summary.innerHTML =
+    `<span class="gemini-tool-icon ${isError ? "error" : "success"}">${icon}</span>` +
+    `<span class="gemini-tool-name">${geminiEscHtml(toolName || "tool")}</span>` +
+    (desc ? `<span class="gemini-tool-desc">${geminiEscHtml(desc)}</span>` : "");
+  details.appendChild(summary);
+
+  const body = document.createElement("div");
+  body.className = "gemini-tool-body";
+
+  // Params section
+  const paramsStr = typeof params === "object" ? JSON.stringify(params, null, 2) : String(params || "");
+  if (paramsStr && paramsStr !== "{}") {
+    const sec = document.createElement("div");
+    sec.className = "gemini-tool-section";
+    sec.innerHTML = `<div class="gemini-tool-section-label">Parameters</div>`;
+    const pre = document.createElement("pre");
+    pre.textContent = paramsStr;
+    sec.appendChild(pre);
+    body.appendChild(sec);
+  }
+
+  // Output section
+  const trimmed = (output || "").trim();
+  if (trimmed) {
+    const sec = document.createElement("div");
+    sec.className = "gemini-tool-section";
+    sec.innerHTML = `<div class="gemini-tool-section-label">${isError ? "Error" : "Output"}</div>`;
+    const pre = document.createElement("pre");
+    pre.textContent = trimmed.length > 5000 ? trimmed.slice(0, 5000) + "\n...(truncated)" : trimmed;
+    sec.appendChild(pre);
+    body.appendChild(sec);
+  }
+
+  details.appendChild(body);
+  details.open = true;
+  container.appendChild(details);
+  geminiScrollToBottom();
+}
+
+/**
  * Append a tool-use pill. Starts in a "running" state with a spinner.
  * Shows tool name + short description inline.
  * Full params are in a collapsible details body (collapsed by default).
@@ -773,6 +834,7 @@ function geminiUpdateToolResult(toolId, status, output, error) {
     pre.textContent = error || output || "";
     body.appendChild(pre);
     details.appendChild(body);
+    details.open = true;
     container.appendChild(details);
   }
 
@@ -1037,20 +1099,37 @@ function geminiStartStreamPoll(historyLengthAtOpen) {
       if (history.length > historyLengthAtOpen) {
         geminiStopStreamPoll();
         const newMsgs = history.slice(historyLengthAtOpen);
+        const pendingToolUses = new Map();
         for (const msg of newMsgs) {
           if (msg.role === "tool_use") {
             try {
               const d = JSON.parse(msg.content);
-              geminiAppendToolUse(d.tool_name, d.tool_id, d.parameters);
+              pendingToolUses.set(d.tool_id, d);
             } catch { /* ignore */ }
           } else if (msg.role === "tool_result") {
             try {
               const d = JSON.parse(msg.content);
-              geminiUpdateToolResult(d.tool_id, d.status, d.output);
+              const tu = d.tool_id ? pendingToolUses.get(d.tool_id) : null;
+              if (tu) pendingToolUses.delete(d.tool_id);
+              geminiRenderCompletedTool(
+                tu ? tu.tool_name : d.tool_id,
+                d.tool_id,
+                tu ? tu.parameters : {},
+                d.status,
+                d.output
+              );
             } catch { /* ignore */ }
           } else {
+            // Flush any orphaned tool_use pills before rendering regular message
+            for (const tu of pendingToolUses.values()) {
+              geminiAppendToolUse(tu.tool_name, tu.tool_id, tu.parameters);
+            }
+            pendingToolUses.clear();
             geminiAppendMessage(msg.role, msg.content, false, null, msg.ts);
           }
+        }
+        for (const tu of pendingToolUses.values()) {
+          geminiAppendToolUse(tu.tool_name, tu.tool_id, tu.parameters);
         }
         container.scrollTop = container.scrollHeight;
         return;
@@ -1077,20 +1156,37 @@ async function geminiShowChat(wsState = null) {
       geminiFetchSessions(geminiWorkspace),
       geminiFetchHistory(geminiWorkspace, sessionNumAtCall),
     ]);
+    const pendingToolUses = new Map();
     for (const msg of history) {
       if (msg.role === "tool_use") {
         try {
           const d = JSON.parse(msg.content);
-          geminiAppendToolUse(d.tool_name, d.tool_id, d.parameters);
+          pendingToolUses.set(d.tool_id, d);
         } catch { /* ignore */ }
       } else if (msg.role === "tool_result") {
         try {
           const d = JSON.parse(msg.content);
-          geminiUpdateToolResult(d.tool_id, d.status, d.output);
+          const tu = d.tool_id ? pendingToolUses.get(d.tool_id) : null;
+          if (tu) pendingToolUses.delete(d.tool_id);
+          geminiRenderCompletedTool(
+            tu ? tu.tool_name : d.tool_id,
+            d.tool_id,
+            tu ? tu.parameters : {},
+            d.status,
+            d.output
+          );
         } catch { /* ignore */ }
       } else {
+        // Flush any orphaned tool_use pills before rendering regular message
+        for (const tu of pendingToolUses.values()) {
+          geminiAppendToolUse(tu.tool_name, tu.tool_id, tu.parameters);
+        }
+        pendingToolUses.clear();
         geminiAppendMessage(msg.role, msg.content, false, null, msg.ts);
       }
+    }
+    for (const tu of pendingToolUses.values()) {
+      geminiAppendToolUse(tu.tool_name, tu.tool_id, tu.parameters);
     }
 
     // If a stream was in-flight when we opened, poll until the reply lands
