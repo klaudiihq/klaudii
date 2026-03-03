@@ -254,6 +254,13 @@ img { max-width: 100%; display: block; }
   border: 1px solid rgba(124,91,245,0.2);
   margin-bottom: 1.5rem;
 }
+.hero-pronunciation {
+  font-size: clamp(1.5rem, 3.6vw, 2.7rem);
+  font-weight: 600;
+  letter-spacing: -0.02em;
+  color: var(--text-muted);
+  margin-bottom: 1rem;
+}
 .hero-title {
   font-size: clamp(2.5rem, 6vw, 4.5rem);
   font-weight: 700;
