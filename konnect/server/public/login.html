@@ -4,71 +4,32 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Klaudii — Kloud Konnect</title>
-  <style>
-    * { box-sizing: border-box; margin: 0; padding: 0; }
-    body {
-      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-      background: #0f1117;
-      color: #e0e0e0;
-      display: flex;
-      justify-content: center;
-      align-items: center;
-      min-height: 100vh;
-    }
-    .login-card {
-      background: #1a1d25;
-      border: 1px solid #2a2d35;
-      border-radius: 12px;
-      padding: 2.5rem;
-      text-align: center;
-      max-width: 400px;
-      width: 90%;
-    }
-    h1 {
-      font-size: 2rem;
-      margin-bottom: 0.5rem;
-      color: #fff;
-    }
-    .subtitle {
-      color: #888;
-      font-size: 0.9rem;
-      margin-bottom: 2rem;
-    }
-    .login-btn {
-      display: inline-flex;
-      align-items: center;
-      gap: 0.75rem;
-      background: #fff;
-      color: #333;
-      border: none;
-      border-radius: 8px;
-      padding: 0.75rem 1.5rem;
-      font-size: 1rem;
-      font-weight: 500;
-      cursor: pointer;
-      text-decoration: none;
-      transition: background 0.15s;
-    }
-    .login-btn:hover { background: #f0f0f0; }
-    .login-btn svg {
-      width: 20px;
-      height: 20px;
-    }
-    .security-note {
-      margin-top: 2rem;
-      font-size: 0.75rem;
-      color: #555;
-      line-height: 1.5;
-    }
-    .security-note strong { color: #888; }
-  </style>
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 512 512'><defs><linearGradient id='kg' x1='256' y1='80' x2='256' y2='432' gradientUnits='userSpaceOnUse'><stop offset='0%25' stop-color='%2386efac'/><stop offset='50%25' stop-color='%234ade80'/><stop offset='100%25' stop-color='%2322c55e'/></linearGradient></defs><rect x='132' y='100' width='40' height='312' rx='20' fill='url(%23kg)'/><line x1='188' y1='256' x2='362' y2='120' stroke='url(%23kg)' stroke-width='40' stroke-linecap='round'/><line x1='188' y1='256' x2='362' y2='392' stroke='url(%23kg)' stroke-width='40' stroke-linecap='round'/></svg>">
+  <link rel="stylesheet" href="/konnect.css">
 </head>
-<body>
-  <div class="login-card">
-    <h1>Klaudii</h1>
-    <p class="subtitle">Access your servers from anywhere</p>
+<body class="centered-page">
+  <nav class="nav">
+    <div class="nav-inner">
+      <a href="https://www.klaudii.com" class="nav-logo">
+        <svg class="nav-logo-icon" viewBox="0 0 512 512" xmlns="http://www.w3.org/2000/svg">
+          <defs><linearGradient id="lg" x1="256" y1="80" x2="256" y2="432" gradientUnits="userSpaceOnUse"><stop offset="0%" stop-color="#86efac"/><stop offset="50%" stop-color="#4ade80"/><stop offset="100%" stop-color="#22c55e"/></linearGradient></defs>
+          <rect x="132" y="100" width="40" height="312" rx="20" fill="url(#lg)"/>
+          <line x1="188" y1="256" x2="362" y2="120" stroke="url(#lg)" stroke-width="40" stroke-linecap="round"/>
+          <line x1="188" y1="256" x2="362" y2="392" stroke="url(#lg)" stroke-width="40" stroke-linecap="round"/>
+        </svg>
+        <span>Klaudii</span>
+      </a>
+      <div class="nav-right">
+        <a href="https://www.klaudii.com/docs" class="btn btn-ghost btn-sm">Docs</a>
+      </div>
+    </div>
+  </nav>
 
-    <a href="/auth/google" class="login-btn">
+  <div class="konnect-card" style="text-align:center">
+    <h2 style="font-size:1.5rem; margin-bottom:0.25rem">Kloud Konnect</h2>
+    <p class="subtitle" style="margin-top:0.5rem">Access your servers from anywhere</p>
+
+    <a href="/auth/google" class="btn-google" style="display:inline-flex; align-items:center; gap:0.75rem">
       <svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
         <path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92a5.06 5.06 0 01-2.2 3.32v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.1z" fill="#4285F4"/>
         <path d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" fill="#34A853"/>
@@ -86,5 +47,12 @@
       <a href="/privacy" style="color: #6e7681;">Privacy Policy</a> &middot; <a href="/tos" style="color: #6e7681;">Terms of Service</a>
     </p>
   </div>
+
+  <footer class="konnect-footer">
+    <span class="copyright">&copy; 2025 Klaudii</span>
+    <a href="https://www.klaudii.com">Home</a>
+    <a href="https://www.klaudii.com/docs">Docs</a>
+    <a href="https://github.com/klaudiihq/klaudii">GitHub</a>
+  </footer>
 </body>
 </html>

@@ -1,4 +1,6 @@
 const express = require("express");
+const http = require("http");
+const WebSocket = require("ws");
 const path = require("path");
 const { loadConfig, getProjects, addProject, removeProject, getProject, setPermissionMode } = require("./lib/projects");
 const tmux = require("./lib/tmux");
@@ -6,567 +8,349 @@ const ttyd = require("./lib/ttyd");
 const claude = require("./lib/claude");
 const github = require("./lib/github");
 const git = require("./lib/git");
-const fs = require("fs");
 const processes = require("./lib/processes");
 const sessionTracker = require("./lib/session-tracker");
+const createV1Router = require("./routes/v1");
+const gemini = require("./lib/gemini");
+const claudeChat = require("./lib/claude-chat");
 
-const config = loadConfig();
+let config = loadConfig();
 const app = express();
 app.use(express.json());
 app.use(express.static(path.join(__dirname, "public")));
 
-// --- Health check ---
+// --- Mount v1 API routes ---
 
-app.get("/api/health", (_req, res) => {
-  const { execSync } = require("child_process");
+app.use(
+  "/api",
+  createV1Router({
+    tmux,
+    ttyd,
+    claude,
+    git,
+    github,
+    processes,
+    sessionTracker,
+    projects: { getProjects, getProject, addProject, removeProject, setPermissionMode },
+    config,
+    gemini,
+    claudeChat,
+  })
+);
 
-  // Check gh CLI auth
-  let ghAuth = null;
-  try {
-    const ghOut = execSync("gh auth status 2>&1", { encoding: "utf-8", stdio: ["pipe", "pipe", "pipe"] });
-    const acctMatch = ghOut.match(/Logged in to .* account (\S+)/);
-    ghAuth = { loggedIn: true, account: acctMatch ? acctMatch[1] : "unknown" };
-  } catch {
-    ghAuth = { loggedIn: false };
-  }
+// --- Gemini ---
 
-  // Check claude CLI auth — search common install locations since launchd
-  // PATH may not include ~/.local/bin where claude is typically installed
-  let claudeAuth = null;
-  const claudeBin = (() => {
-    try { return execSync("which claude 2>/dev/null", { encoding: "utf-8" }).trim(); } catch {}
-    const home = require("os").homedir();
-    const candidates = [
-      path.join(home, ".local", "bin", "claude"),
-      "/usr/local/bin/claude",
-      "/opt/homebrew/bin/claude",
-    ];
-    return candidates.find((p) => fs.existsSync(p)) || null;
-  })();
-  if (claudeBin) {
-    try {
-      const claudeOut = execSync(`${JSON.stringify(claudeBin)} auth status 2>&1`, { encoding: "utf-8", stdio: ["pipe", "pipe", "pipe"] });
-      claudeAuth = JSON.parse(claudeOut);
-    } catch {
-      claudeAuth = { loggedIn: false };
-    }
-  }
-
-  res.json({
-    ok: true,
-    tmux: tmux.isTmuxInstalled(),
-    ttyd: ttyd.isTtydInstalled(),
-    ghAuth,
-    claudeAuth,
-  });
+app.get("/api/gemini/status", (_req, res) => {
+  res.json({ installed: gemini.isInstalled(config), binPath: gemini.getBinPath(config) });
 });
 
-app.get("/api/debug", (_req, res) => {
-  const { execSync } = require("child_process");
-  let raw = "";
-  try {
-    raw = execSync(`tmux -S '${tmux.TMUX_SOCKET}' list-sessions 2>&1`, { encoding: "utf-8" });
-  } catch (e) {
-    raw = e.message;
-  }
-  res.json({
-    socket: tmux.TMUX_SOCKET,
-    homedir: require("os").homedir(),
-    sessions: tmux.listSessions(),
-    claudeSessions: tmux.getClaudeSessions(),
-    rawTmux: raw,
-  });
-});
-
-// --- Projects ---
-
-app.get("/api/projects", (_req, res) => {
-  res.json(getProjects());
-});
-
-app.post("/api/projects", (req, res) => {
-  const { name, path: projectPath } = req.body;
-  if (!name || !projectPath) {
-    return res.status(400).json({ error: "name and path required" });
+app.post("/api/gemini/install", async (_req, res) => {
+  if (gemini.isInstalled(config)) {
+    return res.json({ ok: true, binPath: gemini.getBinPath(config), alreadyInstalled: true });
   }
   try {
-    const projects = addProject(name, projectPath);
-    res.json(projects);
+    const binPath = gemini.install();
+    // Persist the resolved path to config so launchd can find it
+    config.geminiBin = binPath;
+    const { saveConfig } = require("./lib/projects");
+    if (saveConfig) saveConfig(config);
+    res.json({ ok: true, binPath });
   } catch (err) {
-    res.status(400).json({ error: err.message });
+    res.status(500).json({ error: `Failed to install gemini-cli: ${err.message}` });
   }
 });
 
-// --- Processes (all Claude instances on this machine) ---
-
-app.get("/api/processes", (_req, res) => {
-  // Get PIDs directly from tmux panes — these are the managed shell processes
-  const managedPids = tmux.getManagedPids();
-  const allProcs = processes.findClaudeProcesses(managedPids);
-  res.json(allProcs);
+// Available Gemini models (cached, refreshed hourly)
+app.get("/api/gemini/models", async (_req, res) => {
+  const models = await gemini.fetchModels(config);
+  res.json(models);
 });
 
-app.post("/api/processes/kill", (req, res) => {
-  const { pid } = req.body;
-  if (!pid) {
-    return res.status(400).json({ error: "pid required" });
-  }
-  const ok = processes.killProcess(pid);
-  res.json({ ok });
+// Gemini quota (OAuth users — reads cached tokens from ~/.gemini/oauth_creds.json)
+app.get("/api/gemini/quota", async (_req, res) => {
+  const quota = await gemini.fetchQuota();
+  res.json(quota || { buckets: [] });
 });
 
-// --- Permission-aware Claude args builder ---
+// Force an immediate auth re-check (used after OAuth login)
+app.post("/api/gemini/auth/recheck", async (_req, res) => {
+  const result = await gemini.checkAuth(config);
+  res.json(result);
+});
 
-function buildClaudeArgs(permissionMode, opts = {}) {
-  const parts = [];
-  if (permissionMode === "yolo") {
-    parts.push("--dangerously-skip-permissions");
-  } else if (permissionMode === "strict") {
-    parts.push("--dangerously-skip-permissions");
-    parts.push("--allowedTools", "Read,Glob,Grep,WebSearch,WebFetch");
+app.get("/api/gemini/sessions/:project", (req, res) => {
+  const { project } = req.params;
+  const sessData = gemini.getSessions(project);
+  res.json({
+    ...sessData,
+    active: gemini.isActive(project),
+  });
+});
+
+// New Chat — creates a new session slot, preserves old ones
+app.post("/api/gemini/clear/:project", (req, res) => {
+  const { project } = req.params;
+  const session = gemini.newSession(project);
+  res.json({ ok: true, session });
+});
+
+// Switch to a specific session number
+app.post("/api/gemini/sessions/:project/switch", (req, res) => {
+  const { project } = req.params;
+  const { session } = req.body;
+  if (!session) return res.status(400).json({ error: "session number required" });
+  const ok = gemini.setCurrentSession(project, Number(session));
+  if (!ok) return res.status(404).json({ error: `session ${session} not found` });
+  res.json({ ok: true, current: Number(session) });
+});
+
+// Chat history (server-side, synced across devices)
+app.get("/api/gemini/history/:project", (req, res) => {
+  const sessionNum = req.query.session ? Number(req.query.session) : undefined;
+  res.json(gemini.getHistory(req.params.project, sessionNum));
+});
+
+app.post("/api/gemini/history/:project", (req, res) => {
+  const { role, content } = req.body;
+  if (!role || !content) return res.status(400).json({ error: "role and content required" });
+  gemini.pushHistory(req.params.project, role, content);
+  res.json({ ok: true });
+});
+
+// Save Gemini API key (global or per-workspace)
+app.post("/api/gemini/apikey", (req, res) => {
+  const { apiKey, workspace } = req.body;
+  if (!apiKey) return res.status(400).json({ error: "apiKey required" });
+
+  const { loadConfig, saveConfig } = require("./lib/projects");
+  const cfg = loadConfig();
+
+  if (workspace) {
+    // Per-workspace key
+    const proj = (cfg.projects || []).find((p) => p.name === workspace);
+    if (!proj) return res.status(404).json({ error: `workspace "${workspace}" not found` });
+    proj.geminiApiKey = apiKey;
+  } else {
+    // Global key
+    cfg.geminiApiKey = apiKey;
   }
-  // "ask" mode: no permission flags — Claude prompts for approval in terminal
-  if (opts.resumeSessionId) parts.push("--resume", opts.resumeSessionId);
-  else if (opts.continueSession) parts.push("--continue");
-  parts.push("remote-control");
-  return parts.join(" ");
+
+  saveConfig(cfg);
+  config = cfg; // refresh in-memory config
+
+  // Re-probe auth with the new key
+  gemini.checkAuth(config);
+
+  res.json({ ok: true, scope: workspace || "global" });
+});
+
+// Delete Gemini API key
+app.delete("/api/gemini/apikey", (req, res) => {
+  const { workspace } = req.body || {};
+  const { loadConfig, saveConfig } = require("./lib/projects");
+  const cfg = loadConfig();
+
+  if (workspace) {
+    const proj = (cfg.projects || []).find((p) => p.name === workspace);
+    if (proj) delete proj.geminiApiKey;
+  } else {
+    delete cfg.geminiApiKey;
+  }
+
+  saveConfig(cfg);
+  config = cfg;
+  gemini.checkAuth(config);
+  res.json({ ok: true });
+});
+
+// Get current API key info (masked) for UI
+function geminiApiKeyInfo(workspace) {
+  const proj = workspace ? (config.projects || []).find((p) => p.name === workspace) : null;
+  const workspaceKey = proj && proj.geminiApiKey ? proj.geminiApiKey : null;
+  const globalKey = config.geminiApiKey || null;
+  const activeKey = workspaceKey || globalKey;
+
+  return {
+    hasKey: !!activeKey,
+    scope: workspaceKey ? "workspace" : (globalKey ? "global" : null),
+    masked: activeKey ? activeKey.slice(0, 6) + "..." + activeKey.slice(-4) : null,
+    hasGlobalKey: !!globalKey,
+    hasWorkspaceKey: !!workspaceKey,
+  };
 }
 
-// --- Sessions ---
-
-app.get("/api/sessions", (_req, res) => {
-  const projects = getProjects();
-  const claudeSessions = tmux.getClaudeSessions();
-  const ttydInstances = ttyd.getRunning();
-
-  const sessions = projects.map((project) => {
-    const tmuxName = tmux.sessionName(project.name);
-    const tmuxSession = claudeSessions.find((s) => s.name === tmuxName);
-    const ttydInstance = ttydInstances.find((t) => t.project === project.name);
-
-    const gitStatus = git.getStatus(project.path);
-    const remoteUrl = git.getRemoteUrl(project.path);
-
-    const tracked = sessionTracker.getSessions(project.name);
-    // Use mtime of session .jsonl files as activity — reflects real work, not just session start
-    const lastActivity = claude.getProjectLastActivity(project.path)
-      || (tracked.length ? tracked[0].startedAt : 0);
-
-    // Determine session status: running, exited, or stopped
-    let status = "stopped";
-    if (tmuxSession) {
-      status = tmux.isClaudeAlive(tmuxName) ? "running" : "exited";
-    }
-
-    return {
-      project: project.name,
-      projectPath: project.path,
-      permissionMode: project.permissionMode || "yolo",
-      running: status === "running",
-      status,
-      claudeUrl: tmuxSession ? sessionTracker.getClaudeUrl(project.name) : null,
-      tmux: tmuxSession || null,
-      ttyd: ttydInstance || null,
-      git: gitStatus,
-      remoteUrl,
-      sessionCount: tracked.length,
-      lastActivity,
-    };
-  });
-
-  res.json(sessions);
+app.get("/api/gemini/apikey/:workspace", (req, res) => {
+  res.json(geminiApiKeyInfo(req.params.workspace));
 });
 
-app.get("/api/history", (req, res) => {
-  const { project } = req.query;
-  if (!project) {
-    return res.status(400).json({ error: "project query param required" });
-  }
-
-  const proj = getProject(project);
-  if (!proj) {
-    return res.status(404).json({ error: `project "${project}" not found` });
-  }
-
-  // Primary: use our tracked session IDs (correct workspace mapping)
-  const trackedIds = sessionTracker.getSessionIds(project);
-  const trackedSessions = claude.getSessionsByIds(trackedIds);
-
-  // Fallback: also include path-based sessions (for pre-tracking history)
-  const pathSessions = claude.getRecentSessions(proj.path);
-
-  // Merge and dedup by sessionId, tracked takes priority
-  const seen = new Set(trackedSessions.map((s) => s.sessionId));
-  for (const s of pathSessions) {
-    if (!seen.has(s.sessionId)) {
-      trackedSessions.push(s);
-      seen.add(s.sessionId);
-    }
-  }
-
-  trackedSessions.sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
-  res.json(trackedSessions.slice(0, 20));
+app.get("/api/gemini/apikey", (_req, res) => {
+  res.json(geminiApiKeyInfo(null));
 });
 
-app.post("/api/sessions/start", async (req, res) => {
-  const { project, resumeSessionId, continueSession } = req.body;
-  if (!project) {
-    return res.status(400).json({ error: "project required" });
-  }
+// Spawn gemini in tmux, scrape the OAuth URL from pane output, and open it in the browser
+app.post("/api/gemini/auth/login", async (_req, res) => {
+  const tmuxName = "gemini-auth";
 
-  const proj = getProject(project);
-  if (!proj) {
-    return res.status(404).json({ error: `project "${project}" not found` });
-  }
+  // Kill existing auth session if any
+  try { tmux.killSession(tmuxName); } catch {}
 
-  const tmuxName = tmux.sessionName(project);
-
-  if (tmux.sessionExists(tmuxName)) {
-    return res.status(409).json({ error: "Session already running" });
-  }
-
-  const startTs = Date.now();
+  const geminiBin = gemini.getBinPath(config) || "gemini";
+  const { execSync } = require("child_process");
+  const TMUX = `tmux -S '${tmux.TMUX_SOCKET}'`;
+  // Run bare `gemini` which will print an OAuth URL if not authenticated
+  const shellCmd = `source ~/.zshrc 2>/dev/null; ${geminiBin}`;
+  const tmuxCmd = `${TMUX} new-session -d -s '${tmuxName}' /bin/zsh -c '${shellCmd.replace(/'/g, "'\\''")}'`;
 
   try {
-    const permissionMode = proj.permissionMode || "yolo";
-    const claudeArgs = buildClaudeArgs(permissionMode, { resumeSessionId, continueSession });
+    execSync(tmuxCmd, { stdio: "pipe", env: { ...process.env } });
+  } catch (err) {
+    return res.status(500).json({ error: `Failed to create auth session: ${err.message}` });
+  }
 
-    tmux.createSession(tmuxName, proj.path, claudeArgs);
+  // Poll tmux pane output to find the OAuth URL (up to 15s)
+  const urlRe = /https:\/\/accounts\.google\.com[^\s]+|https:\/\/[^\s]*google[^\s]*\/auth[^\s]*/;
+  let authUrl = null;
 
-    // Wait briefly, then verify the session survived (shell might exit if claude fails)
+  for (let i = 0; i < 30; i++) {
     await new Promise((r) => setTimeout(r, 500));
-    if (!tmux.sessionExists(tmuxName)) {
-      return res.status(500).json({
-        error: `Session "${tmuxName}" died immediately after creation. Check that claude can start in ${proj.path}`,
-      });
+    const paneText = tmux.capturePane(tmuxName);
+    if (!paneText) continue;
+    const match = paneText.match(urlRe);
+    if (match) {
+      authUrl = match[0];
+      break;
     }
+    // Session may have already exited (e.g. already authenticated)
+    if (!tmux.sessionExists(tmuxName)) break;
+  }
 
-    const port = ttyd.allocatePort(config.ttydBasePort);
-    try {
-      ttyd.start(project, tmuxName, port);
-    } catch (err) {
-      console.error(`Failed to start ttyd for ${project}:`, err.message);
-    }
-
-    // Track session ID: known for resume, detect in background for fresh/continue
-    if (resumeSessionId) {
-      sessionTracker.addSession(project, resumeSessionId, "resume");
+  if (authUrl) {
+    // Open the URL directly in the user's default browser
+    try { execSync(`open ${JSON.stringify(authUrl)}`, { stdio: "pipe" }); } catch {}
+    res.json({ ok: true, url: authUrl, message: "Browser opened for authentication" });
+  } else {
+    // No URL found — maybe already authenticated, or gemini printed something unexpected
+    try { tmux.killSession(tmuxName); } catch {}
+    const status = await gemini.checkAuth(config);
+    if (status.loggedIn) {
+      res.json({ ok: true, alreadyAuthenticated: true });
     } else {
-      sessionTracker.detectAndTrack(project, startTs);
+      res.status(500).json({ error: "Could not extract OAuth URL. Try running `gemini` in your terminal to authenticate." });
     }
-
-    // Capture the claude.ai URL in background (stable for process lifetime)
-    sessionTracker.captureClaudeUrl(project, tmuxName);
-
-    res.json({ ok: true, tmuxSession: tmuxName, ttydPort: port });
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
-});
-
-app.post("/api/sessions/stop", (req, res) => {
-  const { project } = req.body;
-  if (!project) {
-    return res.status(400).json({ error: "project required" });
   }
 
-  const tmuxName = tmux.sessionName(project);
-
-  try {
-    ttyd.stop(project);
-  } catch {
-    // ttyd may not be running
-  }
-
-  sessionTracker.clearClaudeUrl(project);
-
-  try {
-    tmux.killSession(tmuxName);
-    res.json({ ok: true });
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
-});
-
-app.post("/api/projects/remove", (req, res) => {
-  const { project, force } = req.body;
-  if (!project) {
-    return res.status(400).json({ error: "project required" });
-  }
-
-  const proj = getProject(project);
-  if (!proj) {
-    return res.status(404).json({ error: `project "${project}" not found` });
-  }
-
-  // Refuse if session is running
-  const tmuxName = tmux.sessionName(project);
-  if (tmux.sessionExists(tmuxName)) {
-    return res.status(409).json({ error: "Stop the workspace before removing it" });
-  }
-
-  // Check git status — refuse if dirty unless forced
-  const status = git.getStatus(proj.path);
-  if (status && (status.dirtyFiles || status.unpushed) && !force) {
-    return res.status(409).json({
-      error: "Workspace has uncommitted or unpushed changes",
-      dirty: true,
-      dirtyFiles: status.dirtyFiles,
-      unpushed: status.unpushed,
-    });
-  }
-
-  try {
-    // If it's a worktree (`.git` is a file, not a directory), remove it
-    const dotGit = path.join(proj.path, ".git");
-    const isWorktree = fs.existsSync(dotGit) && fs.statSync(dotGit).isFile();
-    if (isWorktree && config.reposDir) {
-      // Derive main repo from project naming convention: {repo}--{branch}
-      const repoName = project.split("--")[0];
-      const mainRepoDir = path.join(config.reposDir, repoName);
-      if (git.isGitRepo(mainRepoDir)) {
-        git.removeWorktree(mainRepoDir, proj.path);
-      }
+  // Auto-cleanup: poll for session end, then re-check auth
+  const cleanup = setInterval(() => {
+    if (!tmux.sessionExists(tmuxName)) {
+      clearInterval(cleanup);
+      gemini.checkAuth(config);
     }
+  }, 3000);
 
-    // Clean up session tracker URL cache
-    sessionTracker.clearClaudeUrl(project);
-
-    // Unregister from config
-    removeProject(project);
-
-    res.json({ ok: true, worktreeRemoved: isWorktree });
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
+  // Safety: stop polling after 10 min
+  setTimeout(() => {
+    clearInterval(cleanup);
+    try { tmux.killSession(tmuxName); } catch {}
+  }, 10 * 60 * 1000);
 });
 
-app.post("/api/projects/permission", (req, res) => {
-  const { project, mode } = req.body;
-  if (!project || !mode) {
-    return res.status(400).json({ error: "project and mode required" });
-  }
-  try {
-    setPermissionMode(project, mode);
-    res.json({ ok: true, mode });
-  } catch (err) {
-    res.status(400).json({ error: err.message });
-  }
+// --- Claude Chat ---
+
+app.get("/api/claude-chat/status", (_req, res) => {
+  res.json({ installed: claudeChat.isInstalled(config), binPath: claudeChat.getBinPath(config) });
 });
 
-app.post("/api/sessions/restart", async (req, res) => {
-  const { project } = req.body;
-  if (!project) {
-    return res.status(400).json({ error: "project required" });
-  }
-
-  const proj = getProject(project);
-  if (!proj) {
-    return res.status(404).json({ error: `project "${project}" not found` });
-  }
-
-  const tmuxName = tmux.sessionName(project);
-
-  // Stop existing
-  sessionTracker.clearClaudeUrl(project);
-  try {
-    ttyd.stop(project);
-  } catch {}
-  try {
-    tmux.killSession(tmuxName);
-  } catch {}
-
-  // Wait for old processes to die before starting new ones
-  await new Promise((r) => setTimeout(r, 1000));
-
-  const startTs = Date.now();
-
-  try {
-    const permissionMode = proj.permissionMode || "yolo";
-    const claudeArgs = buildClaudeArgs(permissionMode, { continueSession: true });
-    tmux.createSession(tmuxName, proj.path, claudeArgs);
-
-    const port = ttyd.allocatePort(config.ttydBasePort);
-    try {
-      ttyd.start(project, tmuxName, port);
-    } catch (err) {
-      console.error(`Failed to start ttyd for ${project}:`, err.message);
-    }
-
-    // Detect the (continued) session ID and capture URL in background
-    sessionTracker.detectAndTrack(project, startTs);
-    sessionTracker.captureClaudeUrl(project, tmuxName);
-
-    res.json({ ok: true, tmuxSession: tmuxName, ttydPort: port });
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
+app.get("/api/claude-chat/models", (_req, res) => {
+  res.json(claudeChat.getModels());
 });
 
-// --- Token usage ---
-
-app.get("/api/usage", (req, res) => {
-  const hours = Math.min(parseInt(req.query.hours) || 24, 168);
-  const buckets = claude.getTokenUsage(hours);
-  const rateLimits = claude.getRateLimitEvents(168); // always scan full week
-  res.json({ buckets, rateLimits });
+app.get("/api/claude-chat/sessions/:project", (req, res) => {
+  const { project } = req.params;
+  const sessData = claudeChat.getSessions(project);
+  res.json({
+    ...sessData,
+    active: claudeChat.isActive(project),
+  });
 });
 
-// --- GitHub & Repos ---
-
-app.get("/api/github/repos", (_req, res) => {
-  try {
-    const repos = github.listRepos();
-    const reposDir = config.reposDir;
-
-    // Annotate with local clone status
-    const annotated = repos.map((r) => ({
-      ...r,
-      cloned: reposDir ? fs.existsSync(path.join(reposDir, r.name, ".git")) : false,
-    }));
-
-    res.json(annotated);
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
+// New Chat — creates a new session slot, preserves old ones
+app.post("/api/claude-chat/clear/:project", (req, res) => {
+  const { project } = req.params;
+  const session = claudeChat.newSession(project);
+  res.json({ ok: true, session });
 });
 
-app.get("/api/repos", (_req, res) => {
-  if (!config.reposDir) {
-    return res.status(400).json({ error: "reposDir not configured" });
-  }
-  const repos = git.scanRepos(config.reposDir);
-  res.json(repos);
+// Switch to a specific session number
+app.post("/api/claude-chat/sessions/:project/switch", (req, res) => {
+  const { project } = req.params;
+  const { session } = req.body;
+  if (!session) return res.status(400).json({ error: "session number required" });
+  const ok = claudeChat.setCurrentSession(project, Number(session));
+  if (!ok) return res.status(404).json({ error: `session ${session} not found` });
+  res.json({ ok: true, current: Number(session) });
 });
 
-app.get("/api/repos/:name/worktrees", (req, res) => {
-  if (!config.reposDir) {
-    return res.status(400).json({ error: "reposDir not configured" });
-  }
-  const repoDir = path.join(config.reposDir, req.params.name);
-  if (!git.isGitRepo(repoDir)) {
-    return res.status(404).json({ error: `repo "${req.params.name}" not found locally` });
-  }
-  const worktrees = git.listWorktrees(repoDir);
-  res.json(worktrees);
+app.get("/api/claude-chat/history/:project", (req, res) => {
+  const sessionNum = req.query.session ? Number(req.query.session) : undefined;
+  res.json(claudeChat.getHistory(req.params.project, sessionNum));
 });
 
-// --- Create new repo ---
-
-app.post("/api/repos/create", (req, res) => {
-  const { name, remoteUrl } = req.body;
-  if (!name) {
-    return res.status(400).json({ error: "name required" });
-  }
-  if (!config.reposDir) {
-    return res.status(400).json({ error: "reposDir not configured" });
-  }
-  if (!/^[a-zA-Z0-9._-]+$/.test(name)) {
-    return res.status(400).json({ error: "Invalid repo name (letters, numbers, dots, hyphens, underscores only)" });
-  }
-
-  const repoDir = path.join(config.reposDir, name);
-  if (fs.existsSync(repoDir)) {
-    return res.status(409).json({ error: `Directory already exists: ${name}` });
-  }
-
-  try {
-    git.initRepo(repoDir, remoteUrl || null);
-
-    // Register as a project
-    try {
-      addProject(name, repoDir);
-    } catch {
-      // Already registered is fine
-    }
-
-    res.json({ ok: true, name, path: repoDir });
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
+app.post("/api/claude-chat/history/:project", (req, res) => {
+  const { role, content } = req.body;
+  if (!role || !content) return res.status(400).json({ error: "role and content required" });
+  claudeChat.pushHistory(req.params.project, role, content);
+  res.json({ ok: true });
 });
 
-// --- New session (clone + worktree + start) ---
+// Save Claude API key (global or per-workspace)
+app.post("/api/claude-chat/apikey", (req, res) => {
+  const { apiKey, workspace } = req.body;
+  if (!apiKey) return res.status(400).json({ error: "apiKey required" });
 
-app.post("/api/sessions/new", (req, res) => {
-  const { repo, branch } = req.body;
-  if (!repo) {
-    return res.status(400).json({ error: "repo required" });
+  const { loadConfig, saveConfig } = require("./lib/projects");
+  const cfg = loadConfig();
+
+  if (workspace) {
+    const proj = (cfg.projects || []).find((p) => p.name === workspace);
+    if (!proj) return res.status(404).json({ error: `workspace "${workspace}" not found` });
+    proj.claudeApiKey = apiKey;
+  } else {
+    cfg.claudeApiKey = apiKey;
   }
-  if (!config.reposDir) {
-    return res.status(400).json({ error: "reposDir not configured" });
+
+  saveConfig(cfg);
+  config = cfg;
+  claudeChat.checkAuth(config);
+  res.json({ ok: true, scope: workspace || "global" });
+});
+
+app.delete("/api/claude-chat/apikey", (req, res) => {
+  const { workspace } = req.body || {};
+  const { loadConfig, saveConfig } = require("./lib/projects");
+  const cfg = loadConfig();
+
+  if (workspace) {
+    const proj = (cfg.projects || []).find((p) => p.name === workspace);
+    if (proj) delete proj.claudeApiKey;
+  } else {
+    delete cfg.claudeApiKey;
   }
 
-  const repoDir = path.join(config.reposDir, repo);
-  const branchName = branch || `claude-${Date.now()}`;
-  const worktreeDir = path.join(config.reposDir, `${repo}--${branchName}`);
-  const projectName = `${repo}--${branchName}`;
+  saveConfig(cfg);
+  config = cfg;
+  claudeChat.checkAuth(config);
+  res.json({ ok: true });
+});
 
-  try {
-    // Clone if not present
-    if (!git.isGitRepo(repoDir)) {
-      // Look up SSH URL from GitHub
-      let sshUrl;
-      try {
-        const repos = github.listRepos();
-        const ghRepo = repos.find((r) => r.name === repo);
-        if (!ghRepo) {
-          return res.status(404).json({ error: `repo "${repo}" not found on GitHub` });
-        }
-        sshUrl = ghRepo.sshUrl;
-      } catch (err) {
-        return res.status(500).json({ error: `Failed to list GitHub repos: ${err.message}` });
-      }
-
-      git.cloneRepo(sshUrl, repoDir);
-    }
-
-    // Create worktree
-    if (fs.existsSync(worktreeDir)) {
-      return res.status(409).json({ error: `Worktree directory already exists: ${worktreeDir}` });
-    }
-
-    git.addWorktree(repoDir, worktreeDir, branchName);
-
-    // Register as project
-    try {
-      addProject(projectName, worktreeDir);
-    } catch {
-      // Already registered is fine
-    }
-
-    // Start tmux + ttyd
-    const tmuxName = tmux.sessionName(projectName);
-    if (tmux.sessionExists(tmuxName)) {
-      return res.status(409).json({ error: `tmux session "${tmuxName}" already exists` });
-    }
-
-    const startTs = Date.now();
-    const claudeArgs = buildClaudeArgs("yolo");
-    tmux.createSession(tmuxName, worktreeDir, claudeArgs);
-
-    const port = ttyd.allocatePort(config.ttydBasePort);
-    try {
-      ttyd.start(projectName, tmuxName, port);
-    } catch (err) {
-      console.error(`Failed to start ttyd for ${projectName}:`, err.message);
-    }
-
-    // Detect the new session ID and capture URL in background
-    sessionTracker.detectAndTrack(projectName, startTs);
-    sessionTracker.captureClaudeUrl(projectName, tmuxName);
-
-    res.json({
-      ok: true,
-      project: projectName,
-      worktree: worktreeDir,
-      branch: branchName,
-      tmuxSession: tmuxName,
-      ttydPort: port,
-    });
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
+app.get("/api/claude-chat/apikey/:workspace", (req, res) => {
+  const proj = req.params.workspace ? (config.projects || []).find((p) => p.name === req.params.workspace) : null;
+  const workspaceKey = proj && proj.claudeApiKey ? proj.claudeApiKey : null;
+  const globalKey = config.claudeApiKey || null;
+  const activeKey = workspaceKey || globalKey;
+  res.json({
+    hasKey: !!activeKey,
+    scope: workspaceKey ? "workspace" : (globalKey ? "global" : null),
+  });
 });
 
 // --- Start server ---
@@ -592,13 +376,144 @@ sessionTracker.recoverUrls(() => {
 const connector = require("./konnect/client");
 connector.init(app, config);
 
-const PORT = config.port || 9876;
-app.listen(PORT, "0.0.0.0", () => {
+const PORT = process.env.PORT || config.port || 9876;
+const server = http.createServer(app);
+
+// --- Gemini WebSocket ---
+
+const wss = new WebSocket.Server({ server, path: "/ws/gemini" });
+
+let wsClientId = 0;
+wss.on("connection", (ws) => {
+  const clientId = ++wsClientId;
+  console.log(`[gemini-ws] client #${clientId} connected`);
+
+  ws.on("close", (code, reason) => {
+    console.log(`[gemini-ws] client #${clientId} disconnected code=${code} reason=${reason || ""}`);
+  });
+
+  ws.on("message", (raw) => {
+    let msg;
+    try {
+      msg = JSON.parse(raw);
+    } catch {
+      console.log(`[gemini-ws] client #${clientId} invalid JSON`);
+      ws.send(JSON.stringify({ type: "error", message: "Invalid JSON" }));
+      return;
+    }
+
+    const { type, workspace, message, model, cli } = msg;
+    const backend = cli === "claude" ? "claude" : "gemini";
+    const backendModule = backend === "claude" ? claudeChat : gemini;
+    console.log(`[gemini-ws] client #${clientId} msg type=${type} workspace=${workspace || ""} model=${model || "auto"} cli=${backend} msgLen=${message ? message.length : 0}`);
+
+    if (type === "send") {
+      if (!workspace || !message) {
+        ws.send(JSON.stringify({ type: "error", workspace, message: "workspace and message required" }));
+        return;
+      }
+
+      const proj = getProject(workspace);
+      if (!proj) {
+        console.log(`[gemini-ws] project not found: ${workspace}`);
+        ws.send(JSON.stringify({ type: "error", workspace, message: `project "${workspace}" not found` }));
+        return;
+      }
+
+      try {
+        // Persist user message
+        backendModule.pushHistory(workspace, "user", message);
+
+        // Resolve API key: per-workspace > global
+        const apiKeyField = backend === "claude" ? "claudeApiKey" : "geminiApiKey";
+        const globalKeyField = backend === "claude" ? "claudeApiKey" : "geminiApiKey";
+        const apiKey = proj[apiKeyField] || config[globalKeyField] || undefined;
+        console.log(`[gemini-ws] spawning ${backend} for workspace=${workspace} path=${proj.path} hasApiKey=${!!apiKey}`);
+        const handle = backendModule.sendMessage(workspace, proj.path, message, config, { apiKey, model });
+
+        // Accumulate assistant text for history persistence
+        let assistantText = "";
+        let eventsSent = 0;
+
+        handle.onEvent((event) => {
+          eventsSent++;
+          if (ws.readyState === WebSocket.OPEN) {
+            ws.send(JSON.stringify({ ...event, workspace }));
+          } else {
+            console.log(`[gemini-ws] client #${clientId} ws not open, dropping event #${eventsSent} type=${event.type}`);
+          }
+          // Accumulate assistant message content
+          if (event.type === "message" && (event.role === "assistant" || !event.role)) {
+            assistantText += event.content || "";
+          }
+        });
+
+        handle.onDone(({ code, stderr }) => {
+          console.log(`[gemini-ws] done workspace=${workspace} cli=${backend} code=${code} eventsSent=${eventsSent} assistantLen=${assistantText.length}`);
+          // Persist assistant reply
+          if (assistantText) {
+            backendModule.pushHistory(workspace, "assistant", assistantText);
+          }
+          if (ws.readyState === WebSocket.OPEN) {
+            ws.send(JSON.stringify({
+              type: "done",
+              workspace,
+              exitCode: code,
+              stderr: stderr || undefined,
+            }));
+          }
+        });
+
+        handle.onError((err) => {
+          console.error(`[gemini-ws] error workspace=${workspace}: ${err.message}`);
+          if (ws.readyState === WebSocket.OPEN) {
+            ws.send(JSON.stringify({
+              type: "error",
+              workspace,
+              message: err.message,
+            }));
+          }
+        });
+      } catch (err) {
+        console.error(`[gemini-ws] catch workspace=${workspace}: ${err.message}`);
+        ws.send(JSON.stringify({ type: "error", workspace, message: err.message }));
+      }
+    } else if (type === "stop") {
+      console.log(`[gemini-ws] stop workspace=${workspace} cli=${backend}`);
+      if (workspace) {
+        backendModule.stopProcess(workspace);
+        // Send done immediately — the killed process won't trigger onDone
+        if (ws.readyState === WebSocket.OPEN) {
+          ws.send(JSON.stringify({ type: "done", workspace, exitCode: null, stopped: true }));
+        }
+      }
+    }
+  });
+});
+
+server.listen(PORT, "0.0.0.0", () => {
   console.log(`Klaudii manager running at http://0.0.0.0:${PORT}`);
   console.log(`  tmux: ${tmux.isTmuxInstalled() ? "installed" : "NOT FOUND — run: brew install tmux"}`);
   console.log(`  ttyd: ${ttyd.isTtydInstalled() ? "installed" : "NOT FOUND — run: brew install ttyd"}`);
+  console.log(`  gemini: ${gemini.isInstalled(config) ? "installed" : "not found"}`);
+  console.log(`  claude-chat: ${claudeChat.isInstalled(config) ? "installed" : "not found"}`);
   const recovered = ttyd.getRunning();
   if (recovered.length) {
     console.log(`  recovered ${recovered.length} ttyd instance(s): ${recovered.map(r => `${r.project}:${r.port}`).join(", ")}`);
   }
+
+  // Ensure all workspace folders are trusted by Gemini CLI
+  gemini.ensureFolderTrust(config.reposDir);
+
+  // Start periodic gemini auth probe (immediate + every 5 min)
+  gemini.startAuthCheck(config);
+
+  // Start periodic gemini model list refresh (immediate + every hour)
+  gemini.startModelRefresh(config);
+
+  // Start periodic gemini quota refresh (immediate + every 5 min, OAuth users only)
+  gemini.startQuotaRefresh();
+
+  // Start periodic claude-chat auth probe (immediate + every 5 min)
+  claudeChat.startAuthCheck(config);
 });

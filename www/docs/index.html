@@ -1,0 +1,672 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Klaudii Docs</title>
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 512 512'><defs><linearGradient id='kg' x1='256' y1='80' x2='256' y2='432' gradientUnits='userSpaceOnUse'><stop offset='0%25' stop-color='%2386efac'/><stop offset='50%25' stop-color='%234ade80'/><stop offset='100%25' stop-color='%2322c55e'/></linearGradient></defs><rect x='132' y='100' width='40' height='312' rx='20' fill='url(%23kg)'/><line x1='188' y1='256' x2='362' y2='120' stroke='url(%23kg)' stroke-width='40' stroke-linecap='round'/><line x1='188' y1='256' x2='362' y2='392' stroke='url(%23kg)' stroke-width='40' stroke-linecap='round'/></svg>">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="docs.css">
+</head>
+<body>
+
+  <!-- TOP BAR -->
+  <header class="topbar">
+    <a href="/" class="topbar-logo">
+      <svg width="24" height="24" viewBox="0 0 512 512" xmlns="http://www.w3.org/2000/svg">
+        <defs><linearGradient id="kg" x1="256" y1="80" x2="256" y2="432" gradientUnits="userSpaceOnUse"><stop offset="0%" stop-color="#86efac"/><stop offset="50%" stop-color="#4ade80"/><stop offset="100%" stop-color="#22c55e"/></linearGradient></defs>
+        <rect x="132" y="100" width="40" height="312" rx="20" fill="url(#kg)"/>
+        <line x1="188" y1="256" x2="362" y2="120" stroke="url(#kg)" stroke-width="40" stroke-linecap="round"/>
+        <line x1="188" y1="256" x2="362" y2="392" stroke="url(#kg)" stroke-width="40" stroke-linecap="round"/>
+      </svg>
+      <span>Klaudii <span class="topbar-docs-label">Docs</span></span>
+    </a>
+    <div class="topbar-right">
+      <a href="https://github.com/klaudiihq/klaudii" class="topbar-link">GitHub</a>
+      <a href="/" class="topbar-link">Home</a>
+    </div>
+    <button class="sidebar-toggle" id="sidebar-toggle" aria-label="Toggle sidebar">
+      <span></span><span></span><span></span>
+    </button>
+  </header>
+
+  <div class="docs-layout">
+
+    <!-- SIDEBAR -->
+    <nav class="sidebar" id="sidebar">
+      <div class="sidebar-section">
+        <div class="sidebar-heading">Getting Started</div>
+        <a href="#installation" class="sidebar-link active">Installation</a>
+        <a href="#quickstart" class="sidebar-link">Quick Start</a>
+        <a href="#requirements" class="sidebar-link">Requirements</a>
+      </div>
+      <div class="sidebar-section">
+        <div class="sidebar-heading">Core Concepts</div>
+        <a href="#workspaces" class="sidebar-link">Workspaces</a>
+        <a href="#sessions" class="sidebar-link">Sessions</a>
+        <a href="#permissions" class="sidebar-link">Permission Modes</a>
+        <a href="#terminal" class="sidebar-link">Web Terminal</a>
+        <a href="#git" class="sidebar-link">Git Integration</a>
+        <a href="#github" class="sidebar-link">GitHub Integration</a>
+        <a href="#resources" class="sidebar-link">Resource Monitoring</a>
+      </div>
+      <div class="sidebar-section">
+        <div class="sidebar-heading">Kloud Konnect</div>
+        <a href="#cloud-overview" class="sidebar-link">Overview</a>
+        <a href="#cloud-pairing" class="sidebar-link">Pairing Setup</a>
+        <a href="#cloud-security" class="sidebar-link">Security Model</a>
+        <a href="#cloud-self-host" class="sidebar-link">Self-Hosting</a>
+      </div>
+      <div class="sidebar-section">
+        <div class="sidebar-heading">Chrome Extension</div>
+        <a href="#ext-install" class="sidebar-link">Installation</a>
+        <a href="#ext-features" class="sidebar-link">Features</a>
+        <a href="#ext-settings" class="sidebar-link">Settings</a>
+      </div>
+      <div class="sidebar-section">
+        <div class="sidebar-heading">Reference</div>
+        <a href="#configuration" class="sidebar-link">Configuration</a>
+        <a href="#architecture" class="sidebar-link">Architecture</a>
+        <a href="#troubleshooting" class="sidebar-link">Troubleshooting</a>
+      </div>
+    </nav>
+
+    <!-- MAIN CONTENT -->
+    <main class="content">
+
+      <!-- INSTALLATION -->
+      <section id="installation">
+        <h1>Installation</h1>
+        <p>Klaudii installs on your Mac in about 30 seconds. One command does everything: checks dependencies, installs system tools, sets up a background service, and opens your dashboard.</p>
+
+        <div class="code-block">
+          <div class="code-header">
+            <span>Terminal</span>
+            <button class="code-copy" onclick="copyCode(this)">Copy</button>
+          </div>
+          <pre><code>curl -fsSL https://klaudii.com/setup.sh | bash</code></pre>
+        </div>
+
+        <p>The installer will:</p>
+        <ol>
+          <li>Verify Node.js 18+ is installed</li>
+          <li>Install <code>tmux</code> and <code>ttyd</code> via Homebrew (if not present)</li>
+          <li>Clone Klaudii to <code>~/.klaudii</code></li>
+          <li>Create <code>config.json</code> with your home directory paths</li>
+          <li>Register a <code>launchd</code> agent that auto-starts on login</li>
+          <li>Compile the menu bar app (optional, requires Xcode CLI tools)</li>
+          <li>Open the dashboard at <a href="http://localhost:9876">http://localhost:9876</a></li>
+        </ol>
+
+        <div class="callout">
+          <strong>Already have it?</strong> Pull the latest and restart:
+          <div class="code-block code-block-inline">
+            <pre><code>cd ~/.klaudii && git pull && launchctl kickstart -k gui/$(id -u)/com.klaudii</code></pre>
+          </div>
+        </div>
+      </section>
+
+      <!-- QUICKSTART -->
+      <section id="quickstart">
+        <h2>Quick Start</h2>
+        <p>After installation, open <a href="http://localhost:9876">localhost:9876</a> in your browser. Here's how to get your first workspace running:</p>
+
+        <div class="steps">
+          <div class="step">
+            <div class="step-num">1</div>
+            <div>
+              <h3>Create a workspace</h3>
+              <p>Click <strong>+ New Session</strong> in the top right. Search for a GitHub repo (requires <code>gh</code> CLI authenticated), enter a branch name, and click Start.</p>
+              <p>Klaudii will clone the repo (if needed), create a git worktree for your branch, and start Claude Code in it.</p>
+            </div>
+          </div>
+          <div class="step">
+            <div class="step-num">2</div>
+            <div>
+              <h3>Watch it work</h3>
+              <p>The workspace card shows real-time status: running/stopped badge, CPU, memory, uptime, and git status. Click <strong>Terminal</strong> to open a live web terminal and see Claude's output.</p>
+            </div>
+          </div>
+          <div class="step">
+            <div class="step-num">3</div>
+            <div>
+              <h3>Manage your sessions</h3>
+              <p>Use <strong>Stop</strong>, <strong>Restart</strong>, <strong>Continue</strong> (resume last session), or <strong>History</strong> (pick a past session to resume). Click <strong>Open</strong> to jump to the conversation on claude.ai.</p>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- REQUIREMENTS -->
+      <section id="requirements">
+        <h2>Requirements</h2>
+        <table>
+          <thead>
+            <tr><th>Dependency</th><th>Version</th><th>Notes</th></tr>
+          </thead>
+          <tbody>
+            <tr><td>macOS</td><td>12+</td><td>Monterey or later</td></tr>
+            <tr><td>Node.js</td><td>18+</td><td><a href="https://nodejs.org">nodejs.org</a></td></tr>
+            <tr><td>Homebrew</td><td>any</td><td><a href="https://brew.sh">brew.sh</a> (installs tmux and ttyd)</td></tr>
+            <tr><td>Claude Code CLI</td><td>latest</td><td><code>npm i -g @anthropic-ai/claude-code</code></td></tr>
+            <tr><td>GitHub CLI</td><td>any</td><td><code>brew install gh && gh auth login</code></td></tr>
+            <tr><td>Xcode CLI Tools</td><td>any</td><td>Optional, for menu bar app. <code>xcode-select --install</code></td></tr>
+          </tbody>
+        </table>
+      </section>
+
+      <!-- WORKSPACES -->
+      <section id="workspaces">
+        <h2>Workspaces</h2>
+        <p>A workspace is a project + branch combination. Each workspace gets its own isolated git worktree and tmux session. This means multiple Claude instances can work on different branches of the same repo simultaneously without any conflicts.</p>
+
+        <h3>Naming convention</h3>
+        <p>Workspaces follow the pattern <code>{repo}--{branch}</code>. For example, <code>my-app--feature-auth</code> lives at <code>~/repos/my-app--feature-auth</code>.</p>
+
+        <h3>Creating a workspace</h3>
+        <p>Click <strong>+ New Session</strong>, pick a GitHub repo, enter a branch name. If you leave the branch name empty, Klaudii generates <code>claude-{timestamp}</code>.</p>
+        <p>Behind the scenes:</p>
+        <ol>
+          <li>If the repo isn't cloned locally, Klaudii clones it via SSH</li>
+          <li>Creates a git worktree: <code>git worktree add ~/repos/{repo}--{branch} {branch}</code></li>
+          <li>Registers the workspace in <code>config.json</code></li>
+          <li>Starts Claude Code in a new tmux session</li>
+        </ol>
+
+        <h3>Removing a workspace</h3>
+        <p>Click the <strong>Remove</strong> button on a stopped workspace. Klaudii checks git status first:</p>
+        <ul>
+          <li>If the worktree is clean (no uncommitted changes, no unpushed commits), it removes immediately</li>
+          <li>If it has uncommitted work, you'll see a warning and must confirm twice</li>
+        </ul>
+      </section>
+
+      <!-- SESSIONS -->
+      <section id="sessions">
+        <h2>Sessions</h2>
+        <p>Every Claude Code conversation has a unique session ID. Klaudii tracks these IDs and lets you resume any past session.</p>
+
+        <h3>Session actions</h3>
+        <table>
+          <thead>
+            <tr><th>Action</th><th>What it does</th></tr>
+          </thead>
+          <tbody>
+            <tr><td><strong>New</strong></td><td>Start a fresh Claude session in the workspace</td></tr>
+            <tr><td><strong>Continue</strong></td><td>Resume the most recent session with <code>--continue</code></td></tr>
+            <tr><td><strong>History</strong></td><td>Show up to 20 past sessions; click any to resume with <code>--resume {id}</code></td></tr>
+            <tr><td><strong>Stop</strong></td><td>Gracefully terminate the tmux session and ttyd process</td></tr>
+            <tr><td><strong>Restart</strong></td><td>Stop then start with <code>--continue</code> to preserve context</td></tr>
+            <tr><td><strong>Open</strong></td><td>Navigate to the session's <code>claude.ai/code</code> URL</td></tr>
+            <tr><td><strong>Terminal</strong></td><td>Open a live web terminal (ttyd) in the dashboard</td></tr>
+          </tbody>
+        </table>
+
+        <h3>Session tracking</h3>
+        <p>Klaudii maintains its own <code>sessions.json</code> mapping workspace names to session IDs. This is necessary because Claude's built-in <code>history.jsonl</code> maps by project path, which breaks for git worktrees (all worktrees of the same repo would share one history).</p>
+      </section>
+
+      <!-- PERMISSIONS -->
+      <section id="permissions">
+        <h2>Permission Modes</h2>
+        <p>Each workspace has an independent permission mode that controls how much autonomy Claude gets. Toggle between modes on the workspace card (only when the session is stopped).</p>
+
+        <table>
+          <thead>
+            <tr><th>Mode</th><th>Behavior</th><th>Use case</th></tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td><span class="badge badge-green">Yolo</span></td>
+              <td>Claude auto-approves everything (<code>--dangerously-skip-permissions</code>)</td>
+              <td>Personal projects, sandboxed environments, maximum speed</td>
+            </tr>
+            <tr>
+              <td><span class="badge badge-yellow">Ask</span></td>
+              <td>Claude prompts in the terminal for each action</td>
+              <td>Sensitive work, client projects, learning what Claude does</td>
+            </tr>
+            <tr>
+              <td><span class="badge badge-red">Strict</span></td>
+              <td>Read-only tools only (<code>Read, Glob, Grep, WebSearch, WebFetch</code>)</td>
+              <td>Code analysis, auditing, research tasks</td>
+            </tr>
+          </tbody>
+        </table>
+      </section>
+
+      <!-- TERMINAL -->
+      <section id="terminal">
+        <h2>Web Terminal</h2>
+        <p>Every running session has a web terminal powered by <a href="https://github.com/tsl0922/ttyd">ttyd</a>. Click <strong>Terminal</strong> on any running workspace to open a full-screen terminal overlay in the dashboard.</p>
+
+        <h3>How it works</h3>
+        <p>When a session starts, Klaudii spawns a ttyd process that attaches to the workspace's tmux session:</p>
+        <div class="code-block">
+          <pre><code>ttyd -p {port} -W tmux -S {socket} attach -t {session-name}</code></pre>
+        </div>
+        <p>Ports are allocated sequentially starting from <code>ttydBasePort</code> (default 9877). The terminal iframe is destroyed and recreated each time you open it to avoid stale session artifacts.</p>
+
+        <h3>Compatibility</h3>
+        <p>The web terminal works in all modern browsers including iOS Safari. Full keyboard input is supported, so you can interact with Claude's prompts, approve actions in Ask mode, or run commands directly in the tmux session.</p>
+      </section>
+
+      <!-- GIT -->
+      <section id="git">
+        <h2>Git Integration</h2>
+        <p>Every workspace card shows real-time git status:</p>
+        <ul>
+          <li><span class="badge badge-green">clean</span> or <span class="badge badge-yellow">N changed</span> — uncommitted file count</li>
+          <li><strong>M unpushed</strong> — commits not yet pushed to origin</li>
+          <li>Click the git status area to see a detailed modal with per-file status (Modified, Added, Deleted, Untracked)</li>
+        </ul>
+
+        <h3>Worktree management</h3>
+        <p>Klaudii uses <code>git worktree</code> to give each branch a completely isolated working directory. This means:</p>
+        <ul>
+          <li>No stashing, no context switching, no conflicts between branches</li>
+          <li>Multiple Claude instances can work on the same repo simultaneously</li>
+          <li>Each worktree has its own <code>node_modules</code>, build output, etc.</li>
+        </ul>
+
+        <h3>Cleanup</h3>
+        <p>When you remove a workspace, Klaudii runs <code>git worktree remove</code> to clean up the worktree directory. If the worktree has uncommitted changes, you'll be warned before deletion.</p>
+      </section>
+
+      <!-- GITHUB -->
+      <section id="github">
+        <h2>GitHub Integration</h2>
+        <p>The <strong>+ New Session</strong> modal lists your GitHub repositories (via <code>gh</code> CLI). Each repo shows whether it's already cloned locally.</p>
+
+        <h3>Setup</h3>
+        <p>Make sure the GitHub CLI is authenticated:</p>
+        <div class="code-block">
+          <pre><code>brew install gh
+gh auth login</code></pre>
+        </div>
+        <p>Klaudii uses SSH URLs to clone, so ensure your SSH keys are configured for GitHub.</p>
+
+        <h3>Direct links</h3>
+        <p>Workspace cards link directly to the GitHub repo and branch view. Click the repo name to open it on GitHub; click the branch to see that branch's code.</p>
+      </section>
+
+      <!-- RESOURCES -->
+      <section id="resources">
+        <h2>Resource Monitoring</h2>
+        <p>The dashboard shows real-time CPU, memory, and uptime for every Claude process. Stats are aggregated across the entire process tree — if a Claude session spawns a dev server, database, or build watcher, their resource usage is included.</p>
+
+        <h3>Free Range Claudes</h3>
+        <p>Any Claude instances running outside Klaudii (started manually in Terminal, VS Code, etc.) appear in a separate "Free Range Claudes" section. Each shows:</p>
+        <ul>
+          <li>PID and working directory</li>
+          <li>CPU and memory (aggregated with child processes)</li>
+          <li>Launching app (Terminal, iTerm2, VS Code, etc.)</li>
+          <li>Inline kill button with two-step confirmation</li>
+        </ul>
+
+        <h3>Health detection</h3>
+        <p>Every 10 seconds, Klaudii polls the process tree and detects if a Claude process crashed, hung, or exited. Crashed sessions show as "exited" with Restart/Clean up options.</p>
+      </section>
+
+      <!-- CLOUD OVERVIEW -->
+      <section id="cloud-overview">
+        <h2>Kloud Konnect Overview</h2>
+        <p>Kloud Konnect lets you access your local Klaudii dashboard from anywhere — your phone, a different computer, a coffee shop — without port forwarding, VPN, or Tailscale.</p>
+
+        <h3>How it works</h3>
+        <ol>
+          <li>Your local Klaudii server connects to the relay at <code>konnect.klaudii.com</code> via WebSocket</li>
+          <li>You sign in with Google on any device and pick your server</li>
+          <li>Every API request from your browser is encrypted with <strong>AES-256-GCM</strong> before it leaves the device</li>
+          <li>The relay forwards the encrypted blob to your server, which decrypts it with the shared Connection Key</li>
+          <li>The relay never sees the plaintext</li>
+        </ol>
+
+        <div class="callout callout-info">
+          <strong>Zero-trust design:</strong> Even if the relay is compromised, an attacker gets traffic metadata (timing, size) but never the content of your dashboard, workspaces, or code.
+        </div>
+      </section>
+
+      <!-- CLOUD PAIRING -->
+      <section id="cloud-pairing">
+        <h2>Pairing Setup</h2>
+        <p>Pairing connects your local Klaudii to the cloud relay. It only needs to be done once.</p>
+
+        <div class="steps">
+          <div class="step">
+            <div class="step-num">1</div>
+            <div>
+              <h3>Start pairing</h3>
+              <p>On your local dashboard (<code>localhost:9876</code>), click the <strong>Kloud Konnect</strong> button in the header. Click <strong>Start Pairing</strong>.</p>
+            </div>
+          </div>
+          <div class="step">
+            <div class="step-num">2</div>
+            <div>
+              <h3>Get the pairing code</h3>
+              <p>Go to <a href="https://konnect.klaudii.com">konnect.klaudii.com</a>, sign in with Google, and click <strong>Add Server</strong>. You'll get a 6-character pairing code.</p>
+            </div>
+          </div>
+          <div class="step">
+            <div class="step-num">3</div>
+            <div>
+              <h3>Enter the code</h3>
+              <p>Enter the pairing code on your local dashboard. Klaudii exchanges Ed25519 public keys with the relay, establishing trust.</p>
+            </div>
+          </div>
+          <div class="step">
+            <div class="step-num">4</div>
+            <div>
+              <h3>Scan the QR code</h3>
+              <p>After pairing, your local dashboard shows a QR code containing the 256-bit Connection Key. On <code>konnect.klaudii.com</code>, scan it with your camera. The key is stored in your browser's localStorage and never touches the relay.</p>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- CLOUD SECURITY -->
+      <section id="cloud-security">
+        <h2>Security Model</h2>
+
+        <h3>Encryption</h3>
+        <ul>
+          <li><strong>AES-256-GCM</strong> — every API request/response encrypted end-to-end</li>
+          <li><strong>HKDF</strong> — session keys derived from the Connection Key</li>
+          <li><strong>Ed25519</strong> — server authenticates itself via signature challenge</li>
+        </ul>
+
+        <h3>What the relay sees</h3>
+        <table>
+          <thead>
+            <tr><th>Data</th><th>Visible to relay?</th></tr>
+          </thead>
+          <tbody>
+            <tr><td>Your Google email/name</td><td>Yes (for login)</td></tr>
+            <tr><td>Server name and online status</td><td>Yes</td></tr>
+            <tr><td>Request timing and size</td><td>Yes (traffic analysis)</td></tr>
+            <tr><td>Dashboard content</td><td><strong>No</strong> (encrypted)</td></tr>
+            <tr><td>Workspace names, code, git status</td><td><strong>No</strong> (encrypted)</td></tr>
+            <tr><td>Connection Key</td><td><strong>No</strong> (never transmitted)</td></tr>
+          </tbody>
+        </table>
+
+        <h3>Wrong key detection</h3>
+        <p>If the browser has a stale Connection Key (e.g., you re-paired), AES-GCM authentication will fail. The server detects this and sends an unencrypted <code>wrong_key</code> signal, prompting the browser to clear the stale key and redirect to the pairing page.</p>
+      </section>
+
+      <!-- CLOUD SELF-HOST -->
+      <section id="cloud-self-host">
+        <h2>Self-Hosting the Relay</h2>
+        <p>The relay is a standard Node.js + Express + SQLite app in <code>konnect/server/</code>. You can deploy it anywhere that supports persistent WebSocket connections.</p>
+
+        <h3>Deploy to Fly.io</h3>
+        <div class="code-block">
+          <pre><code># From the repo root
+fly launch --name my-klaudii-relay
+fly volumes create klaudii_data --size 1 --region sjc
+fly secrets set GOOGLE_CLIENT_ID=xxx GOOGLE_CLIENT_SECRET=xxx SESSION_SECRET=$(openssl rand -hex 32)
+fly deploy</code></pre>
+        </div>
+
+        <h3>Environment variables</h3>
+        <table>
+          <thead>
+            <tr><th>Variable</th><th>Required</th><th>Description</th></tr>
+          </thead>
+          <tbody>
+            <tr><td><code>GOOGLE_CLIENT_ID</code></td><td>Yes</td><td>Google OAuth 2.0 client ID</td></tr>
+            <tr><td><code>GOOGLE_CLIENT_SECRET</code></td><td>Yes</td><td>Google OAuth 2.0 client secret</td></tr>
+            <tr><td><code>SESSION_SECRET</code></td><td>Yes</td><td>Random string for session cookies</td></tr>
+            <tr><td><code>GOOGLE_REDIRECT_URI</code></td><td>No</td><td>Defaults to <code>https://{host}/auth/google/callback</code></td></tr>
+            <tr><td><code>DB_PATH</code></td><td>No</td><td>SQLite path. Defaults to <code>./relay.db</code></td></tr>
+          </tbody>
+        </table>
+
+        <p>Then update your local Klaudii's <code>config.json</code> to point at your relay:</p>
+        <div class="code-block">
+          <pre><code>{
+  "cloud": {
+    "relayUrl": "wss://my-klaudii-relay.fly.dev/ws"
+  }
+}</code></pre>
+        </div>
+      </section>
+
+      <!-- EXTENSION INSTALL -->
+      <section id="ext-install">
+        <h2>Chrome Extension Installation</h2>
+        <ol>
+          <li>Download <code>klaudii-extension.zip</code> from <a href="https://github.com/klaudiihq/klaudii/releases">releases</a></li>
+          <li>Unzip to a permanent location (e.g., <code>~/klaudii-extension/</code>)</li>
+          <li>Open <code>chrome://extensions</code></li>
+          <li>Enable <strong>Developer mode</strong> (top right toggle)</li>
+          <li>Click <strong>Load unpacked</strong> and select the unzipped folder</li>
+          <li>Click the Klaudii icon in your toolbar to open the side panel</li>
+        </ol>
+        <p>The extension defaults to connecting to <code>http://localhost:9876</code>. Change this in the extension's Settings if your Klaudii runs on a different host/port.</p>
+      </section>
+
+      <!-- EXTENSION FEATURES -->
+      <section id="ext-features">
+        <h2>Extension Features</h2>
+
+        <h3>Side panel</h3>
+        <p>All your workspace cards in a compact side panel. Shows running/stopped status, git branch, resource stats, and action buttons (Open, Terminal, Stop, Continue, History).</p>
+
+        <h3>Auto-rename conversations</h3>
+        <p>When you click <strong>Open</strong> on a workspace, the extension navigates to the claude.ai conversation and renames it to <code>{repo} ({branch})</code> format. This makes your browser tabs readable when you have multiple sessions open.</p>
+        <p>Smart behavior: if you've already given the conversation a custom name, the extension won't overwrite it.</p>
+
+        <h3>Tab switching</h3>
+        <p>Two modes (configurable in Settings):</p>
+        <ul>
+          <li><strong>In-place:</strong> navigates the current tab to the session URL</li>
+          <li><strong>Tab switch:</strong> if a tab for that session already exists, switches to it; otherwise opens a new tab</li>
+        </ul>
+      </section>
+
+      <!-- EXTENSION SETTINGS -->
+      <section id="ext-settings">
+        <h2>Extension Settings</h2>
+        <p>Right-click the Klaudii extension icon and select <strong>Options</strong>, or click the gear icon in the side panel.</p>
+        <table>
+          <thead>
+            <tr><th>Setting</th><th>Default</th><th>Description</th></tr>
+          </thead>
+          <tbody>
+            <tr><td>Klaudii URL</td><td><code>http://localhost:9876</code></td><td>The URL of your Klaudii server</td></tr>
+            <tr><td>Tab behavior</td><td>In-place</td><td>How clicking Open handles tabs</td></tr>
+          </tbody>
+        </table>
+      </section>
+
+      <!-- CONFIGURATION -->
+      <section id="configuration">
+        <h2>Configuration</h2>
+        <p>Klaudii's configuration lives in <code>config.json</code> at the install root (typically <code>~/.klaudii/config.json</code>). It's created by the installer and gitignored.</p>
+
+        <div class="code-block">
+          <div class="code-header"><span>config.json</span></div>
+          <pre><code>{
+  "port": 9876,
+  "ttydBasePort": 9877,
+  "reposDir": "/Users/you/repos",
+  "tmuxSocket": "/Users/you/.claude/klaudii-tmux.sock",
+  "projects": [
+    {
+      "name": "my-app",
+      "path": "/Users/you/repos/my-app",
+      "permissionMode": "yolo"
+    },
+    {
+      "name": "my-app--feature-x",
+      "path": "/Users/you/repos/my-app--feature-x",
+      "permissionMode": "ask"
+    }
+  ],
+  "cloud": {
+    "relayUrl": "wss://konnect.klaudii.com/ws",
+    "serverId": "...",
+    "connectionKey": "..."
+  }
+}</code></pre>
+        </div>
+
+        <table>
+          <thead>
+            <tr><th>Field</th><th>Description</th></tr>
+          </thead>
+          <tbody>
+            <tr><td><code>port</code></td><td>Dashboard HTTP port (default 9876)</td></tr>
+            <tr><td><code>ttydBasePort</code></td><td>Starting port for ttyd instances (default 9877)</td></tr>
+            <tr><td><code>reposDir</code></td><td>Base directory where repos are cloned and worktrees created</td></tr>
+            <tr><td><code>tmuxSocket</code></td><td>Absolute path to the tmux socket. <strong>Must be absolute</strong> for launchd compatibility</td></tr>
+            <tr><td><code>projects</code></td><td>Array of registered workspaces</td></tr>
+            <tr><td><code>cloud</code></td><td>Kloud Konnect settings (populated by pairing flow)</td></tr>
+          </tbody>
+        </table>
+
+        <div class="callout callout-warn">
+          <strong>Important:</strong> All paths in <code>config.json</code> must be fully-qualified absolute paths (e.g., <code>/Users/you/repos</code>, <code>/Users/you/.klaudii/tmux.sock</code>).
+          <ul style="margin:0.5rem 0 0 1rem">
+            <li><strong>Do not use <code>~</code></strong> — launchd agents cannot resolve tilde expansion.</li>
+            <li><strong>Do not use <code>/tmp/</code></strong> — macOS gives each launchd agent a private <code>/tmp</code> directory (<code>$TMPDIR</code>), so files written to <code>/tmp/</code> from your shell are invisible to the server and vice versa.</li>
+            <li><strong>Do not use relative paths</strong> — the working directory under launchd differs from your shell.</li>
+          </ul>
+        </div>
+      </section>
+
+      <!-- ARCHITECTURE -->
+      <section id="architecture">
+        <h2>Architecture</h2>
+        <p>Klaudii is a lightweight Node.js server that orchestrates existing Unix tools. No Docker, no Kubernetes, no cloud dependency.</p>
+
+        <div class="code-block">
+          <div class="code-header"><span>System diagram</span></div>
+          <pre><code>Browser (localhost:9876)
+  |  REST API
+Express server (server.js)
+  |-- lib/tmux.js -------> tmux (session management, dedicated socket)
+  |-- lib/ttyd.js -------> ttyd (web terminal, one per session)
+  |-- lib/processes.js --> ps (process discovery + resource stats)
+  |-- lib/claude.js -----> ~/.claude/history.jsonl (session history)
+  |-- lib/session-tracker.js -> sessions.json (worktree mapping)
+  |-- lib/git.js --------> git (clone, worktree, status)
+  |-- lib/github.js -----> gh CLI (repo listing)
+  |-- lib/projects.js ---> config.json (workspace registry)
+  |-- konnect/client/ ---> Kloud Konnect WebSocket tunnel
+  '-- public/ -----------> Dashboard UI</code></pre>
+        </div>
+
+        <h3>Key design decisions</h3>
+        <ul>
+          <li><strong>Dedicated tmux socket:</strong> Klaudii uses its own socket at <code>tmuxSocket</code> to avoid colliding with your personal tmux sessions</li>
+          <li><strong>Process tree aggregation:</strong> Resource stats walk the full descendant tree, not just the Claude process</li>
+          <li><strong>Vanilla frontend:</strong> No build step, no framework. HTML + CSS + JS served directly by Express</li>
+          <li><strong>Worktree-based isolation:</strong> Each branch gets its own directory, preventing conflicts between parallel sessions</li>
+        </ul>
+      </section>
+
+      <!-- TROUBLESHOOTING -->
+      <section id="troubleshooting">
+        <h2>Troubleshooting</h2>
+
+        <h3>Dashboard won't load</h3>
+        <ul>
+          <li>Check if the server is running: <code>launchctl list | grep klaudii</code></li>
+          <li>Check logs: <code>cat /tmp/klaudii.log</code> and <code>cat /tmp/klaudii-error.log</code></li>
+          <li>Restart: <code>launchctl kickstart -k gui/$(id -u)/com.klaudii</code></li>
+        </ul>
+
+        <h3>Sessions show as "exited" immediately</h3>
+        <ul>
+          <li>Make sure Claude Code CLI is installed: <code>which claude</code></li>
+          <li>Check if tmux is available at the configured socket: <code>tmux -S ~/.claude/klaudii-tmux.sock ls</code></li>
+          <li>Look for errors in the tmux session: <code>tmux -S ~/.claude/klaudii-tmux.sock attach -t {session}</code></li>
+        </ul>
+
+        <h3>Kloud Konnect shows "disconnected"</h3>
+        <ul>
+          <li>Check that <code>config.json</code> has a <code>cloud</code> section with <code>relayUrl</code>, <code>serverId</code>, and <code>connectionKey</code></li>
+          <li>Try re-pairing: click Kloud Konnect > Unpair, then re-pair</li>
+          <li>Check relay health: <code>curl https://konnect.klaudii.com/api/relay/health</code></li>
+        </ul>
+
+        <h3>QR code won't scan</h3>
+        <ul>
+          <li>Ensure the QR code has a white background (hard refresh if it looks invisible on dark theme)</li>
+          <li>Try the manual key entry option below the QR code as a fallback</li>
+          <li>The QR encodes <code>klaudii://{serverId}/{key}</code> — the camera app should recognize it</li>
+        </ul>
+
+        <h3>tmux socket mismatch</h3>
+        <ul>
+          <li>The most common cause of "can't find sessions" is the tmux socket path differing between your shell and the launchd agent</li>
+          <li>Verify <code>config.json</code> has an <strong>absolute</strong> <code>tmuxSocket</code> path — no <code>~</code>, no <code>/tmp/</code>, no relative paths</li>
+          <li>Remember: macOS assigns each launchd agent a <strong>private <code>/tmp</code></strong>, so a socket in <code>/tmp/</code> from your shell won't be visible to the server</li>
+          <li>Check both environments see the same socket: <code>ls -la $(cat ~/.klaudii/config.json | python3 -c "import sys,json; print(json.load(sys.stdin)['tmuxSocket'])")</code></li>
+        </ul>
+      </section>
+
+    </main>
+  </div>
+
+  <script>
+    // Copy code blocks
+    function copyCode(btn) {
+      const code = btn.closest('.code-block').querySelector('code').textContent;
+      navigator.clipboard.writeText(code).then(() => {
+        btn.textContent = 'Copied!';
+        setTimeout(() => { btn.textContent = 'Copy'; }, 2000);
+      });
+    }
+
+    // Sidebar active link tracking
+    (function() {
+      const links = document.querySelectorAll('.sidebar-link');
+      const sections = [];
+      links.forEach(link => {
+        const href = link.getAttribute('href');
+        if (href && href.startsWith('#')) {
+          const section = document.getElementById(href.slice(1));
+          if (section) sections.push({ link, section });
+        }
+      });
+
+      function update() {
+        const scrollY = window.scrollY + 100;
+        let active = null;
+        for (let i = sections.length - 1; i >= 0; i--) {
+          if (scrollY >= sections[i].section.offsetTop) {
+            active = sections[i];
+            break;
+          }
+        }
+        links.forEach(l => l.classList.remove('active'));
+        if (active) active.link.classList.add('active');
+      }
+
+      let raf;
+      window.addEventListener('scroll', () => {
+        cancelAnimationFrame(raf);
+        raf = requestAnimationFrame(update);
+      });
+      update();
+    })();
+
+    // Mobile sidebar toggle
+    document.getElementById('sidebar-toggle').addEventListener('click', () => {
+      document.getElementById('sidebar').classList.toggle('open');
+    });
+
+    // Close sidebar on link click (mobile)
+    document.querySelectorAll('.sidebar-link').forEach(a => {
+      a.addEventListener('click', () => {
+        document.getElementById('sidebar').classList.remove('open');
+      });
+    });
+  </script>
+</body>
+</html>

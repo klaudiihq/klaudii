@@ -1,0 +1,58 @@
+name: Deploy Relay
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "konnect/**"
+      - "fly.toml"
+      - "fly.staging.toml"
+      - "Dockerfile"
+  workflow_dispatch:
+
+jobs:
+  test-server:
+    name: Server Contract Tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm test
+
+  test-relay:
+    name: Relay Contract Tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: cd konnect/server && npm ci
+      - run: cd konnect/server && npm test
+
+  deploy-staging:
+    name: Deploy to Staging
+    needs: [test-server, test-relay]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: superfly/flyctl-actions/setup-flyctl@master
+      - run: flyctl deploy --config fly.staging.toml
+        env:
+          FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
+
+  deploy-production:
+    name: Deploy to Production
+    needs: deploy-staging
+    runs-on: ubuntu-latest
+    environment: production  # Requires manual approval in GitHub repo settings
+    steps:
+      - uses: actions/checkout@v4
+      - uses: superfly/flyctl-actions/setup-flyctl@master
+      - run: flyctl deploy
+        env:
+          FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}

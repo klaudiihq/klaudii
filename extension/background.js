@@ -323,6 +323,23 @@ async function _doFetchKonnectAll() {
 // If the current session title is already custom (not "Remote Control session"),
 // the rename is skipped to avoid overwriting the user's own name.
 function renameConversationInPage(sessionId, newTitle) {
+  // Quick pre-check: read the page title to see if a rename is even needed.
+  // This avoids the disruptive dropdown/rename UI interaction when the
+  // conversation already has a non-default name.
+  var pageTitle = document.title || "";
+
+  // Already named correctly — nothing to do
+  if (pageTitle.indexOf(newTitle) !== -1) return;
+
+  // If the title isn't empty, isn't just "Claude", and doesn't contain the
+  // default "Remote Control session", the session already has a custom name.
+  // Skip the rename to avoid opening the dropdown/input UI unnecessarily.
+  if (pageTitle.length > 0 &&
+      pageTitle !== "Claude" &&
+      pageTitle.indexOf("Remote Control session") === -1) {
+    return;
+  }
+
   // Simulate a full pointer interaction — Radix UI listens to pointerdown, not click
   function pointerClick(el) {
     var opts = { bubbles: true, cancelable: true, view: window, button: 0, buttons: 1 };

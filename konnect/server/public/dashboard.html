@@ -4,207 +4,9 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Klaudii — Kloud Konnect</title>
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 512 512'><defs><linearGradient id='kg' x1='256' y1='80' x2='256' y2='432' gradientUnits='userSpaceOnUse'><stop offset='0%25' stop-color='%2386efac'/><stop offset='50%25' stop-color='%234ade80'/><stop offset='100%25' stop-color='%2322c55e'/></linearGradient></defs><rect x='132' y='100' width='40' height='312' rx='20' fill='url(%23kg)'/><line x1='188' y1='256' x2='362' y2='120' stroke='url(%23kg)' stroke-width='40' stroke-linecap='round'/><line x1='188' y1='256' x2='362' y2='392' stroke='url(%23kg)' stroke-width='40' stroke-linecap='round'/></svg>">
+  <link rel="stylesheet" href="/konnect.css">
   <link rel="stylesheet" href="/dashboard/style.css">
-  <style>
-    /* Cloud-specific overrides */
-    .server-picker {
-      max-width: 600px;
-      margin: 4rem auto;
-      padding: 0 1rem;
-    }
-    .server-picker h2 {
-      margin-bottom: 1rem;
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-    }
-    .server-card {
-      background: #1a1d25;
-      border: 1px solid #2a2d35;
-      border-radius: 8px;
-      padding: 1rem 1.25rem;
-      margin-bottom: 0.75rem;
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      cursor: pointer;
-      transition: border-color 0.15s, background 0.15s;
-    }
-    .server-card:hover { background: #252830; border-color: #3a3d45; }
-    .server-card .server-name {
-      font-weight: 500;
-      color: #fff;
-      font-size: 1rem;
-    }
-    .server-card .server-meta {
-      font-size: 0.75rem;
-      color: #666;
-      margin-top: 0.25rem;
-    }
-    .server-card .status-dot {
-      width: 10px;
-      height: 10px;
-      border-radius: 50%;
-      flex-shrink: 0;
-    }
-    .status-dot.online { background: #4ade80; }
-    .status-dot.offline { background: #555; }
-    .cloud-header {
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      padding: 0.75rem 1.25rem;
-      background: #1a1d25;
-      border-bottom: 1px solid #2a2d35;
-    }
-    .cloud-header .back-btn {
-      background: none;
-      border: 1px solid #3a3d45;
-      color: #aaa;
-      padding: 0.3rem 0.75rem;
-      border-radius: 6px;
-      cursor: pointer;
-      font-size: 0.8rem;
-    }
-    .cloud-header .back-btn:hover { background: #252830; color: #fff; }
-    .cloud-header .server-label {
-      font-size: 0.9rem;
-      color: #4ade80;
-    }
-    .cloud-header .user-info {
-      font-size: 0.8rem;
-      color: #666;
-    }
-    .empty-state {
-      text-align: center;
-      padding: 3rem 1rem;
-      color: #666;
-    }
-    .empty-state h3 { color: #aaa; margin-bottom: 0.5rem; }
-    .pair-action {
-      margin-top: 1.5rem;
-    }
-    .no-key-warning {
-      background: #3a2a1a;
-      border: 1px solid #fbbf24;
-      border-radius: 6px;
-      padding: 0.5rem 0.75rem;
-      font-size: 0.8rem;
-      color: #fbbf24;
-      margin-top: 0.5rem;
-      cursor: pointer;
-    }
-    #dashboard-frame {
-      width: 100%;
-      height: calc(100vh - 45px);
-      border: none;
-    }
-    /* Pairing code modal */
-    .pair-modal-overlay {
-      position: fixed;
-      inset: 0;
-      background: rgba(0,0,0,0.75);
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      z-index: 200;
-      backdrop-filter: blur(4px);
-    }
-    .pair-modal {
-      background: #1a1d25;
-      border: 1px solid #2a2d35;
-      border-radius: 12px;
-      padding: 2rem 2rem 1.5rem;
-      max-width: 460px;
-      width: 90%;
-    }
-    .pair-modal h2 {
-      text-align: center;
-      margin-bottom: 0.35rem;
-      font-size: 1.25rem;
-    }
-    .pair-modal-sub {
-      text-align: center;
-      color: #666;
-      font-size: 0.82rem;
-      margin-bottom: 1.5rem;
-    }
-    .pairing-code-display {
-      background: #0f1117;
-      border: 1px solid #2a2d35;
-      border-radius: 8px;
-      padding: 1.25rem 1rem;
-      text-align: center;
-      margin-bottom: 0.75rem;
-    }
-    .pairing-code-display .code {
-      font-size: 2.75rem;
-      font-weight: 700;
-      letter-spacing: 0.2em;
-      font-family: ui-monospace, monospace;
-      color: #4ade80;
-      line-height: 1;
-    }
-    .pairing-code-display .expires {
-      font-size: 0.75rem;
-      color: #555;
-      margin-top: 0.5rem;
-    }
-    .pair-steps {
-      list-style: none;
-      padding: 0;
-      margin: 1.25rem 0 1.5rem;
-      border: 1px solid #2a2d35;
-      border-radius: 8px;
-      overflow: hidden;
-    }
-    .pair-steps li {
-      display: flex;
-      align-items: flex-start;
-      gap: 0.75rem;
-      padding: 0.65rem 1rem;
-      border-bottom: 1px solid #2a2d35;
-      font-size: 0.83rem;
-      color: #aaa;
-      line-height: 1.4;
-    }
-    .pair-steps li:last-child { border-bottom: none; }
-    .pair-step-num {
-      min-width: 20px;
-      height: 20px;
-      border-radius: 50%;
-      background: #252830;
-      color: #888;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      font-size: 0.7rem;
-      font-weight: 600;
-      flex-shrink: 0;
-      margin-top: 0.05rem;
-    }
-    .pair-modal-footer {
-      display: flex;
-      justify-content: flex-end;
-      gap: 0.5rem;
-    }
-    .delete-server-btn {
-      background: none;
-      border: 1px solid transparent;
-      color: #555;
-      width: 26px;
-      height: 26px;
-      border-radius: 6px;
-      cursor: pointer;
-      font-size: 0.75rem;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      transition: all 0.15s;
-      flex-shrink: 0;
-    }
-    .delete-server-btn:hover { background: #2a1a1a; border-color: #ef4444; color: #f87171; }
-  </style>
 </head>
 <body>
   <!-- Pairing code modal -->
@@ -217,44 +19,75 @@
         <div class="expires" id="pair-modal-expires"></div>
       </div>
       <ul class="pair-steps">
-        <li><span class="pair-step-num">1</span>Open <strong style="color:#e0e0e0">http://localhost:9876</strong> on your home machine</li>
-        <li><span class="pair-step-num">2</span>Click the <strong style="color:#e0e0e0">Kloud Konnect</strong> button in the header</li>
-        <li><span class="pair-step-num">3</span>Enter the code above and click <strong style="color:#e0e0e0">Pair</strong></li>
+        <li><span class="pair-step-num">1</span>Open <strong>http://localhost:9876</strong> on your home machine</li>
+        <li><span class="pair-step-num">2</span>Click the <strong>Kloud Konnect</strong> button in the header</li>
+        <li><span class="pair-step-num">3</span>Enter the code above and click <strong>Pair</strong></li>
         <li><span class="pair-step-num">4</span>Scan the QR code that appears to complete the konnection</li>
       </ul>
       <div class="pair-modal-footer">
-        <button class="btn btn-sm" onclick="closePairModal()">Done</button>
+        <button class="btn btn-sm btn-ghost" onclick="closePairModal()">Done</button>
       </div>
     </div>
   </div>
 
+  <!-- Nav bar -->
+  <nav class="nav">
+    <div class="nav-inner">
+      <div class="nav-left">
+        <a href="https://www.klaudii.com" class="nav-logo" id="nav-logo">
+          <svg class="nav-logo-icon" viewBox="0 0 512 512" xmlns="http://www.w3.org/2000/svg">
+            <defs><linearGradient id="lg" x1="256" y1="80" x2="256" y2="432" gradientUnits="userSpaceOnUse"><stop offset="0%" stop-color="#86efac"/><stop offset="50%" stop-color="#4ade80"/><stop offset="100%" stop-color="#22c55e"/></linearGradient></defs>
+            <rect x="132" y="100" width="40" height="312" rx="20" fill="url(#lg)"/>
+            <line x1="188" y1="256" x2="362" y2="120" stroke="url(#lg)" stroke-width="40" stroke-linecap="round"/>
+            <line x1="188" y1="256" x2="362" y2="392" stroke="url(#lg)" stroke-width="40" stroke-linecap="round"/>
+          </svg>
+          <span id="nav-title">Klaudii</span>
+        </a>
+      </div>
+      <div class="nav-center" id="server-selector" style="display:none">
+        <button class="server-selector-btn" onclick="toggleServerMenu(event)">
+          <span id="server-selector-name"></span>
+          <svg class="chevron" width="14" height="14" viewBox="0 0 12 12"><path d="M3 4.5L6 7.5L9 4.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" fill="none"/></svg>
+        </button>
+        <div class="dropdown server-dropdown" id="server-dropdown"></div>
+      </div>
+      <div class="nav-right">
+        <div class="user-menu" id="user-menu">
+          <button class="user-menu-btn" onclick="toggleUserMenu(event)">
+            <span id="user-name">...</span>
+            <svg class="chevron" width="12" height="12" viewBox="0 0 12 12"><path d="M3 4.5L6 7.5L9 4.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" fill="none"/></svg>
+          </button>
+          <div class="dropdown user-dropdown" id="user-dropdown">
+            <button class="dropdown-item" onclick="logout()">Sign Out</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </nav>
+
   <!-- Server picker view -->
   <div id="picker-view">
-    <header>
-      <h1>Klaudii</h1>
-      <span id="user-name" class="badge">...</span>
-      <button class="btn btn-sm" onclick="logout()" style="margin-left:auto">Sign Out</button>
-    </header>
-
     <div class="server-picker">
       <h2>
         Your Servers
-        <button class="btn btn-sm primary" onclick="addServer()">+ Add Server</button>
+        <button class="btn btn-sm btn-primary" onclick="addServer()">+ Add Server</button>
       </h2>
       <div id="server-list"></div>
       <p style="margin-top: 2rem; font-size: 0.75rem; color: #444; text-align: center;">
         <a href="/privacy" style="color:#444;">Privacy Policy</a> &middot; <a href="/tos" style="color:#444;">Terms of Service</a>
       </p>
     </div>
+
+    <footer class="konnect-footer">
+      <span class="copyright">&copy; 2025 Klaudii</span>
+      <a href="https://www.klaudii.com">Home</a>
+      <a href="https://www.klaudii.com/docs">Docs</a>
+      <a href="https://github.com/klaudiihq/klaudii">GitHub</a>
+    </footer>
   </div>
 
   <!-- Dashboard view (when a server is selected) -->
   <div id="dashboard-view" style="display:none">
-    <div class="cloud-header">
-      <button class="back-btn" onclick="backToServers()">Back</button>
-      <span class="server-label" id="active-server-name"></span>
-      <span class="user-info" id="active-user-name"></span>
-    </div>
     <iframe id="dashboard-frame" src=""></iframe>
   </div>
 
@@ -262,41 +95,54 @@
   <script>
     let currentUser = null;
     let currentServerId = null;
+    let cachedServers = [];
 
     async function init() {
       try {
         const resp = await fetch("/auth/me");
-        if (!resp.ok) {
-          window.location.href = "/";
-          return;
-        }
+        if (!resp.ok) { window.location.href = "/"; return; }
         currentUser = await resp.json();
         document.getElementById("user-name").textContent = currentUser.name || currentUser.email;
-        loadServers();
-      } catch {
-        window.location.href = "/";
-      }
+        await loadServers();
+
+        // Auto-reconnect to last used server if it's online and we have a key
+        const lastServer = localStorage.getItem("klaudii-last-server");
+        if (lastServer) {
+          try {
+            const { id, name } = JSON.parse(lastServer);
+            const server = cachedServers.find(s => s.id === id);
+            if (server && server.online && hasConnectionKey(id)) {
+              selectServer(id, name);
+              return;
+            }
+          } catch {}
+        }
+      } catch { window.location.href = "/"; }
     }
 
     async function loadServers() {
       const resp = await fetch("/api/servers");
-      const servers = await resp.json();
+      cachedServers = await resp.json();
+      renderServerList();
+    }
+
+    function renderServerList() {
       const list = document.getElementById("server-list");
 
-      if (servers.length === 0) {
+      if (cachedServers.length === 0) {
         list.innerHTML = `
           <div class="empty-state">
             <h3>No servers konnected</h3>
             <p>Add your first Klaudii server to access it from anywhere.</p>
             <div class="pair-action">
-              <button class="btn primary" onclick="addServer()">Add Server</button>
+              <button class="btn btn-primary" onclick="addServer()">Add Server</button>
             </div>
           </div>
         `;
         return;
       }
 
-      list.innerHTML = servers.map(s => {
+      list.innerHTML = cachedServers.map(s => {
         const hasKey = hasConnectionKey(s.id);
         const lastSeen = s.lastSeen ? formatTimeAgo(s.lastSeen * 1000) : "never";
         const clickAction = s.online && hasKey ? `selectServer('${s.id}', '${esc(s.name)}')` : (!hasKey ? `enterKey('${s.id}')` : "");
@@ -309,16 +155,34 @@
             </div>
             <div style="display:flex; align-items:center; gap:0.75rem; flex-shrink:0">
               <div class="status-dot ${s.online ? "online" : "offline"}"></div>
-              <button class="delete-server-btn" onclick="event.stopPropagation(); deleteServer('${s.id}', '${esc(s.name)}')" title="Remove server">✕</button>
+              <button class="delete-server-btn" onclick="event.stopPropagation(); deleteServer('${s.id}', '${esc(s.name)}')" title="Remove server">&#x2715;</button>
             </div>
           </div>
         `;
       }).join("");
     }
 
+    function renderServerDropdown() {
+      const dd = document.getElementById("server-dropdown");
+      const items = cachedServers.map(s => {
+        const active = s.id === currentServerId ? " active" : "";
+        const hasKey = hasConnectionKey(s.id);
+        const clickable = s.online && hasKey;
+        return `
+          <button class="dropdown-item server-dropdown-item${active}" onclick="${clickable ? `switchServer('${s.id}', '${esc(s.name)}')` : ""}" ${!clickable ? "disabled" : ""}>
+            <span class="server-dropdown-name">${esc(s.name)}</span>
+            <span class="status-dot ${s.online ? "online" : "offline"}"></span>
+          </button>
+        `;
+      }).join("");
+      dd.innerHTML = items
+        + `<div class="dropdown-divider"></div>`
+        + `<button class="dropdown-item" onclick="showPickerView(); closeAllDropdowns()">All Servers</button>`
+        + `<button class="dropdown-item" onclick="addServer()">+ Add Server</button>`;
+    }
+
     async function deleteServer(id, name) {
       if (!confirm(`Remove "${name}"? This cannot be undone.`)) return;
-      // Also remove stored connection key
       const keys = JSON.parse(localStorage.getItem("klaudii-connection-keys") || "{}");
       delete keys[id];
       localStorage.setItem("klaudii-connection-keys", JSON.stringify(keys));
@@ -337,18 +201,13 @@
     }
 
     async function addServer() {
-      const btn = document.querySelector('[onclick="addServer()"]');
-      if (btn) { btn.disabled = true; btn.textContent = "Generating..."; }
-      try {
-        const resp = await fetch("/api/pairing/create", { method: "POST" });
-        const { code, expiresIn } = await resp.json();
-        document.getElementById("pair-modal-code").textContent = code;
-        document.getElementById("pair-modal-expires").textContent =
-          `Expires in ${Math.floor(expiresIn / 60)} minutes`;
-        document.getElementById("pair-modal").style.display = "flex";
-      } finally {
-        if (btn) { btn.disabled = false; btn.textContent = "+ Add Server"; }
-      }
+      closeAllDropdowns();
+      const resp = await fetch("/api/pairing/create", { method: "POST" });
+      const { code, expiresIn } = await resp.json();
+      document.getElementById("pair-modal-code").textContent = code;
+      document.getElementById("pair-modal-expires").textContent =
+        `Expires in ${Math.floor(expiresIn / 60)} minutes`;
+      document.getElementById("pair-modal").style.display = "flex";
     }
 
     function closePairModal() {
@@ -356,37 +215,70 @@
       loadServers();
     }
 
-    function enterKey(serverId) {
-      window.location.href = `/pair.html?serverId=${serverId}`;
-    }
+    function enterKey(serverId) { window.location.href = `/pair.html?serverId=${serverId}`; }
 
     function selectServer(serverId, serverName) {
       currentServerId = serverId;
-      document.getElementById("active-server-name").textContent = serverName;
-      document.getElementById("active-user-name").textContent = currentUser.name || currentUser.email;
-
-      // Initialize the encrypted WebSocket tunnel
       const key = getConnectionKey(serverId);
-      if (!key) {
-        enterKey(serverId);
-        return;
-      }
+      if (!key) { enterKey(serverId); return; }
+
+      // Remember last selected server
+      localStorage.setItem("klaudii-last-server", JSON.stringify({ id: serverId, name: serverName }));
+
+      // Show server selector in nav center
+      document.getElementById("server-selector").style.display = "flex";
+      document.getElementById("server-selector-name").textContent = serverName;
+      renderServerDropdown();
 
       document.getElementById("picker-view").style.display = "none";
       document.getElementById("dashboard-view").style.display = "block";
-
-      // Start the cloud tunnel and load the dashboard
       initCloudTunnel(serverId, key, currentUser.id);
     }
 
-    function backToServers() {
+    function switchServer(serverId, serverName) {
+      closeAllDropdowns();
+      if (serverId === currentServerId) return;
+      disconnectCloudTunnel();
+      document.getElementById("dashboard-frame").src = "";
+      selectServer(serverId, serverName);
+    }
+
+    function showPickerView() {
       currentServerId = null;
       disconnectCloudTunnel();
       document.getElementById("dashboard-view").style.display = "none";
       document.getElementById("picker-view").style.display = "";
       document.getElementById("dashboard-frame").src = "";
+      document.getElementById("server-selector").style.display = "none";
       loadServers();
     }
+
+    // --- Dropdowns ---
+    function toggleServerMenu(e) {
+      e.preventDefault();
+      e.stopPropagation();
+      const dd = document.getElementById("server-dropdown");
+      const wasOpen = dd.classList.contains("open");
+      closeAllDropdowns();
+      if (!wasOpen) {
+        renderServerDropdown();
+        dd.classList.add("open");
+      }
+    }
+
+    function toggleUserMenu(e) {
+      e.stopPropagation();
+      const dd = document.getElementById("user-dropdown");
+      const wasOpen = dd.classList.contains("open");
+      closeAllDropdowns();
+      if (!wasOpen) dd.classList.add("open");
+    }
+
+    function closeAllDropdowns() {
+      document.querySelectorAll(".dropdown.open").forEach(d => d.classList.remove("open"));
+    }
+
+    document.addEventListener("click", () => closeAllDropdowns());
 
     async function logout() {
       await fetch("/auth/logout", { method: "POST" });
