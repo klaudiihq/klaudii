@@ -3,27 +3,47 @@
 ## Overview
 
 The marketing site at www.klaudii.com is hosted on **GitHub Pages** from the `gh-pages` branch.
+Staging is served from the `klaudiihq/www` GitHub repo (also GitHub Pages).
 
 ## Architecture
 
 - **Source files**: `www/` directory on the `main` branch (index.html, style.css, script.js, docs/)
-- **Deploy branch**: `gh-pages` (root of this branch = the site)
-- **Custom domain**: www.klaudii.com (CNAME record in `gh-pages` branch)
+- **Staging**: `klaudiihq/www` repo — served at `staging.klaudii.com`
+- **Production branch**: `gh-pages` — served at `klaudii.com`
 - **HTTPS**: Enforced via GitHub Pages settings
 
-## Deploy Steps
+## Automated Deployment
 
-Changes to `www/` on `main` are **not** automatically deployed. You must manually update the `gh-pages` branch:
+Both staging and production are deployed automatically via GitHub Actions when `www/` changes are pushed.
+
+### Staging (`staging.klaudii.com`)
+
+Triggered by pushes to `main` that touch `www/`. Workflow: `.github/workflows/deploy-staging-www.yml`
+
+- Clones `klaudiihq/www` via SSH deploy key (`WWW_DEPLOY_KEY` secret)
+- Rsyncs `www/` into the repo (preserving the `CNAME` file)
+- Commits and pushes any changes
+
+### Production (`klaudii.com`)
+
+Triggered by pushes to `stable` that touch `www/`. Workflow: `.github/workflows/release-www.yml`
+
+- Uses `peaceiris/actions-gh-pages` to publish `www/` to the `gh-pages` branch
+- Sets `CNAME` to `klaudii.com`
+
+## Manual Deploy (if needed)
 
 ```bash
-# From the main worktree
+# Staging: push www/ to klaudiihq/www directly
+git clone git@github.com:klaudiihq/www.git /tmp/www-repo
+rsync -av --delete --exclude='.git' --exclude='CNAME' www/ /tmp/www-repo/
+cd /tmp/www-repo && git add -A && git commit -m "Manual staging deploy" && git push
+
+# Production: update gh-pages branch
 git checkout gh-pages
 git checkout main -- www/index.html www/style.css www/script.js www/docs/
-cp -r www/* .
-rm -rf www/
-git add .
-git commit -m "Deploy: <description of changes>"
-git push
+cp -r www/* . && rm -rf www/
+git add . && git commit -m "Deploy: <description>" && git push
 git checkout main
 ```
 
@@ -32,9 +52,3 @@ GitHub Pages typically builds within 1-3 minutes after push. Check status:
 ```bash
 gh api repos/klaudiihq/klaudii/pages/builds --jq '.[0] | {status, created_at}'
 ```
-
-## TODO
-
-- [ ] Set up GitHub Actions workflow to auto-deploy `www/` to `gh-pages` on push to `main`
-- [ ] Add cache-busting for CSS/JS (query string or content hash)
-- [ ] Consider migrating to deploy from `main` branch with `/www` as source directory
