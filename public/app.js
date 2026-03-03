@@ -1,6 +1,7 @@
 const API = "";
 let refreshTimer = null;
 let currentTerminalSession = null;
+let lastHealthData = null;
 let sortMode = localStorage.getItem("klaudii-sort") || "activity";
 let sortDir = localStorage.getItem("klaudii-sort-dir") || "desc";
 
@@ -134,6 +135,8 @@ function renderSessions(sessions, procs) {
         `
         }
         <button class="btn btn-sm" onclick="toggleHistory('${esc(s.project)}')">History</button>
+        <button class="btn btn-sm" onclick="openGeminiChat('${esc(s.project)}', '${esc(s.projectPath)}')">Gemini</button>
+        <button class="btn btn-sm" onclick="openGeminiChat('${esc(s.project)}', '${esc(s.projectPath)}', 'claude')">Claude</button>
       </div>
       <div class="history-list hidden" id="history-${esc(s.project)}"></div>
     </div>
@@ -493,6 +496,7 @@ async function refresh() {
       api("/api/processes"),
     ]);
 
+    lastHealthData = health;
     const badge = document.getElementById("status-badge");
 
     if (health.ok && health.tmux && health.ttyd) {
@@ -518,13 +522,23 @@ async function refresh() {
     }
     if (health.claudeAuth) {
       if (health.claudeAuth.loggedIn) {
-        const label = health.claudeAuth.email ? esc(health.claudeAuth.email) : "authenticated";
+        const label = health.claudeAuth.email ? esc(health.claudeAuth.email) : (health.claudeAuth.authMethod === "api_key" ? "API key" : "authenticated");
         authRows.push(`<span class="auth-row ok" title="${label}"><span class="auth-dot ok"></span>Claude</span>`);
       } else {
         authRows.push('<span class="auth-row error" title="Run: claude auth login"><span class="auth-dot error"></span>Claude</span>');
       }
     } else if (health.claudeAuth === null) {
       authRows.push('<span class="auth-row error" title="Claude CLI not installed"><span class="auth-dot error"></span>Claude</span>');
+    }
+    if (health.geminiAuth) {
+      if (!health.geminiAuth.installed) {
+        authRows.push('<span class="auth-row error" title="Run: brew install gemini-cli"><span class="auth-dot error"></span>Gemini</span>');
+      } else if (health.geminiAuth.loggedIn) {
+        const geminiTitle = health.geminiAuth.email ? esc(health.geminiAuth.email) : (health.geminiAuth.method === "api_key" ? "API key" : "OAuth");
+        authRows.push(`<span class="auth-row ok" title="${geminiTitle}"><span class="auth-dot ok"></span>Gemini</span>`);
+      } else {
+        authRows.push('<span class="auth-row error clickable" title="Click to authenticate" onclick="openGeminiChat(null, null)"><span class="auth-dot error"></span>Gemini</span>');
+      }
     }
     authEl.innerHTML = (authRows.length ? '<span class="auth-title">auth</span>' : '') + authRows.join("");
 
@@ -1050,11 +1064,17 @@ if (localStorage.getItem("klaudii-theme") === "light") {
   document.getElementById("theme-toggle").textContent = "🌙";
 }
 
-refresh();
-refreshCloudStatus();
-refreshTimer = setInterval(() => {
+// Skip all dashboard polling in chatonly mode — only chat overlay is visible
+if (new URLSearchParams(window.location.search).get("mode") === "chatonly") {
+  // Fetch health once (for auth status used by gemini.js)
+  api("/api/health").then(h => { lastHealthData = h; }).catch(() => {});
+} else {
   refresh();
   refreshCloudStatus();
-}, 10000);
-refreshUsage();
-setInterval(refreshUsage, 60000);
+  refreshTimer = setInterval(() => {
+    refresh();
+    refreshCloudStatus();
+  }, 10000);
+  refreshUsage();
+  setInterval(refreshUsage, 60000);
+}

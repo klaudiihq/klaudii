@@ -3,7 +3,7 @@
    ========================================================= */
 
 :root {
-  /* Structural backgrounds */
+  /* Structural backgrounds — matches sidebar */
   --bg:           #0f1117;
   --bg-card:      #1a1d25;
   --bg-hover:     #252830;
@@ -28,7 +28,7 @@
   --text-faint:    #666;
   --text-fainter:  #555;
 
-  /* Semantic status — dark palette */
+  /* Semantic status — matches sidebar */
   --s-green:       #4ade80;
   --s-green-bg:    #1a3a2a;
   --s-yellow:      #fbbf24;
@@ -39,41 +39,41 @@
   --s-blue-bg:     #1e3a5f;
   --s-blue-deep:   #1a2535;
 
-  /* Primary action blue — same in both themes */
+  /* Primary action blue */
   --btn-primary:       #2563eb;
   --btn-primary-hover: #1d4ed8;
 }
 
 html.light {
-  --bg:           #f0f2f5;
-  --bg-card:      #ffffff;
-  --bg-hover:     #eaecf2;
-  --bg-input:     #ffffff;
+  --bg:           #edf0f5;
+  --bg-card:      #f5f7fa;
+  --bg-hover:     #e4e7ec;
+  --bg-input:     #f5f7fa;
   --bg-btn:       #eef0f5;
   --bg-btn-hover: #e2e5ec;
   --bg-active:    #dde2ed;
   --bg-badge:     #e5e8f0;
 
-  --border:        #d5d9e4;
+  --border:        #dce0ea;
   --border-subtle: #eaecf2;
-  --border-btn:    #c5cad8;
+  --border-btn:    #b8bfc9;
   --border-active: #9099b2;
 
-  --text:          #1e2235;
-  --text-strong:   #0f1120;
-  --text-secondary:#374151;
-  --text-dim:      #4b5568;
-  --text-muted:    #6b7280;
+  --text:          #1e2433;
+  --text-strong:   #0d1017;
+  --text-secondary:#3a4153;
+  --text-dim:      #5a6477;
+  --text-muted:    #6b7a8d;
   --text-faint:    #9ca3af;
   --text-fainter:  #b8c0d0;
 
-  --s-green:       #16a34a;
+  --s-green:       #15803d;
   --s-green-bg:    #dcfce7;
   --s-yellow:      #b45309;
   --s-yellow-bg:   #fef3c7;
   --s-red:         #dc2626;
   --s-red-bg:      #fee2e2;
-  --s-blue-text:   #2563eb;
+  --s-blue-text:   #1d4ed8;
   --s-blue-bg:     #dbeafe;
   --s-blue-deep:   #eff6ff;
 }
@@ -86,6 +86,12 @@ html.light {
   margin: 0;
   padding: 0;
   box-sizing: border-box;
+  scrollbar-width: none;          /* Firefox */
+  -ms-overflow-style: none;       /* IE/Edge */
+}
+
+*::-webkit-scrollbar {
+  display: none;                  /* Chrome/Safari */
 }
 
 body {
@@ -133,6 +139,13 @@ header {
   font-size: 0.7rem;
   color: var(--text-muted);
   cursor: default;
+}
+
+.auth-row.clickable {
+  cursor: pointer;
+  text-decoration: underline;
+  text-decoration-style: dotted;
+  text-underline-offset: 2px;
 }
 
 .auth-dot {
