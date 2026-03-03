@@ -1,0 +1,33 @@
+name: Deploy Staging WWW
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "www/**"
+  workflow_dispatch:
+
+jobs:
+  deploy:
+    name: Deploy to staging.klaudii.com
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup SSH
+        uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.WWW_DEPLOY_KEY }}
+
+      - name: Deploy to klaudiihq/www
+        run: |
+          git config --global user.email "github-actions[bot]@users.noreply.github.com"
+          git config --global user.name "github-actions[bot]"
+
+          git clone git@github.com:klaudiihq/www.git /tmp/www-repo
+          rsync -av --delete --exclude='.git' --exclude='CNAME' www/ /tmp/www-repo/
+
+          cd /tmp/www-repo
+          git add -A
+          git diff --cached --quiet || git commit -m "Staging from klaudiihq/klaudii@${{ github.sha }}"
+          git push
