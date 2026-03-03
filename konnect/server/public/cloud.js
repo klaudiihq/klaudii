@@ -181,6 +181,11 @@ function loadCloudDashboard() {
     try {
       const frameWindow = frame.contentWindow;
 
+      // Hide redundant elements from local dashboard header inside the iframe
+      const style = frameWindow.document.createElement("style");
+      style.textContent = "header h1, header .btn-theme, header #cloud-btn { display: none !important; }";
+      frameWindow.document.head.appendChild(style);
+
       // Override the api() function inside the iframe to use our cloud tunnel
       frameWindow.eval(`
         // Cloud mode: override the api function to use parent's cloud tunnel

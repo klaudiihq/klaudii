@@ -10,6 +10,26 @@ let themeMode = "auto"; // "auto" | "light" | "dark"
 
 const CLOUD_SVG = `<svg width="10" height="10" viewBox="0 0 24 24" fill="currentColor"><path d="M18 10h-1.26A8 8 0 1 0 9 20h9a5 5 0 0 0 0-10z"/></svg>`;
 
+// Stat icons (small inline SVGs matching iOS Label systemImage style)
+const STAT_CPU_SVG = `<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="4" width="16" height="16" rx="2"/><rect x="9" y="9" width="6" height="6"/><line x1="9" y1="1" x2="9" y2="4"/><line x1="15" y1="1" x2="15" y2="4"/><line x1="9" y1="20" x2="9" y2="23"/><line x1="15" y1="20" x2="15" y2="23"/><line x1="20" y1="9" x2="23" y2="9"/><line x1="20" y1="14" x2="23" y2="14"/><line x1="1" y1="9" x2="4" y2="9"/><line x1="1" y1="14" x2="4" y2="14"/></svg>`;
+const STAT_MEM_SVG = `<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="6" width="20" height="12" rx="2"/><line x1="6" y1="12" x2="6" y2="12.01"/><line x1="10" y1="12" x2="10" y2="12.01"/><line x1="14" y1="12" x2="14" y2="12.01"/><line x1="18" y1="12" x2="18" y2="12.01"/></svg>`;
+const STAT_CLOCK_SVG = `<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>`;
+const PENCIL_SVG = `<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 3a2.83 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"/><path d="m15 5 4 4"/></svg>`;
+
+// Clean phrases (matches iOS SessionCardView.cleanPhrases)
+const CLEAN_PHRASES = [
+  "squeaky clean", "pristine", "untouched", "clean as a whistle",
+  "spotless", "mint condition", "not a scratch", "fresh",
+  "zero diff", "nothing to see here", "all clear", "clean slate",
+  "immaculate", "tidy", "ship-shape",
+];
+
+function cleanPhrase(project) {
+  let hash = 0;
+  for (let i = 0; i < project.length; i++) hash += project.charCodeAt(i);
+  return CLEAN_PHRASES[Math.abs(hash) % CLEAN_PHRASES.length];
+}
+
 const GIT_PATH = "M23.546 10.93L13.067.452c-.604-.603-1.582-.603-2.188 0L8.708 2.627l2.76 2.76c.645-.215 1.379-.07 1.889.441.516.515.658 1.258.438 1.9l2.658 2.66c.645-.223 1.387-.078 1.9.435.721.72.721 1.884 0 2.604-.719.719-1.881.719-2.6 0-.539-.541-.674-1.337-.404-1.996L12.86 8.955v6.525c.176.086.342.203.488.348.713.721.713 1.883 0 2.6-.719.721-1.889.721-2.609 0-.719-.719-.719-1.879 0-2.598.182-.18.387-.316.605-.406V8.835c-.217-.091-.424-.222-.6-.401-.545-.545-.676-1.342-.396-2.009L7.636 3.7.45 10.881c-.6.605-.6 1.584 0 2.189l10.48 10.477c.604.604 1.582.604 2.186 0l10.43-10.43c.605-.603.605-1.582 0-2.187";
 const gitSvg = (size) => `<svg width="${size}" height="${size}" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="${GIT_PATH}"/></svg>`;
 
@@ -32,12 +52,20 @@ let lastSessions = [];
 let lastProcs = [];
 let activeTabUrl = null;
 let sortMode = localStorage.getItem("sortMode") || "activity";
+let branchFirst = localStorage.getItem("branchFirst") === "true";
 let openMode = "inplace";
 let attentionFlash = false;
 let autoApprove = false;
 let openTabs = new Map();       // urlPath (no query string) → tabId, for open claude.ai tabs in this window
 let sessionNeedsInput = {};     // project → bool: session has a pending approval button
 let sessionAutoApproved = {};   // project → bool: auto-approve just fired, show green flash
+let sessionAutoApproveConfig = {}; // project → bool: per-session auto-approve
+try { sessionAutoApproveConfig = JSON.parse(localStorage.getItem("sessionAutoApprove") || "{}"); } catch { sessionAutoApproveConfig = {}; }
+function saveSessionAutoApprove() { localStorage.setItem("sessionAutoApprove", JSON.stringify(sessionAutoApproveConfig)); }
+
+const PERM_MODE_LABELS = { yolo: "Bypass Permissions", ask: "Ask Permissions", strict: "Plan Mode" };
+const PERM_BADGE_LABELS = { yolo: "bypass", ask: "ask", strict: "plan" };
+
 let addSelectedRepo = null; // repo name chosen in the add-workspace flow
 let addRepos = [];          // cached list from /api/github/repos
 
@@ -98,11 +126,19 @@ async function init() {
   document.getElementById("btn-configure").addEventListener("click", openSettings);
 
   const btnAutoApprove = document.getElementById("btn-auto-approve");
+  const chkAutoApproveAll = document.getElementById("chk-auto-approve-all");
+  chkAutoApproveAll.checked = autoApprove;
   btnAutoApprove.classList.toggle("active", autoApprove);
-  btnAutoApprove.addEventListener("click", () => {
-    autoApprove = !autoApprove;
+  chkAutoApproveAll.addEventListener("change", () => {
+    autoApprove = chkAutoApproveAll.checked;
     btnAutoApprove.classList.toggle("active", autoApprove);
     chrome.storage.sync.set({ autoApprove });
+  });
+  // Allow clicking anywhere on the footer row to toggle
+  btnAutoApprove.addEventListener("click", (e) => {
+    if (e.target.closest(".toggle-switch")) return; // checkbox handles itself
+    chkAutoApproveAll.checked = !chkAutoApproveAll.checked;
+    chkAutoApproveAll.dispatchEvent(new Event("change"));
   });
 
   document.getElementById("btn-theme").addEventListener("click", () => {
@@ -112,19 +148,31 @@ async function init() {
   });
 
   // Sort toggle
-  document.querySelectorAll(".sort-btn").forEach((btn) => {
+  document.querySelectorAll(".sort-btn[data-sort]").forEach((btn) => {
     btn.addEventListener("click", () => {
       sortMode = btn.dataset.sort;
       localStorage.setItem("sortMode", sortMode);
-      document.querySelectorAll(".sort-btn").forEach((b) =>
+      document.querySelectorAll(".sort-btn[data-sort]").forEach((b) =>
         b.classList.toggle("active", b.dataset.sort === sortMode)
       );
       renderSessions(lastSessions, lastProcs);
     });
   });
-  document.querySelectorAll(".sort-btn").forEach((b) =>
+  document.querySelectorAll(".sort-btn[data-sort]").forEach((b) =>
     b.classList.toggle("active", b.dataset.sort === sortMode)
   );
+
+  // Branch-first name order toggle
+  const btnNameOrder = document.getElementById("btn-name-order");
+  btnNameOrder.textContent = branchFirst ? "branch" : "repo";
+  btnNameOrder.classList.toggle("active", branchFirst);
+  btnNameOrder.addEventListener("click", () => {
+    branchFirst = !branchFirst;
+    localStorage.setItem("branchFirst", branchFirst);
+    btnNameOrder.textContent = branchFirst ? "branch" : "repo";
+    btnNameOrder.classList.toggle("active", branchFirst);
+    renderSessions(lastSessions, lastProcs);
+  });
 
   // Server picker toggle
   document.getElementById("btn-server-picker").addEventListener("click", (e) => {
@@ -453,23 +501,22 @@ function renderServerPicker() {
     html += `<div class="server-picker-section"><div class="server-picker-heading">Local</div>${items}</div>`;
   }
 
-  // Only show Konnect servers that passed tunnel verification
-  const verifiedKonnect = konnectServers.filter((s) => s.verified);
-  if (verifiedKonnect.length) {
-    const items = verifiedKonnect.map((srv) => {
+  // Show ALL Konnect servers with green/red status dots
+  if (konnectServers.length) {
+    const items = konnectServers.map((srv) => {
       const isSel = selectedServer.type === "konnect" && selectedServer.id === srv.id;
+      const isUp = srv.verified === true;
       return `<button class="server-picker-item${isSel ? " selected" : ""}"
         data-server-key="konnect:${esc(srv.id)}">
         ${CLOUD_SVG}
         <span class="sp-name">${esc(srv.name)}</span>
-        <span class="sp-dot online"></span>
+        <span class="sp-dot ${isUp ? "online" : "offline"}"></span>
       </button>`;
     }).join("");
     html += `<div class="server-picker-section"><div class="server-picker-heading">Kloud Konnect</div>${items}</div>`;
   } else if (konnectUser) {
-    const msg = konnectErrors.length ? "No reachable servers" : "No servers paired";
     html += `<div class="server-picker-section"><div class="server-picker-heading">Kloud Konnect</div>
-      <div class="server-picker-item" style="cursor:default;color:var(--text-dimmer)">${msg}</div>
+      <div class="server-picker-item" style="cursor:default;color:var(--text-dimmer)">No servers paired</div>
     </div>`;
   }
 
@@ -477,19 +524,40 @@ function renderServerPicker() {
 }
 
 function renderKonnectWarning() {
-  const el = document.getElementById("konnect-warning");
+  const el = document.getElementById("konnect-dot");
   if (!el) return;
-  if (!konnectErrors.length) {
+
+  // Only relevant when user has Konnect servers
+  const totalKonnect = konnectServers.filter((s) => s.online).length;
+  if (!konnectUser || totalKonnect === 0) {
     el.classList.add("hidden");
-    el.textContent = "";
+    el.className = "konnect-dot hidden";
+    el.title = "";
     return;
   }
-  const names = konnectErrors.map((e) => e.name).join(", ");
-  el.textContent = konnectErrors.length === 1
-    ? `${names} unreachable`
-    : `${konnectErrors.length} Konnect servers unreachable`;
-  el.title = konnectErrors.map((e) => `${e.name}: ${e.error}`).join("\n");
-  el.classList.remove("hidden");
+
+  const verifiedCount = konnectServers.filter((s) => s.verified).length;
+  const errorCount = konnectErrors.length;
+
+  let dotClass, tooltip;
+  if (errorCount === 0 && verifiedCount > 0) {
+    // All servers reachable
+    dotClass = "konnect-ok";
+    tooltip = `All ${verifiedCount} Konnect server${verifiedCount > 1 ? "s" : ""} connected`;
+  } else if (verifiedCount > 0 && errorCount > 0) {
+    // Some reachable, some not
+    dotClass = "konnect-partial";
+    const names = konnectErrors.map((e) => e.name).join(", ");
+    tooltip = `${verifiedCount} connected, ${errorCount} unreachable: ${names}`;
+  } else {
+    // All down
+    dotClass = "konnect-down";
+    const names = konnectErrors.map((e) => `${e.name}: ${e.error}`).join("\n");
+    tooltip = `All Konnect servers unreachable\n${names}`;
+  }
+
+  el.className = `konnect-dot ${dotClass}`;
+  el.title = tooltip;
 }
 
 // --- Data loading ---
@@ -620,7 +688,7 @@ async function checkApprovalStates(sessions) {
           if (shouldAutoApprove && isApprovable) { btn.click(); return { found: true, clicked: true }; }
           return { found: true, clicked: false };
         },
-        args: [autoApprove],
+        args: [autoApprove || sessionAutoApproveConfig[s.project] === true],
       });
       const result = results?.[0]?.result;
       if (result?.clicked) {
@@ -758,32 +826,50 @@ function renderCard(s, proc, showServerBadge = false) {
     ? `<a class="git-link" href="${esc(s.remoteUrl + "/tree/" + gitBranch)}" target="_blank" rel="noreferrer" title="View branch on GitHub">${gitSvg(10)}</a>`
     : "";
 
-  let gitBar = "";
+  // Git status row (clean phrases + dirty/unpushed)
+  let gitStatusRow = "";
   if (g) {
     const items = [];
-    if (gitBranch) items.push(`${branchGitLink}<span class="git-branch">${esc(gitBranch)}</span>`);
-    if (g.dirtyFiles) items.push(`<span class="git-dirty">${g.dirtyFiles} changed</span>`);
-    else items.push(`<span class="git-clean">clean</span>`);
+    if (g.dirtyFiles) {
+      items.push(`<span class="git-dirty">${g.dirtyFiles} file${g.dirtyFiles === 1 ? "" : "s"} touched</span>`);
+    } else {
+      items.push(`<span class="git-clean">${esc(cleanPhrase(s.project))}</span>`);
+    }
     if (g.unpushed) items.push(`<span class="git-unpushed">${g.unpushed} unpushed</span>`);
-    gitBar = `<div class="git-bar">${items.join("")}</div>`;
-  } else if (branch) {
-    gitBar = `<div class="git-bar">${branchGitLink}<span class="git-branch">${esc(branch)}</span></div>`;
+    gitStatusRow = `<div class="git-bar">${items.join("")}</div>`;
   }
 
-  let stats = "";
+  // Subtitle line (branch)
+  const subtitle = gitBranch || branch;
+
+  // Process stats with icons + pencil edit button on the right
+  const editBtn = `<button class="card-edit-btn" data-action="toggle-panel" data-project="${esc(s.project)}" title="Options">${PENCIL_SVG}</button>`;
+  let statsRow = "";
   if (proc) {
-    const statParts = [`${proc.cpu}% cpu`, `${proc.memMB} MB`];
-    if (proc.uptime) statParts.push(esc(proc.uptime));
-    stats = `<div class="proc-stats">${statParts.join(" · ")}</div>`;
+    const statParts = [];
+    statParts.push(`<span class="proc-stat">${STAT_CPU_SVG} ${proc.cpu}%</span>`);
+    statParts.push(`<span class="proc-stat">${STAT_MEM_SVG} ${proc.memMB} MB</span>`);
+    if (proc.uptime) statParts.push(`<span class="proc-stat">${STAT_CLOCK_SVG} ${esc(proc.uptime)}</span>`);
+    statsRow = `<div class="proc-stats">${statParts.join("")}${editBtn}</div>`;
+  } else {
+    statsRow = `<div class="proc-stats">${editBtn}</div>`;
   }
 
-  const permBadge = `<span class="perm-badge perm-${mode}">${mode}</span>`;
-  const permToggle = !isRunning ? `
-    <div class="perm-toggle">
-      <button class="perm-btn${mode === "yolo" ? " active perm-yolo" : ""}" data-action="set-perm" data-project="${esc(s.project)}" data-mode="yolo">Yolo</button>
-      <button class="perm-btn${mode === "ask" ? " active perm-ask" : ""}" data-action="set-perm" data-project="${esc(s.project)}" data-mode="ask">Ask</button>
-      <button class="perm-btn${mode === "strict" ? " active perm-strict" : ""}" data-action="set-perm" data-project="${esc(s.project)}" data-mode="strict">Strict</button>
-    </div>` : "";
+  const permBadge = isRunning ? `<span class="perm-badge perm-${mode}">${PERM_BADGE_LABELS[mode] || mode}</span>` : "";
+
+  // Per-session auto-approve toggle (hidden when global Auto Approve All is on)
+  let autoApproveRow = "";
+  if (!autoApprove) {
+    const isSessionApprove = sessionAutoApproveConfig[s.project] === true;
+    autoApproveRow = `
+      <div class="auto-approve-row">
+        <span class="auto-approve-row-label">Auto Approve</span>
+        <label class="toggle-switch" title="Auto approve this session">
+          <input type="checkbox" data-action="toggle-session-approve" data-project="${esc(s.project)}"${isSessionApprove ? " checked" : ""}>
+          <span class="toggle-slider"></span>
+        </label>
+      </div>`;
+  }
 
   const displayTitle = gitBranch ? `${repo} (${gitBranch})` : repo;
   const needsInput = sessionNeedsInput[s.project] === true;
@@ -804,38 +890,60 @@ function renderCard(s, proc, showServerBadge = false) {
     }
   }
 
-  let menuItems = "";
+  // Inline action panel items (startup mode dropdown lives here for stopped cards)
+  let panelItems = "";
   if (isRunning) {
-    menuItems = `
-      <button class="menu-item danger" data-action="stop" data-project="${esc(s.project)}">Stop</button>
-      <button class="menu-item" data-action="restart" data-project="${esc(s.project)}">Restart</button>
-      ${s.ttyd ? `<button class="menu-item" data-action="terminal" data-port="${s.ttyd.port}">Terminal</button>` : ""}
-      <button class="menu-item" data-action="history" data-project="${esc(s.project)}">History</button>`;
+    panelItems = `
+      <button class="btn btn-sm danger" data-action="stop" data-project="${esc(s.project)}">Stop</button>
+      <button class="btn btn-sm" data-action="restart" data-project="${esc(s.project)}">Restart</button>
+      ${s.ttyd ? `<button class="btn btn-sm" data-action="terminal" data-port="${s.ttyd.port}">Terminal</button>` : ""}
+      <button class="btn btn-sm" data-action="history" data-project="${esc(s.project)}">History</button>`;
   } else {
-    menuItems = `
-      <button class="menu-item" data-action="start" data-project="${esc(s.project)}">New Session</button>
-      <button class="menu-item" data-action="history" data-project="${esc(s.project)}">History</button>
-      <button class="menu-item danger" data-action="remove" data-project="${esc(s.project)}">Remove</button>`;
+    const modeOptions = Object.entries(PERM_MODE_LABELS).map(([val, label]) =>
+      `<option value="${val}"${val === mode ? " selected" : ""}>${label}</option>`
+    ).join("");
+    panelItems = `
+      <div class="panel-mode-row">
+        <span class="panel-mode-label">Startup Mode</span>
+        <select class="mode-select" data-project="${esc(s.project)}">
+          ${modeOptions}
+        </select>
+      </div>
+      <button class="btn btn-sm primary" data-action="start" data-project="${esc(s.project)}">New Session</button>
+      <button class="btn btn-sm" data-action="history" data-project="${esc(s.project)}">History</button>
+      <button class="btn btn-sm danger" data-action="remove" data-project="${esc(s.project)}">Remove</button>`;
   }
+
+  // Branch-first name swapping (matches iOS branchFirst toggle)
+  const primaryName = branchFirst && subtitle ? subtitle : repo;
+  const primaryLink = branchFirst && subtitle ? branchGitLink : repoGitLink;
+  const secondaryName = branchFirst && subtitle ? repo : subtitle;
+  const secondaryLink = branchFirst && subtitle ? repoGitLink : branchGitLink;
 
   return `
     <div class="card${attentionClass}" data-project="${esc(s.project)}" data-claude-url="${esc(s.claudeUrl || "")}" data-status="${status}" data-open-title="${esc(displayTitle)}">
-      <div class="card-header">
-        ${repoGitLink}<span class="card-title">${esc(repo)}</span>${serverBadge}
-        ${inputDot}
-        <div class="card-badges">
-          ${permBadge}
-          <span class="card-status ${status}">${status}</span>
+      <div class="card-accent ${status}"></div>
+      <div class="card-body">
+        <div class="card-header">
+          <div class="card-names">
+            <span class="card-title">${primaryLink}${esc(primaryName)}</span>
+            ${secondaryName ? `<span class="card-subtitle">${secondaryLink}${esc(secondaryName)}</span>` : ""}
+          </div>
+          ${inputDot}
+          <div class="card-badges">
+            ${permBadge}
+            <span class="card-status ${status}">${status}</span>
+          </div>
         </div>
-        <button class="card-menu-btn icon-btn" data-action="toggle-menu" data-project="${esc(s.project)}" title="Actions">···</button>
+        ${gitStatusRow}
+        ${statsRow}
+        ${autoApproveRow}
+        ${serverBadge}
+        <div class="card-actions-panel hidden">
+          ${panelItems}
+        </div>
+        <div class="history-list hidden" id="history-${esc(s.project)}"></div>
       </div>
-      ${gitBar}
-      ${stats}
-      ${permToggle}
-      <div class="card-menu hidden">
-        ${menuItems}
-      </div>
-      <div class="history-list hidden" id="history-${esc(s.project)}"></div>
     </div>`;
 }
 
@@ -880,9 +988,9 @@ document.addEventListener("click", async (e) => {
     document.getElementById("btn-server-picker").classList.remove("open");
   }
 
-  // Close open card menus when clicking outside them
-  if (!e.target.closest(".card-menu") && !e.target.closest("[data-action='toggle-menu']")) {
-    document.querySelectorAll(".card-menu:not(.hidden)").forEach((m) => m.classList.add("hidden"));
+  // Close open action panels when clicking outside them
+  if (!e.target.closest(".card-actions-panel") && !e.target.closest("[data-action='toggle-panel']")) {
+    closeAllPanels();
   }
 
   const btn = e.target.closest("[data-action]");
@@ -968,22 +1076,7 @@ document.addEventListener("click", async (e) => {
       setTimeout(refresh, 1000);
       break;
 
-    case "set-perm": {
-      const mode = btn.dataset.mode;
-      btn.closest(".perm-toggle").querySelectorAll(".perm-btn").forEach((b) => {
-        b.classList.remove("active", "perm-yolo", "perm-ask", "perm-strict");
-        if (b.dataset.mode === mode) b.classList.add("active", `perm-${mode}`);
-      });
-      btn.closest(".card").querySelector(".perm-badge").className = `perm-badge perm-${mode}`;
-      btn.closest(".card").querySelector(".perm-badge").textContent = mode;
-      try {
-        await sessionApiCall(project, "/api/projects/permission", { method: "POST", body: { project, mode } });
-      } catch (err) {
-        showToast("Error: " + err.message);
-        refresh();
-      }
-      break;
-    }
+    // set-perm now handled by change event on .mode-select (see below)
 
     case "remove":
       if (btn.dataset.armed === "force") {
@@ -1067,19 +1160,76 @@ document.addEventListener("click", async (e) => {
       break;
     }
 
-    case "toggle-menu": {
+    case "toggle-panel": {
       const card = btn.closest(".card");
-      const menu = card?.querySelector(".card-menu");
-      if (menu) menu.classList.toggle("hidden");
+      const panel = card?.querySelector(".card-actions-panel");
+      if (!panel) break;
+      const isOpen = !panel.classList.contains("hidden");
+      closeAllPanels(); // close any other open panels
+      if (!isOpen) {
+        panel.classList.remove("hidden");
+        schedulePanelAutoClose(panel);
+      }
       break;
     }
+  }
+});
+
+// --- Panel auto-close ---
+
+let panelAutoCloseTimer = null;
+let panelAutoCloseTarget = null;
+
+function closeAllPanels() {
+  document.querySelectorAll(".card-actions-panel:not(.hidden)").forEach((p) => p.classList.add("hidden"));
+  if (panelAutoCloseTimer) { clearTimeout(panelAutoCloseTimer); panelAutoCloseTimer = null; }
+  panelAutoCloseTarget = null;
+}
+
+function schedulePanelAutoClose(panel) {
+  if (panelAutoCloseTimer) clearTimeout(panelAutoCloseTimer);
+  panelAutoCloseTarget = panel;
+  panelAutoCloseTimer = setTimeout(() => closeAllPanels(), 15000);
+}
+
+// Reset auto-close timer on any click inside an action panel
+document.addEventListener("click", (e) => {
+  if (e.target.closest(".card-actions-panel") && panelAutoCloseTarget) {
+    schedulePanelAutoClose(panelAutoCloseTarget);
+  }
+});
+
+// --- Mode select + per-session auto-approve (change events) ---
+
+document.addEventListener("change", async (e) => {
+  // Mode dropdown changed
+  const select = e.target.closest(".mode-select");
+  if (select) {
+    const project = select.dataset.project;
+    const mode = select.value;
+    try {
+      await sessionApiCall(project, "/api/projects/permission", { method: "POST", body: { project, mode } });
+    } catch (err) {
+      showToast("Error: " + err.message);
+      refresh();
+    }
+    return;
+  }
+
+  // Per-session auto-approve toggle
+  const toggle = e.target.closest("[data-action='toggle-session-approve']");
+  if (toggle) {
+    const project = toggle.dataset.project;
+    sessionAutoApproveConfig[project] = toggle.checked;
+    saveSessionAutoApprove();
+    return;
   }
 });
 
 // --- Card body click → primary action ---
 
 document.addEventListener("click", async (e) => {
-  if (e.target.closest("button, a, input")) return;
+  if (e.target.closest("button, a, input, select, label.toggle-switch")) return;
   const card = e.target.closest(".card");
   if (!card) return;
 

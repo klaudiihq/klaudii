@@ -3,7 +3,7 @@
    ========================================================= */
 
 :root {
-  /* Structural backgrounds */
+  /* Structural backgrounds — matches sidebar */
   --bg:           #0f1117;
   --bg-card:      #1a1d25;
   --bg-hover:     #252830;
@@ -28,7 +28,7 @@
   --text-faint:    #666;
   --text-fainter:  #555;
 
-  /* Semantic status — dark palette */
+  /* Semantic status — matches sidebar */
   --s-green:       #4ade80;
   --s-green-bg:    #1a3a2a;
   --s-yellow:      #fbbf24;
@@ -39,41 +39,41 @@
   --s-blue-bg:     #1e3a5f;
   --s-blue-deep:   #1a2535;
 
-  /* Primary action blue — same in both themes */
+  /* Primary action blue */
   --btn-primary:       #2563eb;
   --btn-primary-hover: #1d4ed8;
 }
 
 html.light {
-  --bg:           #f0f2f5;
-  --bg-card:      #ffffff;
-  --bg-hover:     #eaecf2;
-  --bg-input:     #ffffff;
+  --bg:           #edf0f5;
+  --bg-card:      #f5f7fa;
+  --bg-hover:     #e4e7ec;
+  --bg-input:     #f5f7fa;
   --bg-btn:       #eef0f5;
   --bg-btn-hover: #e2e5ec;
   --bg-active:    #dde2ed;
   --bg-badge:     #e5e8f0;
 
-  --border:        #d5d9e4;
+  --border:        #dce0ea;
   --border-subtle: #eaecf2;
-  --border-btn:    #c5cad8;
+  --border-btn:    #b8bfc9;
   --border-active: #9099b2;
 
-  --text:          #1e2235;
-  --text-strong:   #0f1120;
-  --text-secondary:#374151;
-  --text-dim:      #4b5568;
-  --text-muted:    #6b7280;
+  --text:          #1e2433;
+  --text-strong:   #0d1017;
+  --text-secondary:#3a4153;
+  --text-dim:      #5a6477;
+  --text-muted:    #6b7a8d;
   --text-faint:    #9ca3af;
   --text-fainter:  #b8c0d0;
 
-  --s-green:       #16a34a;
+  --s-green:       #15803d;
   --s-green-bg:    #dcfce7;
   --s-yellow:      #b45309;
   --s-yellow-bg:   #fef3c7;
   --s-red:         #dc2626;
   --s-red-bg:      #fee2e2;
-  --s-blue-text:   #2563eb;
+  --s-blue-text:   #1d4ed8;
   --s-blue-bg:     #dbeafe;
   --s-blue-deep:   #eff6ff;
 }
@@ -86,6 +86,12 @@ html.light {
   margin: 0;
   padding: 0;
   box-sizing: border-box;
+  scrollbar-width: none;          /* Firefox */
+  -ms-overflow-style: none;       /* IE/Edge */
+}
+
+*::-webkit-scrollbar {
+  display: none;                  /* Chrome/Safari */
 }
 
 body {
@@ -93,7 +99,25 @@ body {
   background: var(--bg);
   color: var(--text);
   min-height: 100vh;
-  padding: 1rem;
+  display: flex;
+  flex-direction: column;
+}
+
+/* =========================================================
+   App layout (sidebar + chat split)
+   ========================================================= */
+
+.app-layout {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+}
+
+main {
+  flex: 1;
+  min-width: 0;
+  overflow-y: auto;
+  padding: 0 1rem 1rem;
 }
 
 /* =========================================================
@@ -104,9 +128,9 @@ header {
   display: flex;
   align-items: center;
   gap: 1rem;
-  padding: 1rem 0;
+  padding: 0.75rem 1rem;
   border-bottom: 1px solid var(--border);
-  margin-bottom: 1.5rem;
+  flex-shrink: 0;
 }
 
 .auth-box {
@@ -135,6 +159,13 @@ header {
   cursor: default;
 }
 
+.auth-row.clickable {
+  cursor: pointer;
+  text-decoration: underline;
+  text-decoration-style: dotted;
+  text-underline-offset: 2px;
+}
+
 .auth-dot {
   width: 6px;
   height: 6px;
@@ -161,13 +192,46 @@ h2 {
 }
 
 /* =========================================================
-   Sort controls
+   Sort bar (matches extension)
    ========================================================= */
 
-.sort-controls {
-  display: inline-flex;
-  gap: 0.25rem;
-  margin-left: 0.25rem;
+.sort-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.6rem 0;
+  border-bottom: 1px solid var(--border);
+  margin-bottom: 0.75rem;
+}
+
+.sort-left {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.sort-label {
+  font-size: 10px;
+  color: var(--text-fainter);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  margin-right: 4px;
+}
+
+.sort-btn {
+  font-size: 10px;
+  padding: 2px 7px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: transparent;
+  color: var(--text-faint);
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.sort-btn:hover {
+  color: var(--text-dim);
+  background: var(--bg-hover);
 }
 
 .sort-btn.active {
@@ -198,120 +262,243 @@ h2 {
 .card-grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(340px, 1fr));
-  gap: 1rem;
+  gap: 0.5rem;
   margin-bottom: 2rem;
 }
 
+/* =========================================================
+   Card (matches extension sidebar)
+   ========================================================= */
+
 .card {
+  display: flex;
   background: var(--bg-card);
   border: 1px solid var(--border);
   border-radius: 8px;
-  padding: 1rem;
+  padding: 0;
+  overflow: hidden;
+  transition: border-color 0.15s;
 }
+
+.card:hover {
+  border-color: var(--border-active);
+}
+
+/* Left accent stripe (3px colored by status) */
+.card-accent {
+  width: 3px;
+  flex-shrink: 0;
+  border-radius: 2px;
+  margin: 4px 0;
+}
+
+.card-accent.running { background: var(--s-green); }
+.card-accent.exited  { background: var(--s-yellow); }
+.card-accent.stopped { background: var(--border); }
+
+/* Card body (all content right of accent) */
+.card-body {
+  flex: 1;
+  min-width: 0;
+  padding: 10px 12px;
+}
+
+/* --- Card header: names + badges --- */
 
 .card-header {
   display: flex;
   justify-content: space-between;
-  align-items: center;
-  margin-bottom: 0.5rem;
+  align-items: flex-start;
+  margin-bottom: 4px;
+  gap: 6px;
+}
+
+.card-names {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+  flex: 1;
 }
 
 .card-title {
-  font-size: 1rem;
+  font-size: 13px;
   font-weight: 600;
   color: var(--text-strong);
-}
-
-.card-branch {
-  font-weight: 400;
-  color: var(--text-faint);
-}
-
-.card-status {
-  font-size: 0.75rem;
-  padding: 0.15rem 0.5rem;
-  border-radius: 999px;
-}
-
-.card-status.running { background: var(--s-green-bg);  color: var(--s-green); }
-.card-status.exited  { background: var(--s-yellow-bg); color: var(--s-yellow); }
-.card-status.stopped { background: var(--bg-badge);    color: var(--text-muted); }
-
-/* =========================================================
-   Permission toggle
-   ========================================================= */
-
-.permission-toggle {
-  display: inline-flex;
-  border: 1px solid var(--border);
-  border-radius: 6px;
   overflow: hidden;
-  margin-bottom: 0.5rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  line-height: 1.3;
 }
 
-.perm-btn {
-  font-size: 0.7rem;
-  padding: 0.2rem 0.6rem;
-  border: none;
-  background: transparent;
-  color: var(--text-fainter);
-  cursor: pointer;
-  transition: all 0.15s;
+.card-subtitle {
+  font-size: 11px;
+  font-family: ui-monospace, monospace;
+  color: var(--text-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  line-height: 1.3;
 }
 
-.perm-btn:not(:last-child) {
-  border-right: 1px solid var(--border);
-}
-
-.perm-btn:hover {
-  color: var(--text-dim);
-  background: var(--bg-hover);
-}
-
-.perm-btn.active.yolo   { background: var(--s-green-bg);  color: var(--s-green); }
-.perm-btn.active.ask    { background: var(--s-blue-bg);   color: var(--s-blue-text); }
-.perm-btn.active.strict { background: var(--s-yellow-bg); color: var(--s-yellow); }
-
-.permission-toggle.locked { border: none; }
-
-.perm-badge {
-  font-size: 0.65rem;
-  padding: 0.15rem 0.5rem;
-  border-radius: 999px;
-}
-
-.perm-badge.yolo   { background: var(--s-green-bg);  color: var(--s-green); }
-.perm-badge.ask    { background: var(--s-blue-bg);   color: var(--s-blue-text); }
-.perm-badge.strict { background: var(--s-yellow-bg); color: var(--s-yellow); }
-
-.card-actions {
-  display: flex;
-  gap: 0.5rem;
-  flex-wrap: wrap;
-}
-
-/* =========================================================
-   Git status bar (on cards)
-   ========================================================= */
-
-.git-status-bar {
+.card-badges {
   display: flex;
   align-items: center;
-  gap: 0.5rem;
-  font-size: 0.75rem;
-  margin-bottom: 0.4rem;
+  gap: 4px;
+  flex-shrink: 0;
 }
 
-.git-dirty         { color: var(--s-yellow); cursor: pointer; }
-.git-dirty:hover   { text-decoration: underline; }
-.git-clean         { color: var(--s-green); }
-.git-unpushed      { color: var(--s-red); font-weight: 500; }
-
 /* Card title links */
-.card-repo-link           { color: var(--text-strong); text-decoration: none; font-weight: 600; }
-.card-repo-link:hover     { text-decoration: underline; }
-.card-branch-link         { color: var(--text-faint); text-decoration: none; font-weight: 400; }
-.card-branch-link:hover   { color: var(--text-muted); text-decoration: underline; }
+.card-repo-link       { color: var(--text-strong); text-decoration: none; font-weight: 600; }
+.card-repo-link:hover { text-decoration: underline; }
+.card-branch-link       { color: var(--text-muted); text-decoration: none; }
+.card-branch-link:hover { color: var(--text-dim); text-decoration: underline; }
+
+/* --- Status badge (gradient backgrounds, matches extension) --- */
+
+.card-status {
+  font-size: 10px;
+  padding: 2px 6px;
+  border-radius: 999px;
+  flex-shrink: 0;
+}
+
+.card-status.running {
+  background: linear-gradient(to right, #86efac, #4ade80, #22c55e);
+  color: #fff;
+  font-weight: 500;
+}
+
+.card-status.exited {
+  background: linear-gradient(to right, #fde68a, #fbbf24, #f59e0b);
+  color: #fff;
+  font-weight: 500;
+}
+
+.card-status.stopped {
+  background: var(--bg-badge);
+  color: var(--text-muted);
+}
+
+/* --- Permission badge (compact pill) --- */
+
+.perm-badge {
+  font-size: 9px;
+  padding: 1px 5px;
+  border-radius: 999px;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+
+.perm-badge.perm-yolo   { background: var(--s-green-bg);  color: var(--s-green); }
+.perm-badge.perm-ask    { background: var(--s-blue-bg);   color: var(--s-blue-text); }
+.perm-badge.perm-strict { background: var(--s-yellow-bg); color: var(--s-yellow); }
+
+/* =========================================================
+   Git status bar (on cards — matches extension)
+   ========================================================= */
+
+.git-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 11px;
+  margin-bottom: 4px;
+}
+
+.git-clean    { color: var(--s-green); flex-shrink: 0; }
+.git-dirty    { color: var(--s-yellow); flex-shrink: 0; cursor: pointer; }
+.git-dirty:hover { text-decoration: underline; }
+.git-unpushed { color: var(--s-red); font-weight: 500; flex-shrink: 0; }
+
+/* =========================================================
+   Process stats with icons (matches extension)
+   ========================================================= */
+
+.proc-stats {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 11px;
+  color: var(--text-muted);
+  margin-bottom: 4px;
+}
+
+.proc-stat {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+}
+
+.proc-stat svg { opacity: 0.6; }
+
+/* Pencil edit button (right-aligned in stats row) */
+.card-edit-btn {
+  margin-left: auto;
+  flex-shrink: 0;
+  opacity: 0.35;
+  transition: opacity 0.15s;
+  background: none;
+  border: none;
+  color: var(--text-dim);
+  cursor: pointer;
+  padding: 1px 2px;
+  display: flex;
+  align-items: center;
+}
+
+.card-edit-btn:hover { opacity: 0.8; color: var(--text-secondary); }
+
+/* =========================================================
+   Inline action panel (matches extension)
+   ========================================================= */
+
+.card-actions-panel {
+  margin-top: 6px;
+  padding-top: 6px;
+  border-top: 1px solid var(--border);
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.card-actions-panel.hidden { display: none; }
+
+/* Permission mode dropdown (inside panel for stopped cards) */
+.panel-mode-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  margin-bottom: 2px;
+}
+
+.panel-mode-label {
+  font-size: 10px;
+  color: var(--text-dim);
+  white-space: nowrap;
+}
+
+.mode-select {
+  flex: 1;
+  font-size: 11px;
+  padding: 3px 22px 3px 6px;
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  background: var(--bg);
+  color: var(--text);
+  cursor: pointer;
+  -webkit-appearance: none;
+  appearance: none;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='10' viewBox='0 0 10 10'%3E%3Cpath d='M2 3.5l3 3 3-3' fill='none' stroke='%23888' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 6px center;
+  transition: border-color 0.15s;
+}
+
+.mode-select:hover { border-color: var(--border-active); }
+.mode-select:focus { outline: none; border-color: var(--btn-primary); }
 
 /* =========================================================
    Git status modal
@@ -367,6 +554,11 @@ h2 {
    Free range claude cards
    ========================================================= */
 
+.freerange-card {
+  flex-direction: column;
+  padding: 0.75rem;
+}
+
 .freerange-top {
   display: flex;
   justify-content: space-between;
@@ -390,9 +582,6 @@ h2 {
 .freerange-stats { font-size: 0.75rem; color: var(--text-muted); }
 .freerange-cwd   { font-size: 0.75rem; color: var(--text-faint); word-break: break-all; margin-bottom: 0.5rem; }
 .freerange-bottom { display: flex; }
-
-/* Process stats */
-.proc-stats { font-size: 0.75rem; color: var(--text-muted); margin-bottom: 0.5rem; }
 
 /* =========================================================
    Buttons
@@ -622,6 +811,11 @@ h2 {
 
 .repo-name { font-size: 0.9rem; color: var(--text-strong); font-weight: 500; }
 
+.repo-owner {
+  color: #888;
+  font-weight: 400;
+}
+
 .repo-desc {
   font-size: 0.75rem;
   color: var(--text-faint);
@@ -753,7 +947,7 @@ h2 {
   border: 1px solid var(--border);
   border-radius: 8px;
   padding: 0.75rem 1rem 0.6rem;
-  margin-bottom: 1.5rem;
+  margin-bottom: 1rem;
 }
 
 .usage-header {
@@ -788,6 +982,68 @@ h2 {
 .usage-total { font-size: 0.75rem; color: var(--text-muted); }
 
 /* =========================================================
+   Chat-open split layout
+   ========================================================= */
+
+body.chat-open .app-layout {
+  height: calc(100vh - 50px);  /* below header */
+}
+
+body.chat-open main {
+  flex: 0 0 360px;
+  max-width: 360px;
+  border-right: 1px solid var(--border);
+}
+
+body.chat-open .gemini-panel {
+  flex: 1;
+  min-width: 0;
+}
+
+/* Single-column sidebar cards */
+body.chat-open .card-grid {
+  grid-template-columns: 1fr;
+  gap: 6px;
+}
+
+/* Hide usage chart in sidebar */
+body.chat-open #usage-section {
+  display: none;
+}
+
+/* Compact sidebar cards */
+body.chat-open .card-body {
+  padding: 8px 10px;
+}
+
+/* Sidebar card click affordance */
+body.chat-open .card {
+  cursor: pointer;
+}
+
+/* Highlight the active workspace card in sidebar */
+body.chat-open .card.active-workspace {
+  border-color: var(--btn-primary);
+  box-shadow: 0 0 0 1px var(--btn-primary);
+}
+
+/* =========================================================
+   Chatonly mode (hides main entirely)
+   ========================================================= */
+
+body.chatonly header {
+  display: none !important;
+}
+
+body.chatonly main {
+  display: none !important;
+}
+
+body.chatonly .gemini-panel {
+  flex: 1;
+}
+
+/* =========================================================
    Utilities
    ========================================================= */
 
@@ -797,9 +1053,16 @@ h2 {
    Responsive
    ========================================================= */
 
+@media (max-width: 768px) {
+  /* In chat mode on narrow screens, hide sidebar */
+  body.chat-open main {
+    display: none;
+  }
+  body.chat-open .gemini-panel {
+    flex: 1;
+  }
+}
+
 @media (max-width: 600px) {
-  body { padding: 0.5rem; }
   .card-grid { grid-template-columns: 1fr; }
-  .card-actions { flex-direction: column; }
-  .btn { width: 100%; text-align: center; }
 }
