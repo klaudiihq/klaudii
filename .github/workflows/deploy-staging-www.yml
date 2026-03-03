@@ -1,0 +1,26 @@
+name: Deploy Staging WWW
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "www/**"
+  workflow_dispatch:
+
+jobs:
+  deploy:
+    name: Deploy to staging.klaudii.com
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Deploy www/ to gh-pages
+        uses: peaceiris/actions-gh-pages@v4
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          publish_dir: ./www
+          publish_branch: gh-pages
+          keep_files: false
+          cname: staging.klaudii.com
