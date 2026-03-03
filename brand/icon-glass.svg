@@ -1,0 +1,68 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024">
+  <defs>
+    <!-- Deep background -->
+    <radialGradient id="bg" cx="50%" cy="38%" r="70%">
+      <stop offset="0%"   stop-color="#1c1f2b"/>
+      <stop offset="100%" stop-color="#09090e"/>
+    </radialGradient>
+
+    <!-- K mark gradient -->
+    <linearGradient id="kg" x1="512" y1="160" x2="512" y2="864" gradientUnits="userSpaceOnUse">
+      <stop offset="0%"   stop-color="#86efac"/>
+      <stop offset="50%"  stop-color="#4ade80"/>
+      <stop offset="100%" stop-color="#22c55e"/>
+    </linearGradient>
+
+    <!-- Glass gloss: diagonal sweep across upper-left quadrant -->
+    <linearGradient id="gloss" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%"   stop-color="rgba(255,255,255,0.11)"/>
+      <stop offset="40%"  stop-color="rgba(255,255,255,0.05)"/>
+      <stop offset="100%" stop-color="rgba(255,255,255,0)"/>
+    </linearGradient>
+
+    <!-- Specular streak along top edge -->
+    <linearGradient id="specular" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%"   stop-color="rgba(255,255,255,0.18)"/>
+      <stop offset="100%" stop-color="rgba(255,255,255,0)"/>
+    </linearGradient>
+
+    <!-- Bottom ambient fade (ground reflection) -->
+    <linearGradient id="ground" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%"   stop-color="rgba(74,222,128,0)"/>
+      <stop offset="100%" stop-color="rgba(74,222,128,0.04)"/>
+    </linearGradient>
+
+    <!-- macOS Big Sur icon shape: 22% corner radius -->
+    <clipPath id="shape">
+      <rect width="1024" height="1024" rx="224" ry="224"/>
+    </clipPath>
+  </defs>
+
+  <g clip-path="url(#shape)">
+    <!-- Base -->
+    <rect width="1024" height="1024" fill="url(#bg)"/>
+
+    <!-- Green ambient glow at bottom (ground reflection from the K) -->
+    <rect width="1024" height="1024" fill="url(#ground)"/>
+
+    <!-- Glass gloss sweep -->
+    <rect width="1024" height="1024" fill="url(#gloss)"/>
+
+    <!-- Specular: soft ellipse just inside the top edge -->
+    <ellipse cx="512" cy="120" rx="340" ry="72"
+             fill="url(#specular)" opacity="0.75"/>
+
+    <!-- K lettermark -->
+    <g>
+      <rect x="252" y="184" width="84" height="655" rx="42" fill="url(#kg)"/>
+      <line x1="369" y1="512" x2="735" y2="226" stroke="url(#kg)" stroke-width="84" stroke-linecap="round"/>
+      <line x1="369" y1="512" x2="735" y2="798" stroke="url(#kg)" stroke-width="84" stroke-linecap="round"/>
+    </g>
+
+    <!-- Rim: hairline border, brighter at top -->
+    <rect width="1024" height="1024" rx="224" ry="224"
+          fill="none"
+          stroke="rgba(255,255,255,0.13)"
+          stroke-width="1.5"/>
+  </g>
+</svg>
