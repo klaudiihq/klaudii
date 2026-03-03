@@ -4,6 +4,8 @@ mac/menubar/KlaudiiMenu
 *.log
 config.json
 sessions.json
+gemini-sessions.json
+claude-chat-sessions.json
 connect/server/relay.db
 connect/server/relay.db-shm
 connect/server/relay.db-wal
