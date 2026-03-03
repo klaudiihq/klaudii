@@ -15,9 +15,10 @@ process.on('uncaughtException', (err) => {
   process.exit(1);
 });
 
+// Log unhandled rejections but don't exit — most are from transient
+// network failures (e.g. Konnect WebSocket drops) that are non-fatal.
 process.on('unhandledRejection', (reason) => {
-  console.error('[fatal] Unhandled rejection:', reason);
-  process.exit(1);
+  console.error('[warn] Unhandled rejection:', reason);
 });
 
 const config = loadConfig();
