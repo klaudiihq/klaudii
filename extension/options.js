@@ -10,7 +10,7 @@ function parseUrls(text) {
 }
 
 // Load saved settings (migrate legacy single klaudiiUrl if needed)
-chrome.storage.sync.get(["klaudiiUrl", "klaudiiUrls", "openMode", "attentionFlash"], (config) => {
+chrome.storage.sync.get(["klaudiiUrl", "klaudiiUrls", "openMode", "attentionFlash", "branchFirst"], (config) => {
   let urls = config.klaudiiUrls;
   if (!urls || !urls.length) {
     urls = [config.klaudiiUrl || DEFAULT_URL];
@@ -21,6 +21,7 @@ chrome.storage.sync.get(["klaudiiUrl", "klaudiiUrls", "openMode", "attentionFlas
   const radio = document.querySelector(`input[name="openMode"][value="${mode}"]`);
   if (radio) radio.checked = true;
   document.getElementById("attention-flash").checked = config.attentionFlash === true;
+  document.getElementById("branch-first").checked = config.branchFirst === true;
 });
 
 // Save
@@ -31,9 +32,10 @@ document.getElementById("btn-save").addEventListener("click", () => {
 
   const openMode = document.querySelector('input[name="openMode"]:checked')?.value || "inplace";
   const attentionFlash = document.getElementById("attention-flash").checked;
+  const branchFirst = document.getElementById("branch-first").checked;
 
   // Save both klaudiiUrls (new) and klaudiiUrl (legacy compat for first entry)
-  chrome.storage.sync.set({ klaudiiUrls: urls, klaudiiUrl: urls[0], openMode, attentionFlash }, () => {
+  chrome.storage.sync.set({ klaudiiUrls: urls, klaudiiUrl: urls[0], openMode, attentionFlash, branchFirst }, () => {
     statusEl.textContent = "Saved.";
     statusEl.className = "status-ok";
     setTimeout(() => { statusEl.textContent = ""; }, 2000);

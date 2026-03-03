@@ -10,4 +10,3 @@ connect/server/relay.db
 connect/server/relay.db-shm
 connect/server/relay.db-wal
 .klaudii-tmux.sock
-config.json

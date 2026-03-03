@@ -792,6 +792,67 @@ h2 {
 }
 
 /* =========================================================
+   Setup overlay
+   ========================================================= */
+
+.setup-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 210;
+  background: rgba(0, 0, 0, 0.75);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  backdrop-filter: blur(4px);
+  -webkit-backdrop-filter: blur(4px);
+}
+
+.setup-frame {
+  width: 85vw;
+  height: 85vh;
+  border: none;
+  border-radius: 14px;
+  box-shadow:
+    0 0 0 1px rgba(74, 222, 128, 0.25),
+    0 0 40px rgba(74, 222, 128, 0.18),
+    0 0 80px rgba(74, 222, 128, 0.08),
+    0 32px 80px rgba(0, 0, 0, 0.6);
+}
+
+/* Missing dep pills in the header badge */
+.badge.missing {
+  background: transparent;
+  padding: 0;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.badge.missing .missing-label {
+  font-size: 0.7rem;
+  color: var(--text-faint);
+  padding-right: 2px;
+}
+
+.dep-missing-pill {
+  font-size: 0.7rem;
+  font-weight: 500;
+  padding: 2px 7px;
+  border-radius: 999px;
+  border: 1px solid rgba(248, 113, 113, 0.4);
+  color: #f87171;
+  background: rgba(248, 113, 113, 0.08);
+  cursor: pointer;
+  transition: background 0.15s, border-color 0.15s;
+  white-space: nowrap;
+}
+
+.dep-missing-pill:hover {
+  background: rgba(248, 113, 113, 0.18);
+  border-color: rgba(248, 113, 113, 0.7);
+}
+
+/* =========================================================
    Modal
    ========================================================= */
 

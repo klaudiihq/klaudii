@@ -382,6 +382,34 @@ function closeGitStatusBackdrop(event) {
   if (event.target === event.currentTarget) closeGitStatus();
 }
 
+// --- Setup overlay ---
+
+function openSetupOverlay() {
+  const overlay = document.getElementById("setup-overlay");
+  const frame   = document.getElementById("setup-frame");
+  frame.src = "/setup.html";
+  overlay.classList.remove("hidden");
+}
+
+function closeSetupOverlay(e) {
+  // Close on backdrop click (not on the iframe itself)
+  if (e && e.target !== document.getElementById("setup-overlay")) return;
+  _dismissSetupOverlay();
+}
+
+function _dismissSetupOverlay() {
+  const overlay = document.getElementById("setup-overlay");
+  const frame   = document.getElementById("setup-frame");
+  overlay.classList.add("hidden");
+  frame.src = "";
+  refresh(); // re-check health after install
+}
+
+// Listen for setup-complete message from the iframe
+window.addEventListener("message", (e) => {
+  if (e.data && e.data.type === "setup-complete") _dismissSetupOverlay();
+});
+
 // --- Terminal overlay ---
 
 function openTerminal(port, session) {
@@ -651,8 +679,9 @@ async function refresh() {
       const missing = [];
       if (!health.tmux) missing.push("tmux");
       if (!health.ttyd) missing.push("ttyd");
-      badge.textContent = `missing: ${missing.join(", ")}`;
-      badge.className = "badge error";
+      badge.className = "badge missing";
+      badge.innerHTML = `<span class="missing-label">missing:</span>` +
+        missing.map(d => `<span class="dep-missing-pill" onclick="openSetupOverlay()">${esc(d)}</span>`).join("");
     }
 
     // Auth status box
