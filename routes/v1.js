@@ -21,6 +21,8 @@ module.exports = function createV1Router(deps) {
     sessionTracker,
     projects, // { getProjects, getProject, addProject, removeProject, setPermissionMode }
     config,
+    gemini,      // optional — Gemini CLI chat backend
+    claudeChat,  // optional — Claude CLI chat backend
   } = deps;
 
   const router = express.Router();
@@ -79,6 +81,8 @@ module.exports = function createV1Router(deps) {
       ttyd: ttyd.isTtydInstalled(),
       ghAuth,
       claudeAuth,
+      geminiAuth: gemini ? gemini.getAuthStatus() : undefined,
+      claudeChatAuth: claudeChat ? claudeChat.getAuthStatus() : undefined,
     });
   });
 
