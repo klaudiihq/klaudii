@@ -390,8 +390,14 @@ wss.on("connection", (ws) => {
   const clientId = ++wsClientId;
   console.log(`[gemini-ws] client #${clientId} connected`);
 
+  // Track which workspaces this client has active sends — cleared on disconnect
+  const pendingWorkspaces = new Set();
+
   ws.on("close", (code, reason) => {
     console.log(`[gemini-ws] client #${clientId} disconnected code=${code} reason=${reason || ""}`);
+    // Clear streaming flags for any workspaces this client was handling
+    for (const w of pendingWorkspaces) workspaceState.setStreaming(w, false);
+    pendingWorkspaces.clear();
   });
 
   ws.on("message", (raw) => {
@@ -404,10 +410,19 @@ wss.on("connection", (ws) => {
       return;
     }
 
-    const { type, workspace, message, model, cli } = msg;
+    const { type, workspace, message, model, cli, images: rawImages } = msg;
     const backend = cli === "claude" ? "claude" : "gemini";
     const backendModule = backend === "claude" ? claudeChat : gemini;
-    console.log(`[gemini-ws] client #${clientId} msg type=${type} workspace=${workspace || ""} model=${model || "auto"} cli=${backend} msgLen=${message ? message.length : 0}`);
+
+    // Parse dataUrls → { mediaType, data } — only for claude-local (gemini CLI doesn't support images yet)
+    const images = (rawImages && rawImages.length && backend === "claude")
+      ? rawImages.map((dataUrl) => {
+          const m = typeof dataUrl === "string" && dataUrl.match(/^data:([^;]+);base64,(.+)$/);
+          return m ? { mediaType: m[1], data: m[2] } : null;
+        }).filter(Boolean)
+      : [];
+
+    console.log(`[gemini-ws] client #${clientId} msg type=${type} workspace=${workspace || ""} model=${model || "auto"} cli=${backend} msgLen=${message ? message.length : 0} images=${images.length}`);
 
     if (type === "send") {
       if (!workspace || !message) {
@@ -425,6 +440,9 @@ wss.on("connection", (ws) => {
       try {
         // Stamp chat activity for sort ordering (all modes)
         workspaceState.touchChatActivity(workspace);
+        // Mark workspace as actively streaming
+        workspaceState.setStreaming(workspace, true);
+        pendingWorkspaces.add(workspace);
 
         // Persist user message
         backendModule.pushHistory(workspace, "user", message);
@@ -434,11 +452,12 @@ wss.on("connection", (ws) => {
         const globalKeyField = backend === "claude" ? "claudeApiKey" : "geminiApiKey";
         const apiKey = proj[apiKeyField] || config[globalKeyField] || undefined;
         console.log(`[gemini-ws] spawning ${backend} for workspace=${workspace} path=${proj.path} hasApiKey=${!!apiKey}`);
-        const handle = backendModule.sendMessage(workspace, proj.path, message, config, { apiKey, model });
+        const handle = backendModule.sendMessage(workspace, proj.path, message, config, { apiKey, model, images });
 
-        // Accumulate assistant text for history persistence
+        // Accumulate assistant text and tool events for history persistence
         let assistantText = "";
         let eventsSent = 0;
+        const toolEvents = []; // buffered tool_use/tool_result for batch save
 
         handle.onEvent((event) => {
           eventsSent++;
@@ -450,16 +469,40 @@ wss.on("connection", (ws) => {
           // Accumulate assistant message content
           if (event.type === "message" && (event.role === "assistant" || !event.role)) {
             assistantText += event.content || "";
+          } else if (event.type === "tool_use") {
+            toolEvents.push({
+              role: "tool_use",
+              content: JSON.stringify({
+                tool_name: event.tool_name,
+                tool_id: event.tool_id,
+                parameters: event.parameters || {},
+              }),
+            });
+          } else if (event.type === "tool_result") {
+            const out = event.output || "";
+            toolEvents.push({
+              role: "tool_result",
+              content: JSON.stringify({
+                tool_id: event.tool_id,
+                status: event.status || "success",
+                output: out.length > 3000 ? out.slice(0, 3000) + "\n...(truncated)" : out,
+              }),
+            });
           }
         });
 
         handle.onDone(({ code, stderr }) => {
-          console.log(`[gemini-ws] done workspace=${workspace} cli=${backend} code=${code} eventsSent=${eventsSent} assistantLen=${assistantText.length}`);
+          console.log(`[gemini-ws] done workspace=${workspace} cli=${backend} code=${code} eventsSent=${eventsSent} assistantLen=${assistantText.length} toolEvents=${toolEvents.length}`);
+          // Clear streaming flag — response is complete
+          workspaceState.setStreaming(workspace, false);
+          pendingWorkspaces.delete(workspace);
           // Stamp activity on completion so sorting reflects response time
           workspaceState.touchChatActivity(workspace);
-          // Persist assistant reply
-          if (assistantText) {
-            backendModule.pushHistory(workspace, "assistant", assistantText);
+          // Persist turn: tool events (in order) + assistant reply in one batch write
+          const batch = [...toolEvents];
+          if (assistantText) batch.push({ role: "assistant", content: assistantText });
+          if (batch.length > 0) {
+            backendModule.pushHistoryBatch(workspace, batch);
           }
           if (ws.readyState === WebSocket.OPEN) {
             ws.send(JSON.stringify({
@@ -473,6 +516,9 @@ wss.on("connection", (ws) => {
 
         handle.onError((err) => {
           console.error(`[gemini-ws] error workspace=${workspace}: ${err.message}`);
+          // Clear streaming flag on error
+          workspaceState.setStreaming(workspace, false);
+          pendingWorkspaces.delete(workspace);
           if (ws.readyState === WebSocket.OPEN) {
             ws.send(JSON.stringify({
               type: "error",
@@ -483,12 +529,16 @@ wss.on("connection", (ws) => {
         });
       } catch (err) {
         console.error(`[gemini-ws] catch workspace=${workspace}: ${err.message}`);
+        workspaceState.setStreaming(workspace, false);
+        pendingWorkspaces.delete(workspace);
         ws.send(JSON.stringify({ type: "error", workspace, message: err.message }));
       }
     } else if (type === "stop") {
       console.log(`[gemini-ws] stop workspace=${workspace} cli=${backend}`);
       if (workspace) {
         backendModule.stopProcess(workspace);
+        workspaceState.setStreaming(workspace, false);
+        pendingWorkspaces.delete(workspace);
         // Send done immediately — the killed process won't trigger onDone
         if (ws.readyState === WebSocket.OPEN) {
           ws.send(JSON.stringify({ type: "done", workspace, exitCode: null, stopped: true }));

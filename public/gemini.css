@@ -139,7 +139,13 @@
 .gemini-msg.user {
   max-width: 70%;
   margin-left: auto;
-  background: var(--s-blue-bg);
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+}
+
+.gemini-msg.user .user-bubble {
+  background: var(--btn-primary);
   color: #fff;
   padding: 0.6rem 1rem;
   border-radius: 12px 12px 2px 12px;
@@ -151,6 +157,21 @@
   max-width: 100%;
   color: var(--text-dim);
   padding: 0.4rem 0;
+}
+
+.gemini-msg-ts {
+  font-size: 0.7rem;
+  color: var(--text-fainter);
+  margin-top: 0.2rem;
+}
+
+.gemini-msg.user .gemini-msg-ts {
+  text-align: right;
+  margin-right: 2px;
+}
+
+.gemini-msg.assistant .gemini-msg-ts {
+  text-align: left;
 }
 
 /* Markdown content inside assistant messages */
@@ -675,6 +696,107 @@
     margin: 1rem;
     padding: 1rem;
   }
+}
+
+/* --- Image attachments --- */
+
+.gemini-image-strip {
+  display: flex;
+  gap: 0.5rem;
+  padding: 0.5rem 1rem 0;
+  flex-wrap: wrap;
+  background: var(--bg-card);
+  border-top: 1px solid var(--border);
+  flex-shrink: 0;
+}
+
+.gemini-image-strip.hidden {
+  display: none;
+}
+
+.gemini-img-thumb {
+  position: relative;
+  width: 64px;
+  height: 64px;
+  border-radius: 6px;
+  overflow: hidden;
+  border: 1px solid var(--border);
+  flex-shrink: 0;
+}
+
+.gemini-img-thumb img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.gemini-img-remove {
+  position: absolute;
+  top: 2px;
+  right: 2px;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: rgba(0,0,0,0.6);
+  color: #fff;
+  border: none;
+  cursor: pointer;
+  font-size: 12px;
+  line-height: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  opacity: 0;
+  transition: opacity 0.15s;
+}
+
+.gemini-img-thumb:hover .gemini-img-remove {
+  opacity: 1;
+}
+
+/* Attach button */
+.gemini-attach-btn {
+  flex-shrink: 0;
+  align-self: flex-end;
+  margin-bottom: 1px;
+  padding: 0.35rem 0.5rem;
+  color: var(--text-muted);
+  background: var(--bg-btn);
+  border: 1px solid var(--border-btn);
+}
+
+.gemini-attach-btn:hover {
+  color: var(--text);
+  background: var(--bg-btn-hover);
+}
+
+.gemini-attach-btn.has-images {
+  color: var(--btn-primary);
+  border-color: var(--btn-primary);
+}
+
+/* Drag-over state */
+.gemini-panel.drag-over {
+  outline: 2px dashed var(--btn-primary);
+  outline-offset: -4px;
+}
+
+/* Images inside sent user messages */
+.gemini-msg-images {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+  margin-bottom: 0.4rem;
+}
+
+.gemini-msg-img {
+  max-width: 180px;
+  max-height: 180px;
+  border-radius: 6px;
+  object-fit: cover;
+  display: block;
 }
 
 /* Chatonly layout rules live in style.css */

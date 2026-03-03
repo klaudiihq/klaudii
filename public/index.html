@@ -35,6 +35,7 @@
             <span class="sort-label">Sort</span>
             <button class="sort-btn" id="sort-activity" onclick="setSort('activity')">Activity</button>
             <button class="sort-btn" id="sort-alpha" onclick="setSort('alpha')">A-Z</button>
+            <button class="sort-dir-btn" id="sort-dir-btn" onclick="toggleSortDir()" title="Toggle sort direction"></button>
           </div>
           <button class="btn primary btn-sm" onclick="openNewSessionModal()">+ New Session</button>
         </div>
@@ -61,11 +62,16 @@
         </div>
       </div>
       <div id="gemini-messages" class="gemini-messages"></div>
+      <div id="gemini-image-strip" class="gemini-image-strip hidden"></div>
       <div class="gemini-input-area">
         <select id="gemini-model" class="gemini-model-select" title="Model">
           <option value="">Auto</option>
         </select>
         <textarea id="gemini-input" rows="3" placeholder="Message Gemini..." onkeydown="geminiInputKeydown(event)"></textarea>
+        <input type="file" id="gemini-file-input" accept="image/*" multiple style="display:none" onchange="geminiHandleFileInput(event)">
+        <button id="gemini-attach" class="btn gemini-attach-btn" onclick="document.getElementById('gemini-file-input').click()" title="Attach image">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"/></svg>
+        </button>
         <button id="gemini-send" class="btn primary" onclick="sendGeminiMessage()">Send</button>
       </div>
     </div>
