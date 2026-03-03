@@ -1,14 +1,14 @@
 # Klaudii Chrome Extension
 
-Manage your [Klaudii](https://github.com/bryantinsley/klaudii) Claude Code sessions from Chrome's side panel — switch between sessions in the adjacent tab with one click, and let it automatically rename the claude.ai conversation to match your repo and branch.
+Manage your [Klaudii](https://github.com/klaudiihq/klaudii) Claude Code sessions from Chrome's side panel — switch between sessions in the adjacent tab with one click, and let it automatically rename the claude.ai conversation to match your repo and branch.
 
 ## Installation
 
-> **Requires:** Chrome 114+ · A running [Klaudii](https://github.com/bryantinsley/klaudii) instance
+> **Requires:** Chrome 114+ · A running [Klaudii](https://github.com/klaudiihq/klaudii) instance
 
 **1. Download the extension**
 
-👉 **[Download klaudii-extension.zip](https://github.com/bryantinsley/klaudii/releases/latest/download/klaudii-extension.zip)**
+👉 **[Download klaudii-extension.zip](https://github.com/klaudiihq/klaudii/releases/latest/download/klaudii-extension.zip)**
 
 This link always points to the latest build.
 
