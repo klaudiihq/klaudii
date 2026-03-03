@@ -11,23 +11,16 @@ jobs:
   deploy:
     name: Deploy to klaudii.com
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
     steps:
       - uses: actions/checkout@v4
 
-      - name: Setup SSH
-        uses: webfactory/ssh-agent@v0.9.0
+      - name: Deploy www/ to gh-pages
+        uses: peaceiris/actions-gh-pages@v4
         with:
-          ssh-private-key: ${{ secrets.WWW_DEPLOY_KEY }}
-
-      - name: Deploy to klaudiihq/www
-        run: |
-          git config --global user.email "github-actions[bot]@users.noreply.github.com"
-          git config --global user.name "github-actions[bot]"
-
-          git clone git@github.com:klaudiihq/www.git /tmp/www-repo
-          rsync -av --delete www/ /tmp/www-repo/
-
-          cd /tmp/www-repo
-          git add -A
-          git diff --cached --quiet || git commit -m "Release from klaudiihq/klaudii@${{ github.sha }}"
-          git push
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          publish_dir: ./www
+          publish_branch: gh-pages
+          keep_files: false
+          cname: klaudii.com
