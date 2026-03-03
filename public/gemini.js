@@ -682,19 +682,21 @@ function geminiToolDescription(name, params) {
 function geminiRenderCompletedTool(toolName, toolId, params, status, output) {
   const container = document.getElementById("gemini-messages");
   const isError = status === "error";
-  const details = document.createElement("details");
-  details.className = `gemini-tool ${isError ? "error" : "success"}`;
-  details.dataset.toolId = toolId || "";
-  details.dataset.toolName = toolName || "";
+  const pill = document.createElement("div");
+  pill.className = `gemini-tool ${isError ? "error" : "success"} open`;
+  pill.dataset.toolId = toolId || "";
+  pill.dataset.toolName = toolName || "";
 
   const desc = geminiToolDescription(toolName, params);
-  const summary = document.createElement("summary");
+  const summaryEl = document.createElement("div");
+  summaryEl.className = "gemini-tool-summary";
   const icon = isError ? "\u2717" : "\u2713";
-  summary.innerHTML =
+  summaryEl.innerHTML =
     `<span class="gemini-tool-icon ${isError ? "error" : "success"}">${icon}</span>` +
     `<span class="gemini-tool-name">${geminiEscHtml(toolName || "tool")}</span>` +
     (desc ? `<span class="gemini-tool-desc">${geminiEscHtml(desc)}</span>` : "");
-  details.appendChild(summary);
+  summaryEl.addEventListener("click", () => pill.classList.toggle("open"));
+  pill.appendChild(summaryEl);
 
   const body = document.createElement("div");
   body.className = "gemini-tool-body";
@@ -723,9 +725,8 @@ function geminiRenderCompletedTool(toolName, toolId, params, status, output) {
     body.appendChild(sec);
   }
 
-  details.appendChild(body);
-  details.open = true;
-  container.appendChild(details);
+  pill.appendChild(body);
+  container.appendChild(pill);
   geminiScrollToBottom();
 }
 
@@ -736,20 +737,22 @@ function geminiRenderCompletedTool(toolName, toolId, params, status, output) {
  */
 function geminiAppendToolUse(toolName, toolId, params) {
   const container = document.getElementById("gemini-messages");
-  const details = document.createElement("details");
-  details.className = "gemini-tool running";
-  details.dataset.toolId = toolId;
-  details.dataset.toolName = toolName;
+  const pill = document.createElement("div");
+  pill.className = "gemini-tool running";
+  pill.dataset.toolId = toolId;
+  pill.dataset.toolName = toolName;
 
   const desc = geminiToolDescription(toolName, params);
-  const summary = document.createElement("summary");
-  summary.innerHTML =
+  const summaryEl = document.createElement("div");
+  summaryEl.className = "gemini-tool-summary";
+  summaryEl.innerHTML =
     `<span class="gemini-tool-spinner"></span>` +
     `<span class="gemini-tool-name">${geminiEscHtml(toolName)}</span>` +
     (desc ? `<span class="gemini-tool-desc">${geminiEscHtml(desc)}</span>` : "");
-  details.appendChild(summary);
+  summaryEl.addEventListener("click", () => pill.classList.toggle("open"));
+  pill.appendChild(summaryEl);
 
-  // Collapsible body with full params
+  // Body with full params (hidden until result arrives)
   const body = document.createElement("div");
   body.className = "gemini-tool-body";
   const paramsStr = typeof params === "object" ? JSON.stringify(params, null, 2) : String(params || "");
@@ -763,9 +766,9 @@ function geminiAppendToolUse(toolName, toolId, params) {
     body.appendChild(paramsSection);
   }
   // Output section will be added by geminiUpdateToolResult
-  details.appendChild(body);
+  pill.appendChild(body);
 
-  container.appendChild(details);
+  container.appendChild(pill);
   geminiScrollToBottom();
 }
 
@@ -792,9 +795,9 @@ function geminiUpdateToolResult(toolId, status, output, error) {
     pill.classList.add(isError ? "error" : "success");
 
     // Replace spinner with status icon
-    const summary = pill.querySelector("summary");
-    if (summary) {
-      const spinner = summary.querySelector(".gemini-tool-spinner");
+    const summaryEl = pill.querySelector(".gemini-tool-summary");
+    if (summaryEl) {
+      const spinner = summaryEl.querySelector(".gemini-tool-spinner");
       if (spinner) {
         const icon = document.createElement("span");
         icon.className = isError ? "gemini-tool-icon error" : "gemini-tool-icon success";
@@ -816,26 +819,27 @@ function geminiUpdateToolResult(toolId, status, output, error) {
       body.appendChild(section);
     }
     // Auto-expand so output is immediately visible
-    pill.open = true;
+    pill.classList.add("open");
   } else {
     // No matching pill — standalone fallback
-    const details = document.createElement("details");
-    details.className = `gemini-tool ${isError ? "error" : "success"}`;
-    const summary = document.createElement("summary");
+    const pill2 = document.createElement("div");
+    pill2.className = `gemini-tool ${isError ? "error" : "success"} open`;
+    const summaryEl = document.createElement("div");
+    summaryEl.className = "gemini-tool-summary";
     const icon = isError ? "\u2717" : "\u2713";
-    summary.innerHTML =
+    summaryEl.innerHTML =
       `<span class="gemini-tool-icon ${isError ? "error" : "success"}">${icon}</span>` +
       `<span class="gemini-tool-name">${geminiEscHtml(toolId || "tool")}</span>` +
       `<span class="gemini-tool-desc">(result)</span>`;
-    details.appendChild(summary);
+    summaryEl.addEventListener("click", () => pill2.classList.toggle("open"));
+    pill2.appendChild(summaryEl);
     const body = document.createElement("div");
     body.className = "gemini-tool-body";
     const pre = document.createElement("pre");
     pre.textContent = error || output || "";
     body.appendChild(pre);
-    details.appendChild(body);
-    details.open = true;
-    container.appendChild(details);
+    pill2.appendChild(body);
+    container.appendChild(pill2);
   }
 
   geminiScrollToBottom();
