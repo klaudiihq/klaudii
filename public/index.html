@@ -16,36 +16,60 @@
     <button class="btn-theme" id="theme-toggle" onclick="toggleTheme()" title="Toggle light/dark">☀</button>
   </header>
 
-  <main>
-    <section id="usage-section" class="usage-section hidden">
-      <div class="usage-header">
-        <span class="usage-label">token usage · 24h</span>
-        <div class="usage-meta">
-          <span id="usage-status" class="usage-status"></span>
-          <span id="usage-total" class="usage-total"></span>
+  <div id="app-layout" class="app-layout">
+    <main>
+      <section id="usage-section" class="usage-section hidden">
+        <div class="usage-header">
+          <span class="usage-label">token usage · 24h</span>
+          <div class="usage-meta">
+            <span id="usage-status" class="usage-status"></span>
+            <span id="usage-total" class="usage-total"></span>
+          </div>
+        </div>
+        <div id="usage-chart"></div>
+      </section>
+
+      <section id="sessions-section">
+        <div class="sort-bar">
+          <div class="sort-left">
+            <span class="sort-label">Sort</span>
+            <button class="sort-btn" id="sort-activity" onclick="setSort('activity')">Activity</button>
+            <button class="sort-btn" id="sort-alpha" onclick="setSort('alpha')">A-Z</button>
+          </div>
+          <button class="btn primary btn-sm" onclick="openNewSessionModal()">+ New Session</button>
+        </div>
+        <div id="sessions-list" class="card-grid"></div>
+      </section>
+
+      <section id="unmanaged-section" class="hidden">
+        <h2>free range claudes</h2>
+        <div id="unmanaged-list" class="card-grid"></div>
+      </section>
+
+    </main>
+
+    <!-- Gemini / Claude Chat Panel -->
+    <div id="gemini-overlay" class="gemini-panel hidden">
+      <div class="gemini-bar">
+        <span id="gemini-title" class="gemini-bar-title"></span>
+        <div class="gemini-bar-actions">
+          <span id="gemini-quota" class="gemini-bar-quota"></span>
+          <span id="gemini-status" class="gemini-bar-status"></span>
+          <select id="gemini-session" class="gemini-session-select hidden" title="Session" onchange="geminiSwitchSession(Number(this.value))"></select>
+          <button class="btn btn-sm" onclick="clearGeminiSession()">New Chat</button>
+          <button class="btn btn-sm" onclick="closeGeminiChat()">Close</button>
         </div>
       </div>
-      <div id="usage-chart"></div>
-    </section>
-
-    <section id="sessions-section">
-      <h2>Workspaces
-        <span class="sort-controls">
-          <button class="btn btn-sm sort-btn" id="sort-activity" onclick="setSort('activity')">Recent</button>
-          <button class="btn btn-sm sort-btn" id="sort-alpha" onclick="setSort('alpha')">A-Z</button>
-          <button class="btn btn-sm sort-btn" id="sort-dir" onclick="toggleSortDir()">↓</button>
-        </span>
-        <button class="btn primary btn-sm" onclick="openNewSessionModal()">+ New Session</button>
-      </h2>
-      <div id="sessions-list" class="card-grid"></div>
-    </section>
-
-    <section id="unmanaged-section" class="hidden">
-      <h2>free range claudes</h2>
-      <div id="unmanaged-list" class="card-grid"></div>
-    </section>
-
-  </main>
+      <div id="gemini-messages" class="gemini-messages"></div>
+      <div class="gemini-input-area">
+        <select id="gemini-model" class="gemini-model-select" title="Model">
+          <option value="">Auto</option>
+        </select>
+        <textarea id="gemini-input" rows="3" placeholder="Message Gemini..." onkeydown="geminiInputKeydown(event)"></textarea>
+        <button id="gemini-send" class="btn primary" onclick="sendGeminiMessage()">Send</button>
+      </div>
+    </div>
+  </div>
 
   <!-- Full-screen terminal overlay -->
   <div id="terminal-overlay" class="terminal-overlay hidden">
@@ -117,28 +141,6 @@
         <button class="btn btn-sm" onclick="closeCloudModal()">X</button>
       </div>
       <div class="modal-body" id="cloud-modal-body"></div>
-    </div>
-  </div>
-
-  <!-- Gemini Chat Overlay -->
-  <div id="gemini-overlay" class="gemini-overlay hidden">
-    <div class="gemini-bar">
-      <span id="gemini-title" class="gemini-bar-title"></span>
-      <div class="gemini-bar-actions">
-        <span id="gemini-quota" class="gemini-bar-quota"></span>
-        <span id="gemini-status" class="gemini-bar-status"></span>
-        <select id="gemini-session" class="gemini-session-select hidden" title="Session" onchange="geminiSwitchSession(Number(this.value))"></select>
-        <button class="btn btn-sm" onclick="clearGeminiSession()">New Chat</button>
-        <button class="btn btn-sm" onclick="closeGeminiChat()">Close</button>
-      </div>
-    </div>
-    <div id="gemini-messages" class="gemini-messages"></div>
-    <div class="gemini-input-area">
-      <select id="gemini-model" class="gemini-model-select" title="Model">
-        <option value="">Auto</option>
-      </select>
-      <textarea id="gemini-input" rows="3" placeholder="Message Gemini..." onkeydown="geminiInputKeydown(event)"></textarea>
-      <button id="gemini-send" class="btn primary" onclick="sendGeminiMessage()">Send</button>
     </div>
   </div>
 
