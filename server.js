@@ -423,6 +423,9 @@ wss.on("connection", (ws) => {
       }
 
       try {
+        // Stamp chat activity for sort ordering (all modes)
+        workspaceState.touchChatActivity(workspace);
+
         // Persist user message
         backendModule.pushHistory(workspace, "user", message);
 
@@ -452,6 +455,8 @@ wss.on("connection", (ws) => {
 
         handle.onDone(({ code, stderr }) => {
           console.log(`[gemini-ws] done workspace=${workspace} cli=${backend} code=${code} eventsSent=${eventsSent} assistantLen=${assistantText.length}`);
+          // Stamp activity on completion so sorting reflects response time
+          workspaceState.touchChatActivity(workspace);
           // Persist assistant reply
           if (assistantText) {
             backendModule.pushHistory(workspace, "assistant", assistantText);
