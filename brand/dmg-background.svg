@@ -1,0 +1,107 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 700 380" width="700" height="380">
+  <defs>
+    <!-- Main background gradient -->
+    <radialGradient id="dmgbg" cx="35%" cy="50%" r="75%">
+      <stop offset="0%"   stop-color="#13151f"/>
+      <stop offset="100%" stop-color="#07070c"/>
+    </radialGradient>
+
+    <!-- Subtle green ambient behind left icon zone -->
+    <radialGradient id="leftglow" cx="50%" cy="50%" r="50%">
+      <stop offset="0%"   stop-color="rgba(74,222,128,0.07)"/>
+      <stop offset="100%" stop-color="rgba(74,222,128,0)"/>
+    </radialGradient>
+
+    <!-- K mark gradient (faint) -->
+    <linearGradient id="faintkg" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%"   stop-color="#86efac" stop-opacity="0.10"/>
+      <stop offset="50%"  stop-color="#4ade80" stop-opacity="0.08"/>
+      <stop offset="100%" stop-color="#22c55e" stop-opacity="0.06"/>
+    </linearGradient>
+
+    <!-- Grid pattern -->
+    <pattern id="grid" width="40" height="40" patternUnits="userSpaceOnUse">
+      <path d="M 40 0 L 0 0 0 40" fill="none" stroke="rgba(255,255,255,0.028)" stroke-width="0.5"/>
+    </pattern>
+
+    <!-- macOS icon corner radius clip (scaled to ~96px display size) -->
+    <clipPath id="iconclip">
+      <rect width="96" height="96" rx="21" ry="21"/>
+    </clipPath>
+
+    <!-- Rounded rect clip for Applications icon -->
+    <clipPath id="appclip">
+      <rect width="96" height="96" rx="21" ry="21"/>
+    </clipPath>
+
+    <!-- Glass gloss for ghost icon -->
+    <linearGradient id="ghostgloss" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%"   stop-color="rgba(255,255,255,0.06)"/>
+      <stop offset="100%" stop-color="rgba(255,255,255,0)"/>
+    </linearGradient>
+  </defs>
+
+  <!-- Base -->
+  <rect width="700" height="380" fill="url(#dmgbg)"/>
+
+  <!-- Grid -->
+  <rect width="700" height="380" fill="url(#grid)"/>
+
+  <!-- Green ambient zone, left quadrant -->
+  <ellipse cx="185" cy="190" rx="160" ry="130" fill="url(#leftglow)"/>
+
+  <!-- ── Ghost Klaudii.app icon, centered at (185, 175) ── -->
+  <g transform="translate(137, 127)" opacity="0.55">
+    <!-- icon bg -->
+    <rect width="96" height="96" rx="21" ry="21" fill="#0f111a"/>
+    <!-- faint K -->
+    <rect x="24.5" y="14" width="8" height="68" rx="4" fill="url(#faintkg)"/>
+    <line x1="34" y1="48" x2="70" y2="16" stroke="url(#faintkg)" stroke-width="8" stroke-linecap="round"/>
+    <line x1="34" y1="48" x2="70" y2="80" stroke="url(#faintkg)" stroke-width="8" stroke-linecap="round"/>
+    <!-- glass gloss -->
+    <rect width="96" height="96" rx="21" ry="21" fill="url(#ghostgloss)"/>
+    <!-- rim -->
+    <rect width="96" height="96" rx="21" ry="21" fill="none" stroke="rgba(255,255,255,0.07)" stroke-width="1"/>
+  </g>
+
+  <!-- "Klaudii" label under ghost icon -->
+  <text x="185" y="244" text-anchor="middle"
+        font-family="-apple-system, BlinkMacSystemFont, 'SF Pro Display', sans-serif"
+        font-size="12" font-weight="500" letter-spacing="0.2"
+        fill="rgba(255,255,255,0.22)">Klaudii</text>
+
+  <!-- ── Arrow ── -->
+  <g transform="translate(350, 190)" opacity="0.28">
+    <line x1="-38" y1="0" x2="32" y2="0" stroke="#4ade80" stroke-width="1.5" stroke-linecap="round"/>
+    <polyline points="22,-8 34,0 22,8" fill="none" stroke="#4ade80" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+  </g>
+
+  <!-- ── Ghost Applications icon, centered at (515, 175) ── -->
+  <g transform="translate(467, 127)" opacity="0.32">
+    <!-- folder body -->
+    <rect x="0" y="16" width="96" height="72" rx="8" ry="8" fill="#2a2d3a"/>
+    <!-- folder tab -->
+    <rect x="4" y="10" width="36" height="12" rx="4" ry="4" fill="#33374a"/>
+    <!-- grid of app dots inside folder -->
+    <circle cx="28" cy="40" r="6" fill="rgba(255,255,255,0.15)"/>
+    <circle cx="48" cy="40" r="6" fill="rgba(255,255,255,0.15)"/>
+    <circle cx="68" cy="40" r="6" fill="rgba(255,255,255,0.15)"/>
+    <circle cx="28" cy="60" r="6" fill="rgba(255,255,255,0.15)"/>
+    <circle cx="48" cy="60" r="6" fill="rgba(255,255,255,0.15)"/>
+    <circle cx="68" cy="60" r="6" fill="rgba(255,255,255,0.15)"/>
+    <!-- rim -->
+    <rect x="0" y="16" width="96" height="72" rx="8" ry="8" fill="none" stroke="rgba(255,255,255,0.06)" stroke-width="1"/>
+  </g>
+
+  <!-- "Applications" label under ghost icon -->
+  <text x="515" y="244" text-anchor="middle"
+        font-family="-apple-system, BlinkMacSystemFont, 'SF Pro Display', sans-serif"
+        font-size="12" font-weight="500" letter-spacing="0.2"
+        fill="rgba(255,255,255,0.18)">Applications</text>
+
+  <!-- Very faint "drag to install" hint -->
+  <text x="350" y="310" text-anchor="middle"
+        font-family="-apple-system, BlinkMacSystemFont, 'SF Pro Display', sans-serif"
+        font-size="10.5" font-weight="400" letter-spacing="0.5"
+        fill="rgba(255,255,255,0.10)">drag Klaudii into Applications to install</text>
+</svg>
