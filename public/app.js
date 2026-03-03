@@ -1,8 +1,79 @@
 const API = "";
 let refreshTimer = null;
 let currentTerminalSession = null;
+let lastHealthData = null;
 let sortMode = localStorage.getItem("klaudii-sort") || "activity";
 let sortDir = localStorage.getItem("klaudii-sort-dir") || "desc";
+let openPanelProject = null;
+let panelAutoCloseTimer = null;
+
+// --- SVG icon constants (matching extension) ---
+const STAT_CPU_SVG = `<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="4" width="16" height="16" rx="2"/><rect x="9" y="9" width="6" height="6"/><line x1="9" y1="1" x2="9" y2="4"/><line x1="15" y1="1" x2="15" y2="4"/><line x1="9" y1="20" x2="9" y2="23"/><line x1="15" y1="20" x2="15" y2="23"/><line x1="20" y1="9" x2="23" y2="9"/><line x1="20" y1="14" x2="23" y2="14"/><line x1="1" y1="9" x2="4" y2="9"/><line x1="1" y1="14" x2="4" y2="14"/></svg>`;
+const STAT_MEM_SVG = `<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="6" width="20" height="12" rx="2"/><line x1="6" y1="12" x2="6" y2="12.01"/><line x1="10" y1="12" x2="10" y2="12.01"/><line x1="14" y1="12" x2="14" y2="12.01"/><line x1="18" y1="12" x2="18" y2="12.01"/></svg>`;
+const STAT_CLOCK_SVG = `<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>`;
+const PENCIL_SVG = `<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 3a2.83 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"/><path d="m15 5 4 4"/></svg>`;
+
+const CLEAN_PHRASES = [
+  "squeaky clean", "pristine", "untouched", "clean as a whistle",
+  "spotless", "mint condition", "not a scratch", "fresh",
+  "zero diff", "nothing to see here", "all clear", "clean slate",
+  "immaculate", "tidy", "ship-shape",
+];
+
+function cleanPhrase(project) {
+  let hash = 0;
+  for (let i = 0; i < project.length; i++) hash += project.charCodeAt(i);
+  return CLEAN_PHRASES[Math.abs(hash) % CLEAN_PHRASES.length];
+}
+
+const PERM_BADGE_LABELS = { yolo: "bypass", ask: "ask", strict: "plan" };
+const PERM_MODE_LABELS = { yolo: "Bypass Permissions", ask: "Ask Permissions", strict: "Plan Mode" };
+
+const CHAT_MODES = ["gemini", "claude-local", "claude-remote"];
+const CHAT_MODE_LABELS = { "gemini": "Gemini", "claude-local": "Claude Local", "claude-remote": "Claude Remote" };
+
+function relativeTime(ts) {
+  if (!ts) return null;
+  const diff = Math.floor((Date.now() - ts) / 1000);
+  if (diff < 5) return "just now";
+  if (diff < 60) return `${diff}s ago`;
+  if (diff < 3600) return `${Math.floor(diff / 60)}m ago`;
+  if (diff < 86400) return `${Math.floor(diff / 3600)}h ago`;
+  return `${Math.floor(diff / 86400)}d ago`;
+}
+
+function absoluteTime(ts) {
+  if (!ts) return null;
+  const d = new Date(ts);
+  const now = new Date();
+  const sameYear = d.getFullYear() === now.getFullYear();
+  const sameDay = d.toDateString() === now.toDateString();
+  const time = d.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
+  if (sameDay) return time;
+  const date = d.toLocaleDateString([], { month: "short", day: "numeric", ...(!sameYear && { year: "numeric" }) });
+  return `${date}, ${time}`;
+}
+
+async function cycleChatMode(event, project) {
+  event.stopPropagation();
+  const card = document.getElementById(`card-${project}`);
+  if (!card) return;
+  const current = card.dataset.chatMode || "claude-local";
+  const idx = CHAT_MODES.indexOf(current);
+  const next = CHAT_MODES[(idx + 1) % CHAT_MODES.length];
+  card.dataset.chatMode = next;
+  const pill = card.querySelector(".chat-mode-pill");
+  if (pill) {
+    pill.dataset.mode = next;
+    pill.className = `chat-mode-pill mode-${next}`;
+    pill.innerHTML = `<span class="mode-dot"></span>${CHAT_MODE_LABELS[next]}`;
+  }
+  await fetch(`/api/workspace-state/${encodeURIComponent(project)}`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ mode: next }),
+  });
+}
 
 async function api(path, opts = {}) {
   const res = await fetch(API + path, {
@@ -33,25 +104,23 @@ function updateSortButtons() {
   document.querySelectorAll(".sort-btn").forEach((b) => b.classList.remove("active"));
   const active = document.getElementById(`sort-${sortMode}`);
   if (active) active.classList.add("active");
-  const dirBtn = document.getElementById("sort-dir");
-  if (dirBtn) dirBtn.textContent = sortDir === "desc" ? "↓" : "↑";
+  const dirBtn = document.getElementById("sort-dir-btn");
+  if (dirBtn) {
+    dirBtn.innerHTML = sortDir === "desc"
+      ? `<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><polyline points="19 12 12 19 5 12"/></svg>`
+      : `<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="19" x2="12" y2="5"/><polyline points="5 12 12 5 19 12"/></svg>`;
+    dirBtn.title = sortDir === "desc" ? "Newest first" : "Oldest first";
+  }
 }
 
 function sortSessions(sessions) {
-  const statusOrder = { running: 0, exited: 1, stopped: 2 };
   const dir = sortDir === "asc" ? 1 : -1;
   return [...sessions].sort((a, b) => {
-    // Running/exited always float to top regardless of direction
-    const sa = statusOrder[a.status] ?? 2;
-    const sb = statusOrder[b.status] ?? 2;
-    if (sa !== sb) return sa - sb;
-
     if (sortMode === "alpha") {
       return dir * a.project.localeCompare(b.project);
     }
-    // activity: use lastActivity, fall back to tmux session creation time
-    const ta = a.lastActivity || (a.tmux && a.tmux.created) || 0;
-    const tb = b.lastActivity || (b.tmux && b.tmux.created) || 0;
+    const ta = a.lastActivity || (a.tmux && a.tmux.created ? a.tmux.created * 1000 : 0);
+    const tb = b.lastActivity || (b.tmux && b.tmux.created ? b.tmux.created * 1000 : 0);
     return dir * (ta - tb);
   });
 }
@@ -76,71 +145,150 @@ function renderSessions(sessions, procs) {
     }
   }
 
-  container.innerHTML = sessions
-    .map(
-      (s) => {
-        const parts = s.project.split("--");
-        const repo = parts[0];
-        const branch = parts.length > 1 ? parts.slice(1).join("--") : null;
-        const sessionData = esc(JSON.stringify(s).replace(/'/g, "&#39;"));
-        const proc = procByProject[s.project];
-        const pm = s.permissionMode || "yolo";
-        const g = s.git;
-        const gitBranch = g ? g.branch : branch;
-        const ghUrl = s.remoteUrl || null;
-        const ghBranchUrl = ghUrl && gitBranch ? `${ghUrl}/tree/${esc(gitBranch)}` : ghUrl;
-        return `
-    <div class="card" id="card-${esc(s.project)}">
-      <div class="card-header">
-        <span class="card-title">
-          ${ghUrl ? `<a href="${esc(ghUrl)}" target="_blank" class="card-repo-link">${esc(repo)}</a>` : `<span class="card-repo-link">${esc(repo)}</span>`}${gitBranch ? (ghBranchUrl ? ` <a href="${esc(ghBranchUrl)}" target="_blank" class="card-branch-link">${esc(gitBranch)}</a>` : ` <span class="card-branch-link">${esc(gitBranch)}</span>`) : ""}
-        </span>
-        <span class="card-status ${s.status || (s.running ? "running" : "stopped")}">
-          ${s.status || (s.running ? "running" : "stopped")}
-        </span>
-      </div>
-      ${g ? `<div class="git-status-bar">
-        ${g.dirtyFiles ? `<span class="git-dirty" onclick="openGitStatus('${esc(s.project)}')">${g.dirtyFiles} changed</span>` : '<span class="git-clean">clean</span>'}
-        ${g.unpushed ? `<span class="git-unpushed">${g.unpushed} unpushed</span>` : ""}
-        <button class="btn btn-sm" onclick="openGitStatus('${esc(s.project)}')">git status</button>
-      </div>` : ""}
-      ${proc ? `<div class="proc-stats">${proc.cpu}% cpu &middot; ${proc.memMB} MB${proc.uptime ? ` &middot; ${esc(proc.uptime)}` : ""}${s.sessionCount ? ` &middot; ${s.sessionCount} session${s.sessionCount === 1 ? "" : "s"}` : ""}</div>` : (s.sessionCount ? `<div class="proc-stats">${s.sessionCount} session${s.sessionCount === 1 ? "" : "s"}</div>` : "")}
-      ${s.status === "stopped" ? `<div class="permission-toggle">
-        <button class="perm-btn${pm === 'yolo' ? ' active yolo' : ''}" onclick="setPermission('${esc(s.project)}', 'yolo')" title="Auto-approve all actions">Yolo</button>
-        <button class="perm-btn${pm === 'ask' ? ' active ask' : ''}" onclick="setPermission('${esc(s.project)}', 'ask')" title="Approve each action in terminal">Ask</button>
-        <button class="perm-btn${pm === 'strict' ? ' active strict' : ''}" onclick="setPermission('${esc(s.project)}', 'strict')" title="Read-only tools only">Strict</button>
-      </div>` : `<div class="permission-toggle locked">
-        <span class="perm-badge ${pm}">${pm}</span>
-      </div>`}
-      <div class="card-actions">
-        ${
-          s.status === "running"
-            ? `
-          ${s.claudeUrl ? `<a class="btn success" href="${esc(s.claudeUrl)}" target="_blank">Open</a>` : ""}
-          <button class="btn danger" onclick="stopSession('${esc(s.project)}')">Stop</button>
-          <button class="btn primary" onclick="restartSession('${esc(s.project)}')">Restart</button>
-          ${s.ttyd ? `<button class="btn" onclick='openTerminal(${s.ttyd.port}, ${sessionData})'>Terminal</button>` : ""}
-        `
-          : s.status === "exited"
-            ? `
-          <button class="btn primary" onclick="restartSession('${esc(s.project)}')">Restart</button>
-          <button class="btn danger" onclick="stopSession('${esc(s.project)}')">Clean up</button>
-          ${s.ttyd ? `<button class="btn" onclick='openTerminal(${s.ttyd.port}, ${sessionData})'>Terminal</button>` : ""}
-        `
-            : `
-          <button class="btn primary" onclick="startSession('${esc(s.project)}', {continueSession:true})">Continue</button>
-          <button class="btn btn-sm" onclick="startSession('${esc(s.project)}')">New</button>
-          <button class="btn btn-sm danger" onclick="removeWorkspace(this, '${esc(s.project)}', ${!!(g && (g.dirtyFiles || g.unpushed))})">Remove</button>
-        `
-        }
-        <button class="btn btn-sm" onclick="toggleHistory('${esc(s.project)}')">History</button>
-      </div>
-      <div class="history-list hidden" id="history-${esc(s.project)}"></div>
-    </div>
-  `;
+  container.innerHTML = sessions.map((s) => {
+    const parts = s.project.split("--");
+    const repo = parts[0];
+    const branch = parts.length > 1 ? parts.slice(1).join("--") : null;
+    const sessionData = esc(JSON.stringify(s).replace(/'/g, "&#39;"));
+    const proc = procByProject[s.project];
+    const mode = s.permissionMode || "yolo";
+    const g = s.git;
+    const gitBranch = g ? g.branch : branch;
+    const ghUrl = s.remoteUrl || null;
+    const status = s.status || (s.running ? "running" : "stopped");
+    const isRunning = status === "running" || status === "exited";
+
+    // Git links
+    const repoLink = ghUrl
+      ? `<a href="${esc(ghUrl)}" target="_blank" class="card-repo-link">${esc(repo)}</a>`
+      : `<span class="card-repo-link">${esc(repo)}</span>`;
+    const branchLink = gitBranch
+      ? (ghUrl ? `<a href="${esc(ghUrl + "/tree/" + gitBranch)}" target="_blank" class="card-branch-link">${esc(gitBranch)}</a>` : `<span class="card-branch-link">${esc(gitBranch)}</span>`)
+      : "";
+
+    // Git status row
+    let gitBar = "";
+    if (g) {
+      const items = [];
+      if (g.dirtyFiles) {
+        items.push(`<span class="git-dirty" onclick="openGitStatus('${esc(s.project)}')">${g.dirtyFiles} file${g.dirtyFiles === 1 ? "" : "s"} touched</span>`);
+      } else {
+        items.push(`<span class="git-clean">${esc(cleanPhrase(s.project))}</span>`);
       }
-    )
-    .join("");
+      if (g.unpushed) items.push(`<span class="git-unpushed">${g.unpushed} unpushed</span>`);
+      gitBar = `<div class="git-bar">${items.join("")}</div>`;
+    }
+
+    // Permission badge (shown when running)
+    const permBadge = isRunning ? `<span class="perm-badge perm-${mode}">${PERM_BADGE_LABELS[mode] || mode}</span>` : "";
+
+    // Process stats with SVG icons + pencil edit button
+    const editBtn = `<button class="card-edit-btn" onclick="toggleActionPanel('${esc(s.project)}')" title="Options">${PENCIL_SVG}</button>`;
+    let statsRow = "";
+    if (proc) {
+      const statParts = [];
+      statParts.push(`<span class="proc-stat">${STAT_CPU_SVG} ${proc.cpu}%</span>`);
+      statParts.push(`<span class="proc-stat">${STAT_MEM_SVG} ${proc.memMB} MB</span>`);
+      if (proc.uptime) statParts.push(`<span class="proc-stat">${STAT_CLOCK_SVG} ${esc(proc.uptime)}</span>`);
+      if (s.sessionCount) statParts.push(`<span class="proc-stat">${s.sessionCount} session${s.sessionCount === 1 ? "" : "s"}</span>`);
+      statsRow = `<div class="proc-stats">${statParts.join("")}${editBtn}</div>`;
+    } else {
+      const extraStats = [];
+      if (s.sessionCount) extraStats.push(`<span class="proc-stat">${s.sessionCount} session${s.sessionCount === 1 ? "" : "s"}</span>`);
+      statsRow = `<div class="proc-stats">${extraStats.join("")}${editBtn}</div>`;
+    }
+
+    // Inline action panel
+    let panelItems = "";
+    if (status === "running") {
+      panelItems = `
+        ${s.claudeUrl ? `<a class="btn btn-sm success" href="${esc(s.claudeUrl)}" target="_blank">Open</a>` : ""}
+        <button class="btn btn-sm danger" onclick="stopSession('${esc(s.project)}')">Stop</button>
+        <button class="btn btn-sm" onclick="restartSession('${esc(s.project)}')">Restart</button>
+        ${s.ttyd ? `<button class="btn btn-sm" onclick='openTerminal(${s.ttyd.port}, ${sessionData})'>Terminal</button>` : ""}
+        <button class="btn btn-sm" onclick="toggleHistory('${esc(s.project)}')">History</button>`;
+    } else if (status === "exited") {
+      panelItems = `
+        <button class="btn btn-sm primary" onclick="restartSession('${esc(s.project)}')">Restart</button>
+        <button class="btn btn-sm danger" onclick="stopSession('${esc(s.project)}')">Clean up</button>
+        ${s.ttyd ? `<button class="btn btn-sm" onclick='openTerminal(${s.ttyd.port}, ${sessionData})'>Terminal</button>` : ""}
+        <button class="btn btn-sm" onclick="toggleHistory('${esc(s.project)}')">History</button>`;
+    } else {
+      const modeOptions = Object.entries(PERM_MODE_LABELS).map(([val, label]) =>
+        `<option value="${val}"${val === mode ? " selected" : ""}>${label}</option>`
+      ).join("");
+      panelItems = `
+        <div class="panel-mode-row">
+          <span class="panel-mode-label">Startup Mode</span>
+          <select class="mode-select" onchange="setPermission('${esc(s.project)}', this.value)">
+            ${modeOptions}
+          </select>
+        </div>
+        <button class="btn btn-sm primary" onclick="startSession('${esc(s.project)}', {continueSession:true})">Continue</button>
+        <button class="btn btn-sm" onclick="startSession('${esc(s.project)}')">New Session</button>
+        <button class="btn btn-sm" onclick="toggleHistory('${esc(s.project)}')">History</button>
+        <button class="btn btn-sm danger" onclick="removeWorkspace(this, '${esc(s.project)}', ${!!(g && (g.dirtyFiles || g.unpushed))})">Remove</button>`;
+    }
+
+    const isPanelOpen = openPanelProject === s.project;
+
+    // Chat mode pill
+    const chatMode = s.chatMode || "claude-local";
+    const chatActive = !!s.chatActive;
+    const modePill = `<button class="chat-mode-pill mode-${esc(chatMode)}${chatActive ? " streaming" : ""}" data-mode="${esc(chatMode)}" onclick="cycleChatMode(event, '${esc(s.project)}')" title="Chat mode — click to change">${chatActive ? '<span class="mode-pulse"></span>' : '<span class="mode-dot"></span>'}${esc(CHAT_MODE_LABELS[chatMode] || chatMode)}</button>`;
+
+    // Activity timestamp row
+    const lastAct = s.lastActivity ? absoluteTime(s.lastActivity) : null;
+    const activityRow = lastAct ? `<div class="remote-timing">${lastAct}</div>` : "";
+
+    return `
+    <div class="card" id="card-${esc(s.project)}" data-project="${esc(s.project)}" data-chat-mode="${esc(chatMode)}" data-project-path="${esc(s.projectPath || "")}" data-claude-url="${esc(s.claudeUrl || "")}">
+      <div class="card-accent ${status}"></div>
+      <div class="card-body">
+        <div class="card-header">
+          <div class="card-names">
+            <span class="card-title">${repoLink}</span>
+            ${branchLink ? `<span class="card-subtitle">${branchLink}</span>` : ""}
+          </div>
+          <div class="card-badges">
+            ${modePill}
+            ${permBadge}
+            <span class="card-status ${status}">${status}</span>
+          </div>
+        </div>
+        ${activityRow}
+        ${gitBar}
+        ${statsRow}
+        <div class="card-actions-panel${isPanelOpen ? "" : " hidden"}" id="panel-${esc(s.project)}">
+          ${panelItems}
+        </div>
+        <div class="history-list hidden" id="history-${esc(s.project)}"></div>
+      </div>
+    </div>`;
+  }).join("");
+}
+
+function toggleActionPanel(project) {
+  // Close previously open panel if different
+  if (openPanelProject && openPanelProject !== project) {
+    const prev = document.getElementById(`panel-${openPanelProject}`);
+    if (prev) prev.classList.add("hidden");
+  }
+  clearTimeout(panelAutoCloseTimer);
+
+  const panel = document.getElementById(`panel-${project}`);
+  if (!panel) return;
+
+  const isHidden = panel.classList.toggle("hidden");
+  openPanelProject = isHidden ? null : project;
+
+  // Auto-close after 15 seconds
+  if (!isHidden) {
+    panelAutoCloseTimer = setTimeout(() => {
+      panel.classList.add("hidden");
+      if (openPanelProject === project) openPanelProject = null;
+    }, 15000);
+  }
 }
 
 // --- Actions ---
@@ -493,6 +641,7 @@ async function refresh() {
       api("/api/processes"),
     ]);
 
+    lastHealthData = health;
     const badge = document.getElementById("status-badge");
 
     if (health.ok && health.tmux && health.ttyd) {
@@ -518,13 +667,23 @@ async function refresh() {
     }
     if (health.claudeAuth) {
       if (health.claudeAuth.loggedIn) {
-        const label = health.claudeAuth.email ? esc(health.claudeAuth.email) : "authenticated";
+        const label = health.claudeAuth.email ? esc(health.claudeAuth.email) : (health.claudeAuth.authMethod === "api_key" ? "API key" : "authenticated");
         authRows.push(`<span class="auth-row ok" title="${label}"><span class="auth-dot ok"></span>Claude</span>`);
       } else {
         authRows.push('<span class="auth-row error" title="Run: claude auth login"><span class="auth-dot error"></span>Claude</span>');
       }
     } else if (health.claudeAuth === null) {
       authRows.push('<span class="auth-row error" title="Claude CLI not installed"><span class="auth-dot error"></span>Claude</span>');
+    }
+    if (health.geminiAuth) {
+      if (!health.geminiAuth.installed) {
+        authRows.push('<span class="auth-row error" title="Run: brew install gemini-cli"><span class="auth-dot error"></span>Gemini</span>');
+      } else if (health.geminiAuth.loggedIn) {
+        const geminiTitle = health.geminiAuth.email ? esc(health.geminiAuth.email) : (health.geminiAuth.method === "api_key" ? "API key" : "OAuth");
+        authRows.push(`<span class="auth-row ok" title="${geminiTitle}"><span class="auth-dot ok"></span>Gemini</span>`);
+      } else {
+        authRows.push('<span class="auth-row error clickable" title="Click to authenticate" onclick="openGeminiChat(null, null)"><span class="auth-dot error"></span>Gemini</span>');
+      }
     }
     authEl.innerHTML = (authRows.length ? '<span class="auth-title">auth</span>' : '') + authRows.join("");
 
@@ -1043,6 +1202,37 @@ function toggleTheme() {
   document.getElementById("theme-toggle").textContent = isLight ? "🌙" : "☀";
 }
 
+// --- Card click: open chat in workspace's stored mode ---
+
+document.getElementById("sessions-list").addEventListener("click", (e) => {
+  // Ignore clicks on buttons, links, selects, inputs, and the action panel
+  if (e.target.closest("button, a, select, input, .card-actions-panel")) return;
+
+  const card = e.target.closest(".card");
+  if (!card) return;
+
+  const project = card.dataset.project;
+  if (!project) return;
+
+  const chatMode = card.dataset.chatMode || "claude-local";
+  const projectPath = card.dataset.projectPath || "";
+  const claudeUrl = card.dataset.claudeUrl || "";
+
+  // Highlight the active workspace card
+  document.querySelectorAll(".card.active-workspace").forEach(c => c.classList.remove("active-workspace"));
+  card.classList.add("active-workspace");
+
+  if (chatMode === "claude-remote") {
+    // Open claude.ai in a new tab
+    if (claudeUrl) window.open(claudeUrl, "_blank");
+    return;
+  }
+
+  // Map stored mode to cli param expected by openGeminiChat
+  const cli = chatMode === "gemini" ? "gemini" : "claude";
+  openGeminiChat(project, projectPath, cli);
+});
+
 // --- Init ---
 
 if (localStorage.getItem("klaudii-theme") === "light") {
@@ -1050,11 +1240,17 @@ if (localStorage.getItem("klaudii-theme") === "light") {
   document.getElementById("theme-toggle").textContent = "🌙";
 }
 
-refresh();
-refreshCloudStatus();
-refreshTimer = setInterval(() => {
+// Skip all dashboard polling in chatonly mode — only chat overlay is visible
+if (new URLSearchParams(window.location.search).get("mode") === "chatonly") {
+  // Fetch health once (for auth status used by gemini.js)
+  api("/api/health").then(h => { lastHealthData = h; }).catch(() => {});
+} else {
   refresh();
   refreshCloudStatus();
-}, 10000);
-refreshUsage();
-setInterval(refreshUsage, 60000);
+  refreshTimer = setInterval(() => {
+    refresh();
+    refreshCloudStatus();
+  }, 10000);
+  refreshUsage();
+  setInterval(refreshUsage, 60000);
+}

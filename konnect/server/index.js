@@ -7,6 +7,7 @@ const wsHub = require("./lib/ws-hub");
 const auth = require("./lib/auth");
 const pairing = require("./lib/pairing");
 const proxy = require("./lib/proxy");
+const createRelayV1Router = require("./routes/v1");
 
 // --- Config from environment ---
 const PORT = process.env.PORT || 3000;
@@ -60,22 +61,8 @@ app.use("/dashboard", express.static(path.join(__dirname, "..", "..", "public"))
 // Needed because index.html uses absolute paths like /style.css and /app.js
 app.use(express.static(path.join(__dirname, "..", "..", "public"), { index: false }));
 
-// --- Health ---
-app.get("/api/relay/health", (_req, res) => {
-  res.json({
-    ok: true,
-    onlineServers: wsHub.getOnlineServerIds().length,
-  });
-});
-
-// --- Auth routes ---
-auth.setupRoutes(app, db);
-
-// --- Pairing routes ---
-pairing.setupRoutes(app, { requireAuth: auth.requireAuth });
-
-// --- Proxy routes ---
-proxy.setupRoutes(app);
+// --- Mount v1 API & auth routes ---
+app.use(createRelayV1Router({ db, wsHub, auth, pairing, proxy }));
 
 // --- SPA fallback: serve login page for unauthenticated, dashboard for authenticated ---
 app.get("/", (req, res) => {

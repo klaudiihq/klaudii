@@ -66,6 +66,9 @@ function saveSessionAutoApprove() { localStorage.setItem("sessionAutoApprove", J
 const PERM_MODE_LABELS = { yolo: "Bypass Permissions", ask: "Ask Permissions", strict: "Plan Mode" };
 const PERM_BADGE_LABELS = { yolo: "bypass", ask: "ask", strict: "plan" };
 
+const CHAT_MODES = ["gemini", "claude-local", "claude-remote"];
+const CHAT_MODE_LABELS = { "gemini": "Gemini", "claude-local": "Claude Local", "claude-remote": "Claude Remote" };
+
 let addSelectedRepo = null; // repo name chosen in the add-workspace flow
 let addRepos = [];          // cached list from /api/github/repos
 
@@ -920,8 +923,26 @@ function renderCard(s, proc, showServerBadge = false) {
   const secondaryName = branchFirst && subtitle ? repo : subtitle;
   const secondaryLink = branchFirst && subtitle ? repoGitLink : branchGitLink;
 
+  // Chat mode pill
+  const chatMode = s.chatMode || "claude-local";
+  const chatActive = !!s.chatActive;
+  const modePill = `<button class="chat-mode-pill mode-${esc(chatMode)}${chatActive ? " streaming" : ""}" data-action="cycle-chat-mode" data-project="${esc(s.project)}" title="Chat mode — click to change">${chatActive ? '<span class="mode-pulse"></span>' : '<span class="mode-dot"></span>'}${esc(CHAT_MODE_LABELS[chatMode] || chatMode)}</button>`;
+
+  // Remote timing row (started / last activity)
+  let remoteTimingRow = "";
+  if (chatMode === "claude-remote") {
+    const startedAt = s.tmux && s.tmux.created ? formatTime(s.tmux.created * 1000) : null;
+    const lastAct = s.lastActivity ? formatTime(s.lastActivity) : null;
+    if (startedAt || lastAct) {
+      const parts = [];
+      if (startedAt) parts.push(`started ${startedAt}`);
+      if (lastAct) parts.push(`last activity ${lastAct}`);
+      remoteTimingRow = `<div class="remote-timing">${parts.join(" · ")}</div>`;
+    }
+  }
+
   return `
-    <div class="card${attentionClass}" data-project="${esc(s.project)}" data-claude-url="${esc(s.claudeUrl || "")}" data-status="${status}" data-open-title="${esc(displayTitle)}">
+    <div class="card${attentionClass}" data-project="${esc(s.project)}" data-claude-url="${esc(s.claudeUrl || "")}" data-chat-mode="${esc(chatMode)}" data-status="${status}" data-open-title="${esc(displayTitle)}" data-server-url="${esc(s._serverUrl || "")}" data-konnect-id="${esc(s._konnectId || "")}">
       <div class="card-accent ${status}"></div>
       <div class="card-body">
         <div class="card-header">
@@ -931,10 +952,12 @@ function renderCard(s, proc, showServerBadge = false) {
           </div>
           ${inputDot}
           <div class="card-badges">
+            ${modePill}
             ${permBadge}
             <span class="card-status ${status}">${status}</span>
           </div>
         </div>
+        ${remoteTimingRow}
         ${gitStatusRow}
         ${statsRow}
         ${autoApproveRow}
@@ -1172,6 +1195,24 @@ document.addEventListener("click", async (e) => {
       }
       break;
     }
+
+    case "cycle-chat-mode": {
+      const card = btn.closest(".card");
+      if (!card) break;
+      const current = card.dataset.chatMode || "claude-local";
+      const idx = CHAT_MODES.indexOf(current);
+      const next = CHAT_MODES[(idx + 1) % CHAT_MODES.length];
+      card.dataset.chatMode = next;
+      btn.dataset.mode = next;
+      btn.className = `chat-mode-pill mode-${next}`;
+      btn.innerHTML = `<span class="mode-dot"></span>${esc(CHAT_MODE_LABELS[next] || next)}`;
+      // Persist to server
+      sessionApiCall(project, `/api/workspace-state/${encodeURIComponent(project)}`, {
+        method: "PATCH",
+        body: { mode: next },
+      }).catch(() => {});
+      break;
+    }
   }
 });
 
@@ -1237,22 +1278,32 @@ document.addEventListener("click", async (e) => {
   const url = card.dataset.claudeUrl;
   const project = card.dataset.project;
   const title = card.dataset.openTitle;
+  const chatMode = card.dataset.chatMode || "claude-remote";
 
-  if (url && (status === "running" || status === "exited")) {
-    chrome.windows.getCurrent((win) => {
-      chrome.runtime.sendMessage({
-        action: openMode === "tabs" ? "switchTab" : "navigateAndRename",
-        url, title, windowId: win?.id,
-        needsInput: !!sessionNeedsInput[project],
+  if (chatMode === "claude-remote") {
+    // Navigate to claude.ai (existing behavior)
+    if (url && (status === "running" || status === "exited")) {
+      chrome.windows.getCurrent((win) => {
+        chrome.runtime.sendMessage({
+          action: openMode === "tabs" ? "switchTab" : "navigateAndRename",
+          url, title, windowId: win?.id,
+          needsInput: !!sessionNeedsInput[project],
+        });
       });
-    });
-  } else if (status === "stopped") {
-    try {
-      await sessionApiCall(project, "/api/sessions/start", { method: "POST", body: { project, continueSession: true } });
-    } catch (err) {
-      showToast("Error: " + err.message);
+    } else if (status === "stopped") {
+      try {
+        await sessionApiCall(project, "/api/sessions/start", { method: "POST", body: { project, continueSession: true } });
+      } catch (err) {
+        showToast("Error: " + err.message);
+      }
+      setTimeout(refresh, 1000);
     }
-    setTimeout(refresh, 1000);
+  } else {
+    // CLI mode — open Klaudii dashboard with chat pre-opened
+    const serverUrl = card.dataset.serverUrl || klaudiiUrl;
+    const tool = chatMode === "gemini" ? "gemini" : "claude";
+    const dashUrl = `${serverUrl.replace(/\/+$/, "")}/?workspace=${encodeURIComponent(project)}&tool=${tool}`;
+    chrome.runtime.sendMessage({ action: "switchToUrl", url: dashUrl, windowId: undefined });
   }
 });
 
