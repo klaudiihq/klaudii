@@ -301,23 +301,28 @@
   background: var(--bg-hover);
 }
 
+/* Safari/WebKit collapses <details> to 0px when overflow:hidden is set on it.
+   Override to visible so the open pill body renders correctly. */
+details.gemini-tool {
+  overflow: visible;
+}
+
 .gemini-tool-summary {
   display: flex;
   align-items: center;
   gap: 0.5rem;
   padding: 0.45rem 0.75rem;
-  cursor: pointer;
   color: var(--text-muted);
-  user-select: none;
   min-height: 32px;
+  list-style: none;
+  cursor: default;
 }
 
-.gemini-tool-summary:hover {
-  background: var(--bg-active);
-  color: var(--text);
-}
+/* Hide the native <details> disclosure triangle */
+summary.gemini-tool-summary::-webkit-details-marker { display: none; }
+summary.gemini-tool-summary::marker { display: none; }
 
-.gemini-tool.open .gemini-tool-summary {
+.gemini-tool:not(.running) .gemini-tool-summary {
   background: var(--bg-active);
   border-bottom: 1px solid var(--border);
 }
@@ -341,9 +346,9 @@
   min-width: 0;
 }
 
-/* Collapsible body — hidden by default, shown when pill has .open class */
+/* Tool body — always visible, never hidden */
 .gemini-tool-body {
-  display: none;
+  display: block !important;
   font-family: ui-monospace, monospace;
   font-size: 0.7rem;
   color: var(--text-dim);
@@ -351,13 +356,14 @@
   overflow-y: auto;
 }
 
-.gemini-tool.open .gemini-tool-body {
-  display: block;
-}
-
 /* Sections (Parameters / Output) inside body */
 .gemini-tool-section {
   padding: 0.4rem 0.65rem;
+  max-height: 200px;
+  overflow-y: auto;
+  font-family: ui-monospace, monospace;
+  font-size: 0.7rem;
+  color: var(--text-dim);
 }
 
 .gemini-tool-section + .gemini-tool-section {
