@@ -7,6 +7,14 @@
   <link rel="stylesheet" href="sidepanel.css">
 </head>
 <body>
+  <div id="loading-overlay" class="loading-overlay">
+    <div class="loader-content">
+      <div class="cute-loader">
+        <div></div><div></div><div></div><div></div><div></div>
+      </div>
+      <span>Waking up Klaudii...</span>
+    </div>
+  </div>
   <header>
     <div class="header-left">
       <span id="status-badge" class="badge">connecting...</span>
@@ -47,8 +55,6 @@
       <span class="sort-label">Sort</span>
       <button class="sort-btn active" id="sort-activity" data-sort="activity">Activity</button>
       <button class="sort-btn" id="sort-alpha" data-sort="alpha">A–Z</button>
-      <span class="sort-sep">·</span>
-      <button class="sort-btn" id="btn-name-order" title="Toggle repo/branch display order">repo</button>
     </div>
     <div class="sort-right">
       <div id="server-picker" class="server-picker">
@@ -97,11 +103,71 @@
 
   </div>
 
-  <div id="sessions-container"></div>
+  <!-- Settings panel (replaces main content when open) -->
+  <div id="settings-panel" class="settings-panel hidden">
+    <div class="settings-section">
+      <div class="settings-section-label">Local Klaudii Server URLs</div>
+      <textarea id="settings-urls" rows="3" class="settings-textarea" placeholder="http://localhost:9876"></textarea>
+      <div class="settings-hint">One URL per line. Kloud Konnect servers are discovered automatically.</div>
+    </div>
 
-  <div id="unmanaged-section" class="hidden">
-    <h2 class="section-title">free range claudes</h2>
-    <div id="unmanaged-container"></div>
+    <div class="settings-section">
+      <div class="settings-section-label">When clicking "Open"</div>
+      <div class="settings-radio-group">
+        <label class="settings-radio-opt">
+          <input type="radio" name="settings-openMode" value="inplace">
+          <span class="settings-radio-text">
+            <strong>Navigate in place</strong>
+            <small>Replaces the current tab with the session's claude.ai page</small>
+          </span>
+        </label>
+        <label class="settings-radio-opt">
+          <input type="radio" name="settings-openMode" value="tabs">
+          <span class="settings-radio-text">
+            <strong>Switch tabs</strong>
+            <small>Each session opens in its own tab; clicking "Open" switches to it</small>
+          </span>
+        </label>
+      </div>
+    </div>
+
+    <div class="settings-section">
+      <div class="settings-section-label">Display</div>
+      <label class="settings-toggle-opt">
+        <input type="checkbox" id="settings-branch-first">
+        <span class="settings-toggle-text">
+          <span class="settings-toggle-title">Branches on top</span>
+          <span class="settings-toggle-desc">Show the branch name as the primary line on session cards</span>
+        </span>
+      </label>
+    </div>
+
+    <div class="settings-section">
+      <div class="settings-section-label">Attention</div>
+      <label class="settings-toggle-opt">
+        <input type="checkbox" id="settings-attention-flash">
+        <span class="settings-toggle-text">
+          <span class="settings-toggle-title">Flash when Claude is waiting</span>
+          <span class="settings-toggle-desc">Flash the session tile when Claude needs your approval</span>
+        </span>
+      </label>
+    </div>
+
+    <div class="settings-section">
+      <div class="settings-actions">
+        <button class="btn btn-sm" id="btn-settings-test">Test Connection</button>
+      </div>
+      <div id="settings-status" class="settings-status"></div>
+    </div>
+  </div>
+
+  <div id="main-content">
+    <div id="sessions-container"></div>
+
+    <div id="unmanaged-section" class="hidden">
+      <h2 class="section-title">free range claudes</h2>
+      <div id="unmanaged-container"></div>
+    </div>
   </div>
 
   <footer class="auto-approve-bar">
