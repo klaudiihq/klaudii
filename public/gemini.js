@@ -362,6 +362,10 @@ function handleGeminiEvent(event) {
       const toolId = event.tool_id || "";
       const params = event.parameters || event.args || event.input || {};
       glog(`handle: tool_use name=${toolName} id=${toolId}`);
+      // Remove streaming indicator before nulling the reference
+      if (geminiCurrentMsgEl) {
+        geminiCurrentMsgEl.classList.remove("gemini-streaming");
+      }
       // After a tool call, force a new message element for subsequent text
       geminiCurrentMsgEl = null;
       geminiCurrentMsgText = "";
