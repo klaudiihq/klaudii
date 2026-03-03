@@ -23,4 +23,4 @@ jobs:
           publish_dir: ./www
           publish_branch: gh-pages
           keep_files: false
-          cname: klaudii.com
+          cname: www.klaudii.com
