@@ -603,6 +603,48 @@ h1 {
 .perm-badge.perm-ask    { background: var(--info-bg);  color: var(--info-fg); }
 .perm-badge.perm-strict { background: var(--warn-bg);  color: var(--warn-fg); }
 
+/* Chat mode pill */
+.chat-mode-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  font-size: 9px;
+  padding: 1px 5px;
+  border-radius: 999px;
+  font-weight: 500;
+  letter-spacing: 0.03em;
+  border: none;
+  cursor: pointer;
+  background: var(--bg-sunken);
+  color: var(--text-muted);
+  transition: background 0.15s, color 0.15s;
+}
+.chat-mode-pill:hover { background: var(--border); color: var(--text); }
+
+.mode-dot {
+  width: 5px; height: 5px; border-radius: 50%;
+  background: currentColor; flex-shrink: 0;
+}
+.mode-pulse {
+  width: 5px; height: 5px; border-radius: 50%;
+  background: currentColor; flex-shrink: 0;
+  animation: mode-pulse 1.2s ease-in-out infinite;
+}
+@keyframes mode-pulse {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50% { opacity: 0.4; transform: scale(1.4); }
+}
+
+.chat-mode-pill.mode-gemini        { color: var(--info-fg); background: var(--info-bg); }
+.chat-mode-pill.mode-claude-local  { color: var(--warn-fg); background: var(--warn-bg); }
+.chat-mode-pill.mode-claude-remote { color: var(--ok-fg);   background: var(--ok-bg);  }
+
+.remote-timing {
+  font-size: 10px;
+  color: var(--text-muted);
+  margin-bottom: 3px;
+}
+
 /* Mode select (used inside panel-mode-row) */
 .mode-select {
   flex: 1;

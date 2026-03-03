@@ -1,0 +1,21 @@
+services:
+  relay:
+    build:
+      context: .
+      dockerfile: konnect/server/Dockerfile
+    ports:
+      - "3001:3000"
+    environment:
+      NODE_ENV: development
+      SESSION_SECRET: dev-secret-not-for-production
+      PORT: "3000"
+      DB_PATH: /data/relay.db
+      RELAY_WS_URL: ws://localhost:3001/ws
+      GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID}
+      GOOGLE_CLIENT_SECRET: ${GOOGLE_CLIENT_SECRET}
+      GOOGLE_REDIRECT_URI: http://localhost:3001/auth/google/callback
+    volumes:
+      - relay-data:/data
+
+volumes:
+  relay-data:
