@@ -543,10 +543,10 @@ function handleGeminiEvent(event) {
         glog(`handle: ask-tool params=${JSON.stringify(params)}`);
         // AskUserQuestion: {questions:[{question,header,options:[{label,description}]}]}
         // ask_followup_question: {question:string, options:[string]}
-        const q = params.questions?.[0] || params;
-        const questionText = q.question || q.prompt || params.question || params.prompt || "";
-        const rawOptions = q.options || q.choices || params.options || params.choices || [];
-        geminiShowToolQuestion(toolId, questionText, rawOptions);
+        const questions = params.questions?.length
+          ? params.questions
+          : [{ question: params.question || params.prompt || "", options: params.options || params.choices || [] }];
+        geminiShowToolQuestions(toolId, questions);
       } else {
         geminiAppendToolUse(toolName, toolId, params);
       }
@@ -724,54 +724,74 @@ function geminiShowPermissionRequest(requestId, toolName, toolInput) {
   geminiScrollToBottom();
 }
 
-function geminiShowToolQuestion(toolId, question, options) {
+// questions: [{question, header, options:[string|{label,description}], multiSelect?}]
+function geminiShowToolQuestions(toolId, questions) {
   const container = document.getElementById("gemini-messages");
   const div = document.createElement("div");
-  div.className = "gemini-permission-request"; // reuse the same card style
+  div.className = "gemini-permission-request";
 
-  const header = document.createElement("div");
-  header.className = "gemini-permission-header";
-  header.textContent = "Claude is asking";
-  div.appendChild(header);
+  const headerEl = document.createElement("div");
+  headerEl.className = "gemini-permission-header";
+  headerEl.textContent = "Claude is asking";
+  div.appendChild(headerEl);
 
-  if (question) {
-    const q = document.createElement("div");
-    q.className = "gemini-permission-question";
-    q.textContent = question;
-    div.appendChild(q);
-  }
+  const answers = new Array(questions.length).fill(null);
 
-  const btns = document.createElement("div");
-  btns.className = "gemini-permission-buttons";
-
-  const respond = (label) => {
-    btns.querySelectorAll("button").forEach(b => { b.disabled = true; });
-    const chosen = Array.from(btns.querySelectorAll("button")).find(b => b.dataset.label === label);
-    if (chosen) chosen.textContent += " ✓";
-    glog("tool_question: selected=" + label + " tool_id=" + toolId);
+  const sendResult = () => {
+    const content = questions.map((q, i) => {
+      const prefix = q.header || q.question || `Q${i + 1}`;
+      return `${prefix}: ${answers[i]}`;
+    }).join("\n");
+    glog(`tool_questions: sending result tool_id=${toolId}`);
     if (geminiWs && geminiWs.readyState === WebSocket.OPEN) {
       geminiWs.send(JSON.stringify({
         type: "tool_result_response",
         workspace: geminiWorkspace,
         tool_id: toolId,
-        content: label,
+        content,
       }));
     }
   };
 
-  const renderOptions = options.length ? options : ["Yes", "No"];
-  renderOptions.forEach((opt, i) => {
-    const btn = document.createElement("button");
-    btn.className = "btn" + (i === 0 ? " primary" : "");
-    const label = typeof opt === "object" ? (opt.label || String(opt)) : String(opt);
-    btn.textContent = label;
-    btn.dataset.label = label;
-    if (typeof opt === "object" && opt.description) btn.title = opt.description;
-    btn.onclick = () => respond(label);
-    btns.appendChild(btn);
+  questions.forEach((q, qi) => {
+    const section = document.createElement("div");
+    section.className = "gemini-question-section" + (qi > 0 ? " gemini-question-section--subsequent" : "");
+
+    if (q.question) {
+      const qEl = document.createElement("div");
+      qEl.className = "gemini-permission-question";
+      qEl.textContent = q.question;
+      section.appendChild(qEl);
+    }
+
+    const btns = document.createElement("div");
+    btns.className = "gemini-permission-buttons";
+    const rawOptions = q.options || q.choices || [];
+    const renderOptions = rawOptions.length ? rawOptions : ["Yes", "No"];
+
+    renderOptions.forEach((opt, i) => {
+      const btn = document.createElement("button");
+      btn.className = "btn" + (i === 0 ? " primary" : "");
+      const label = typeof opt === "object" ? (opt.label || String(opt)) : String(opt);
+      btn.textContent = label;
+      btn.dataset.label = label;
+      if (typeof opt === "object" && opt.description) btn.title = opt.description;
+      btn.onclick = () => {
+        if (answers[qi] !== null) return;
+        btns.querySelectorAll("button").forEach(b => { b.disabled = true; });
+        const chosen = btns.querySelector(`[data-label="${CSS.escape(label)}"]`);
+        if (chosen) chosen.textContent += " ✓";
+        answers[qi] = label;
+        glog(`tool_question[${qi}]: selected=${label}`);
+        if (answers.every(a => a !== null)) sendResult();
+      };
+      btns.appendChild(btn);
+    });
+
+    section.appendChild(btns);
+    div.appendChild(section);
   });
 
-  div.appendChild(btns);
   container.appendChild(div);
   geminiScrollToBottom();
 }

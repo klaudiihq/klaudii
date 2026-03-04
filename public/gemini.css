@@ -687,7 +687,13 @@ summary.gemini-tool-summary::marker { display: none; }
 .gemini-permission-buttons {
   display: flex;
   gap: 0.5rem;
+  flex-wrap: wrap;
   margin-top: 0.25rem;
+}
+
+.gemini-question-section--subsequent {
+  padding-top: 0.5rem;
+  border-top: 1px solid var(--border);
 }
 
 /* --- Thinking indicator --- */
