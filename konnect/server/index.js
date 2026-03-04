@@ -27,6 +27,8 @@ const app = express();
 app.set("trust proxy", 1);
 
 app.use(express.json());
+// Required for Apple's form POST callback (application/x-www-form-urlencoded)
+app.use(express.urlencoded({ extended: false }));
 
 // Session cookies
 app.use(
@@ -80,6 +82,7 @@ wsHub.init(server);
 server.listen(PORT, () => {
   console.log(`Klaudii Kloud Relay running on port ${PORT}`);
   console.log(`  Google OAuth: ${process.env.GOOGLE_CLIENT_ID ? "configured" : "NOT CONFIGURED"}`);
+  console.log(`  Apple OAuth:  ${process.env.APPLE_CLIENT_ID ? "configured" : "NOT CONFIGURED"}`);
 });
 
 // Graceful shutdown
