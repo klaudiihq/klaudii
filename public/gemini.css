@@ -498,6 +498,40 @@ summary.gemini-tool-summary::marker { display: none; }
   cursor: not-allowed;
 }
 
+/* Permission mode selector (Claude only) */
+.gemini-permission-select {
+  flex-shrink: 0;
+  align-self: flex-end;
+  margin-bottom: 1px;
+  background: var(--bg-btn);
+  color: var(--text);
+  border: 1px solid var(--border-btn);
+  border-radius: 6px;
+  padding: 0.35rem 1.4rem 0.35rem 0.5rem;
+  font-size: 0.75rem;
+  font-family: inherit;
+  cursor: pointer;
+  appearance: none;
+  -webkit-appearance: none;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6'%3E%3Cpath d='M0 0l5 6 5-6z' fill='%23888'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 0.4rem center;
+}
+
+.gemini-permission-select:hover {
+  background-color: var(--bg-btn-hover);
+}
+
+.gemini-permission-select:focus {
+  outline: none;
+  border-color: var(--btn-primary);
+}
+
+.gemini-permission-select:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
 .gemini-input-area textarea {
   flex: 1;
   background: var(--bg-input);
@@ -620,6 +654,40 @@ summary.gemini-tool-summary::marker { display: none; }
   align-items: center;
   gap: 0.3rem;
   cursor: pointer;
+}
+
+/* --- Permission request card --- */
+
+.gemini-permission-request {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--s-yellow, #f5a623);
+  border-radius: 8px;
+  padding: 0.75rem 1rem;
+  margin: 0.5rem 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.gemini-permission-header {
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.gemini-permission-question {
+  font-size: 0.9rem;
+  color: var(--text);
+  line-height: 1.4;
+}
+
+.gemini-permission-buttons {
+  display: flex;
+  gap: 0.5rem;
+  margin-top: 0.25rem;
 }
 
 /* --- Thinking indicator --- */
