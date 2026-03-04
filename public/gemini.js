@@ -348,6 +348,29 @@ function geminiUpdateAttachVisibility() {
   if (!show) geminiClearImages();
 }
 
+// Only show permission mode selector for Claude
+function geminiUpdatePermissionVisibility() {
+  const el = document.getElementById("gemini-permission-mode");
+  if (!el) return;
+  el.style.display = geminiActiveCli === "claude" ? "" : "none";
+}
+
+function geminiGetPermissionMode() {
+  const el = document.getElementById("gemini-permission-mode");
+  return (el && geminiActiveCli === "claude") ? (el.value || "bypassPermissions") : undefined;
+}
+
+function geminiSavePermissionMode(value) {
+  if (geminiWorkspace) localStorage.setItem(`klaudii-perm-${geminiWorkspace}`, value);
+}
+
+function geminiRestorePermissionMode() {
+  const el = document.getElementById("gemini-permission-mode");
+  if (!el || !geminiWorkspace) return;
+  const saved = localStorage.getItem(`klaudii-perm-${geminiWorkspace}`);
+  el.value = saved || "bypassPermissions";
+}
+
 // Draft sync — relay over WS for instant multi-window sync, HTTP PATCH fallback
 let geminiDraftTimer = null;
 
@@ -613,10 +636,63 @@ function handleGeminiEvent(event) {
       geminiShowThinking();
       break;
 
+    case "permission_request":
+      geminiRemoveThinking();
+      glog("handle: permission_request question=" + (event.question || "?"));
+      geminiShowPermissionRequest(event.question, event.options || ["Yes", "No, skip"], event.tool_name);
+      break;
+
+    case "unknown_raw":
+      // Discovery: log whatever Plan/allowEdits mode emits so we can identify the format
+      glog("handle: unknown_raw raw_type=" + event.raw_type + " payload=" + JSON.stringify(event.payload).slice(0, 300));
+      break;
+
     default:
       glog("handle: unknown event type=" + event.type + " keys=" + Object.keys(event).join(","));
       break;
   }
+}
+
+function geminiShowPermissionRequest(question, options, toolName) {
+  const container = document.getElementById("gemini-messages");
+  const div = document.createElement("div");
+  div.className = "gemini-permission-request";
+
+  const header = document.createElement("div");
+  header.className = "gemini-permission-header";
+  header.textContent = toolName ? `Claude wants to use: ${toolName}` : "Claude is asking for permission";
+  div.appendChild(header);
+
+  if (question) {
+    const q = document.createElement("div");
+    q.className = "gemini-permission-question";
+    q.textContent = question;
+    div.appendChild(q);
+  }
+
+  const btns = document.createElement("div");
+  btns.className = "gemini-permission-buttons";
+
+  options.forEach((opt) => {
+    const btn = document.createElement("button");
+    btn.className = "btn" + (opt.toLowerCase().startsWith("y") ? " primary" : "");
+    btn.textContent = opt;
+    btn.onclick = () => {
+      // Disable all buttons after choosing
+      btns.querySelectorAll("button").forEach(b => { b.disabled = true; });
+      btn.textContent += " ✓";
+      // Send response back to server → Claude stdin
+      if (geminiWs && geminiWs.readyState === WebSocket.OPEN) {
+        geminiWs.send(JSON.stringify({ type: "input", workspace: geminiWorkspace, text: opt }));
+      }
+      glog("permission_request: sent response=" + opt);
+    };
+    btns.appendChild(btn);
+  });
+
+  div.appendChild(btns);
+  container.appendChild(div);
+  geminiScrollToBottom();
 }
 
 // --- DOM rendering ---
@@ -1325,6 +1401,8 @@ async function openGeminiChat(project, projectPath, cli) {
   geminiSetStreaming(false);
   geminiClearImages();
   geminiUpdateAttachVisibility();
+  geminiUpdatePermissionVisibility();
+  geminiRestorePermissionMode();
 
   // Restore last session from server state (non-blocking — geminiShowChat uses it)
   geminiSessionNum = null;
@@ -1541,6 +1619,7 @@ function sendGeminiMessage() {
       message,
       model: model || undefined,
       cli: geminiActiveCli,
+      permissionMode: geminiGetPermissionMode(),
       ...(images.length ? { images } : {}),
     };
     glog("send: ws.send", JSON.stringify(payload).slice(0, 200));
@@ -1612,6 +1691,9 @@ function geminiSetStreaming(active) {
 
   const modelSelect = document.getElementById("gemini-model");
   if (modelSelect) modelSelect.disabled = active;
+
+  const permSelect = document.getElementById("gemini-permission-mode");
+  if (permSelect) permSelect.disabled = active;
 
   if (sendBtn) {
     if (active) {
@@ -1700,6 +1782,11 @@ window.addEventListener("popstate", () => {
     }
     document.body.classList.remove("chatonly", "chat-open");
   }
+});
+
+// Persist permission mode selection per workspace
+document.getElementById("gemini-permission-mode")?.addEventListener("change", function() {
+  geminiSavePermissionMode(this.value);
 });
 
 // Draft sync — save as user types + set local typing guard
