@@ -624,11 +624,19 @@ wss.on("connection", (ws) => {
         broadcastToWorkspace(workspace, { type: "draft", workspace, text: text || "", draftMode, draftSession }, clientId);
         workspaceState.setState(workspace, { draft: text || "", draftMode, draftSession });
       }
-    } else if (type === "input") {
-      // User responded to a permission/approval request — pipe back to the Claude process stdin
-      if (workspace && msg.text != null) {
-        console.log(`[gemini-ws] input workspace=${workspace} text=${JSON.stringify(msg.text)}`);
-        claudeChat.sendInput(workspace, msg.text);
+    } else if (type === "permission_response") {
+      // User approved or denied a permission request — send control response back to Claude stdin
+      const { request_id, behavior, updatedInput } = msg;
+      if (workspace && request_id && behavior) {
+        console.log(`[gemini-ws] permission_response workspace=${workspace} request_id=${request_id} behavior=${behavior}`);
+        claudeChat.sendControlResponse(workspace, request_id, behavior, updatedInput);
+      }
+    } else if (type === "tool_result_response") {
+      // User answered a question tool (AskUserQuestion/ask_followup_question)
+      const { tool_id, content } = msg;
+      if (workspace && tool_id) {
+        console.log(`[gemini-ws] tool_result_response workspace=${workspace} tool_id=${tool_id}`);
+        claudeChat.sendToolResult(workspace, tool_id, content);
       }
     }
   });
