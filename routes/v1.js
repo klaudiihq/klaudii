@@ -297,10 +297,12 @@ module.exports = function createV1Router(deps) {
       if (resumeSessionId) {
         sessionTracker.addSession(project, resumeSessionId, "resume");
       } else {
-        sessionTracker.detectAndTrack(project, startTs);
+        sessionTracker.detectAndTrack(project, startTs)
+          .catch((err) => console.error("[session-tracker] detectAndTrack:", err.message));
       }
 
-      sessionTracker.captureClaudeUrl(project, tmuxName);
+      sessionTracker.captureClaudeUrl(project, tmuxName)
+        .catch((err) => console.error("[session-tracker] captureClaudeUrl:", err.message));
 
       res.json({ ok: true, tmuxSession: tmuxName, ttydPort: port });
     } catch (err) {
@@ -428,8 +430,10 @@ module.exports = function createV1Router(deps) {
         console.error(`Failed to start ttyd for ${project}:`, err.message);
       }
 
-      sessionTracker.detectAndTrack(project, startTs);
-      sessionTracker.captureClaudeUrl(project, tmuxName);
+      sessionTracker.detectAndTrack(project, startTs)
+        .catch((err) => console.error("[session-tracker] detectAndTrack:", err.message));
+      sessionTracker.captureClaudeUrl(project, tmuxName)
+        .catch((err) => console.error("[session-tracker] captureClaudeUrl:", err.message));
 
       res.json({ ok: true, tmuxSession: tmuxName, ttydPort: port });
     } catch (err) {
@@ -589,8 +593,10 @@ module.exports = function createV1Router(deps) {
         console.error(`Failed to start ttyd for ${projectName}:`, err.message);
       }
 
-      sessionTracker.detectAndTrack(projectName, startTs);
-      sessionTracker.captureClaudeUrl(projectName, tmuxName);
+      sessionTracker.detectAndTrack(projectName, startTs)
+        .catch((err) => console.error("[session-tracker] detectAndTrack:", err.message));
+      sessionTracker.captureClaudeUrl(projectName, tmuxName)
+        .catch((err) => console.error("[session-tracker] captureClaudeUrl:", err.message));
 
       res.json({
         ok: true,

@@ -19,7 +19,8 @@ function init(app, config) {
 
 function handleRelayMessage(msg) {
   if (msg.type === "api_request") {
-    handleApiRequest(msg);
+    handleApiRequest(msg)
+      .catch((err) => console.error("[cloud] handleApiRequest unhandled:", err.message));
   }
 }
 
@@ -67,6 +68,7 @@ function localRequest(method, urlPath, body) {
     const req = http.request(options, (res) => {
       let data = "";
       res.on("data", (chunk) => (data += chunk));
+      res.on("error", (err) => reject(err));
       res.on("end", () => {
         let parsed;
         try {
