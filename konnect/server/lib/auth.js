@@ -1,6 +1,7 @@
-// Google OAuth 2.0 — direct implementation, no passport dependency
+// Google + Apple OAuth 2.0 — direct implementation, no passport dependency
 
 const crypto = require("crypto");
+const apple = require("./apple");
 
 const GOOGLE_AUTH_URL = "https://accounts.google.com/o/oauth2/v2/auth";
 const GOOGLE_TOKEN_URL = "https://oauth2.googleapis.com/token";
@@ -142,6 +143,61 @@ function setupRoutes(app, db) {
     req.session = null;
     res.json({ ok: true });
   });
+
+  // --- Sign in with Apple ---
+
+  app.get("/auth/apple", (req, res) => {
+    try {
+      const state = req.query.mobile === "1" ? "mobile" : undefined;
+      res.redirect(apple.getAuthUrl(state));
+    } catch (err) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // Apple sends a form POST (application/x-www-form-urlencoded), not a GET.
+  // The `user` field (name) is only present on the very first authorization.
+  app.post("/auth/apple/callback", async (req, res) => {
+    const { code, state, user: userJson, error } = req.body;
+
+    if (error) {
+      console.error("Apple OAuth error:", error);
+      return res.status(400).send("Apple sign-in was cancelled or failed");
+    }
+    if (!code) {
+      return res.status(400).send("Missing authorization code");
+    }
+
+    try {
+      const tokens = await apple.exchangeCode(code);
+      const claims = await apple.verifyIdToken(tokens.id_token);
+
+      // Apple only sends the user's name on the very first sign-in
+      let name = null;
+      if (userJson) {
+        try {
+          const parsed = JSON.parse(userJson);
+          const { firstName, lastName } = parsed.name || {};
+          name = [firstName, lastName].filter(Boolean).join(" ") || null;
+        } catch {}
+      }
+
+      const user = db.upsertUserByApple(claims.sub, claims.email, name);
+
+      if (state === "mobile") {
+        const token = crypto.randomBytes(32).toString("hex");
+        mobileTokens.set(token, { userId: user.id, expires: Date.now() + 60000 });
+        return res.redirect(`klaudii://auth/callback?token=${token}`);
+      }
+
+      req.session.userId = user.id;
+      res.redirect("/");
+    } catch (err) {
+      console.error("Apple OAuth callback error:", err);
+      res.status(500).send("Authentication failed");
+    }
+  });
+
 }
 
 module.exports = { setupRoutes, requireAuth };
