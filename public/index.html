@@ -67,6 +67,11 @@
         <select id="gemini-model" class="gemini-model-select" title="Model">
           <option value="">Auto</option>
         </select>
+        <select id="gemini-permission-mode" class="gemini-permission-select" title="Permission Mode" style="display:none">
+          <option value="bypassPermissions">Yolo</option>
+          <option value="plan">Plan</option>
+          <option value="allowEdits">Auto Accept Edits</option>
+        </select>
         <textarea id="gemini-input" rows="3" placeholder="Message Gemini..." onkeydown="geminiInputKeydown(event)"></textarea>
         <input type="file" id="gemini-file-input" accept="image/*" multiple style="display:none" onchange="geminiHandleFileInput(event)">
         <button id="gemini-attach" class="btn gemini-attach-btn" onclick="document.getElementById('gemini-file-input').click()" title="Attach image">
@@ -157,6 +162,6 @@
 
   <script src="/app.js"></script>
   <script src="/vendor/marked.min.js"></script>
-  <script src="/gemini.js?v=6"></script>
+  <script src="/gemini.js?v=13"></script>
 </body>
 </html>
