@@ -3,6 +3,7 @@ import SwiftUI
 struct ServerPickerView: View {
     @ObservedObject var appVM: AppViewModel
     @State private var isRefreshing = false
+    @State private var showingAddServer = false
 
     var body: some View {
         NavigationStack {
@@ -19,6 +20,14 @@ struct ServerPickerView: View {
             .navigationBarTitleDisplayMode(.inline)
             .toolbarBackground(KTheme.background, for: .navigationBar)
             .toolbar {
+                ToolbarItem(placement: .topBarLeading) {
+                    Button {
+                        showingAddServer = true
+                    } label: {
+                        Image(systemName: "plus")
+                            .foregroundColor(KTheme.accent)
+                    }
+                }
                 ToolbarItem(placement: .topBarTrailing) {
                     Button {
                         Task { await appVM.logout() }
@@ -27,6 +36,9 @@ struct ServerPickerView: View {
                             .foregroundColor(KTheme.textSecondary)
                     }
                 }
+            }
+            .sheet(isPresented: $showingAddServer) {
+                AddServerView(appVM: appVM)
             }
         }
     }
@@ -100,31 +112,47 @@ struct ServerPickerView: View {
     }
 
     private var emptyState: some View {
-        VStack(spacing: 16) {
-            Image(systemName: "server.rack")
-                .font(.system(size: 40))
+        VStack(spacing: 20) {
+            Image(systemName: "macpro.gen3")
+                .font(.system(size: 44))
                 .foregroundColor(KTheme.textTertiary)
 
-            Text("No servers found")
-                .font(.system(size: 15, weight: .medium))
-                .foregroundColor(KTheme.textSecondary)
+            VStack(spacing: 6) {
+                Text("No Macs connected")
+                    .font(.system(size: 16, weight: .semibold))
+                    .foregroundColor(KTheme.textSecondary)
 
-            Text("Pair your local Klaudii instance\nvia Kloud Konnect first")
-                .font(.system(size: 13))
-                .foregroundColor(KTheme.textTertiary)
-                .multilineTextAlignment(.center)
+                Text("Add your Mac running Klaudii\nto access it from anywhere.")
+                    .font(.system(size: 13))
+                    .foregroundColor(KTheme.textTertiary)
+                    .multilineTextAlignment(.center)
+            }
 
-            Button {
-                Task { await appVM.loadServers() }
-            } label: {
-                Text("Refresh")
-                    .font(.system(size: 13, weight: .medium))
-                    .foregroundColor(KTheme.accent)
-                    .padding(.horizontal, 16)
-                    .padding(.vertical, 8)
-                    .background(KTheme.accentBg)
-                    .cornerRadius(8)
+            VStack(spacing: 10) {
+                Button {
+                    showingAddServer = true
+                } label: {
+                    HStack(spacing: 8) {
+                        Image(systemName: "plus.circle.fill")
+                        Text("Add a Mac")
+                    }
+                    .font(.system(size: 15, weight: .semibold))
+                    .foregroundColor(.white)
+                    .padding(.horizontal, 28)
+                    .padding(.vertical, 13)
+                    .background(KTheme.accent)
+                    .clipShape(Capsule())
+                }
+
+                Button {
+                    Task { await appVM.loadServers() }
+                } label: {
+                    Text("Refresh")
+                        .font(.system(size: 13))
+                        .foregroundColor(KTheme.textMuted)
+                }
             }
         }
+        .padding(32)
     }
 }
