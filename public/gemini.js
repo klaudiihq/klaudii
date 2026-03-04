@@ -377,6 +377,7 @@ let geminiDraftTimer = null;
 function geminiSaveDraft(text) {
   if (!geminiWorkspace) return;
   clearTimeout(geminiDraftTimer);
+  if (!text) return; // don't spam WS with empty drafts
   const workspace = geminiWorkspace;
   const draftMode = geminiActiveCli === "claude" ? "claude-local" : "gemini";
   const draftSession = geminiSessionNum;
@@ -530,16 +531,25 @@ function handleGeminiEvent(event) {
       // Remove or discard the current message element before the tool pill
       if (geminiCurrentMsgEl) {
         if (!geminiCurrentMsgText) {
-          // Empty bubble (e.g. whitespace-only delta before a tool call) — remove it
           geminiCurrentMsgEl.remove();
         } else {
           geminiCurrentMsgEl.classList.remove("gemini-streaming");
         }
       }
-      // After a tool call, force a new message element for subsequent text
       geminiCurrentMsgEl = null;
       geminiCurrentMsgText = "";
-      geminiAppendToolUse(toolName, toolId, params);
+      // Intercept question-type tools and render as interactive card
+      if (/ask.*question|askfollowup|ask_followup/i.test(toolName)) {
+        glog(`handle: ask-tool params=${JSON.stringify(params)}`);
+        // AskUserQuestion: {questions:[{question,header,options:[{label,description}]}]}
+        // ask_followup_question: {question:string, options:[string]}
+        const q = params.questions?.[0] || params;
+        const questionText = q.question || q.prompt || params.question || params.prompt || "";
+        const rawOptions = q.options || q.choices || params.options || params.choices || [];
+        geminiShowToolQuestion(toolId, questionText, rawOptions);
+      } else {
+        geminiAppendToolUse(toolName, toolId, params);
+      }
       break;
     }
 
@@ -638,13 +648,8 @@ function handleGeminiEvent(event) {
 
     case "permission_request":
       geminiRemoveThinking();
-      glog("handle: permission_request question=" + (event.question || "?"));
-      geminiShowPermissionRequest(event.question, event.options || ["Yes", "No, skip"], event.tool_name);
-      break;
-
-    case "unknown_raw":
-      // Discovery: log whatever Plan/allowEdits mode emits so we can identify the format
-      glog("handle: unknown_raw raw_type=" + event.raw_type + " payload=" + JSON.stringify(event.payload).slice(0, 300));
+      glog("handle: permission_request request_id=" + event.request_id + " tool=" + event.tool_name);
+      geminiShowPermissionRequest(event.request_id, event.tool_name, event.tool_input);
       break;
 
     default:
@@ -653,7 +658,7 @@ function handleGeminiEvent(event) {
   }
 }
 
-function geminiShowPermissionRequest(question, options, toolName) {
+function geminiShowPermissionRequest(requestId, toolName, toolInput) {
   const container = document.getElementById("gemini-messages");
   const div = document.createElement("div");
   div.className = "gemini-permission-request";
@@ -661,6 +666,72 @@ function geminiShowPermissionRequest(question, options, toolName) {
   const header = document.createElement("div");
   header.className = "gemini-permission-header";
   header.textContent = toolName ? `Claude wants to use: ${toolName}` : "Claude is asking for permission";
+  div.appendChild(header);
+
+  // Show key input fields for context (command, file_path, etc.)
+  if (toolInput && Object.keys(toolInput).length) {
+    const detail = document.createElement("div");
+    detail.className = "gemini-permission-question";
+    const preview = Object.entries(toolInput)
+      .filter(([, v]) => typeof v === "string" || typeof v === "number")
+      .map(([k, v]) => {
+        const val = String(v);
+        return `${k}: ${val.length > 120 ? val.slice(0, 117) + "…" : val}`;
+      })
+      .join("\n");
+    detail.textContent = preview || JSON.stringify(toolInput).slice(0, 200);
+    detail.style.fontFamily = "monospace";
+    detail.style.fontSize = "0.8rem";
+    detail.style.whiteSpace = "pre-wrap";
+    div.appendChild(detail);
+  }
+
+  const btns = document.createElement("div");
+  btns.className = "gemini-permission-buttons";
+
+  const respond = (behavior) => {
+    btns.querySelectorAll("button").forEach(b => { b.disabled = true; });
+    const chosen = btns.querySelector(`[data-behavior="${behavior}"]`);
+    if (chosen) chosen.textContent += " ✓";
+    if (geminiWs && geminiWs.readyState === WebSocket.OPEN) {
+      geminiWs.send(JSON.stringify({
+        type: "permission_response",
+        workspace: geminiWorkspace,
+        request_id: requestId,
+        behavior,
+        updatedInput: behavior === "allow" ? toolInput : undefined,
+      }));
+    }
+    glog("permission_request: sent behavior=" + behavior + " request_id=" + requestId);
+  };
+
+  const allowBtn = document.createElement("button");
+  allowBtn.className = "btn primary";
+  allowBtn.textContent = "Allow";
+  allowBtn.dataset.behavior = "allow";
+  allowBtn.onclick = () => respond("allow");
+  btns.appendChild(allowBtn);
+
+  const denyBtn = document.createElement("button");
+  denyBtn.className = "btn";
+  denyBtn.textContent = "Deny";
+  denyBtn.dataset.behavior = "deny";
+  denyBtn.onclick = () => respond("deny");
+  btns.appendChild(denyBtn);
+
+  div.appendChild(btns);
+  container.appendChild(div);
+  geminiScrollToBottom();
+}
+
+function geminiShowToolQuestion(toolId, question, options) {
+  const container = document.getElementById("gemini-messages");
+  const div = document.createElement("div");
+  div.className = "gemini-permission-request"; // reuse the same card style
+
+  const header = document.createElement("div");
+  header.className = "gemini-permission-header";
+  header.textContent = "Claude is asking";
   div.appendChild(header);
 
   if (question) {
@@ -673,20 +744,30 @@ function geminiShowPermissionRequest(question, options, toolName) {
   const btns = document.createElement("div");
   btns.className = "gemini-permission-buttons";
 
-  options.forEach((opt) => {
+  const respond = (label) => {
+    btns.querySelectorAll("button").forEach(b => { b.disabled = true; });
+    const chosen = Array.from(btns.querySelectorAll("button")).find(b => b.dataset.label === label);
+    if (chosen) chosen.textContent += " ✓";
+    glog("tool_question: selected=" + label + " tool_id=" + toolId);
+    if (geminiWs && geminiWs.readyState === WebSocket.OPEN) {
+      geminiWs.send(JSON.stringify({
+        type: "tool_result_response",
+        workspace: geminiWorkspace,
+        tool_id: toolId,
+        content: label,
+      }));
+    }
+  };
+
+  const renderOptions = options.length ? options : ["Yes", "No"];
+  renderOptions.forEach((opt, i) => {
     const btn = document.createElement("button");
-    btn.className = "btn" + (opt.toLowerCase().startsWith("y") ? " primary" : "");
-    btn.textContent = opt;
-    btn.onclick = () => {
-      // Disable all buttons after choosing
-      btns.querySelectorAll("button").forEach(b => { b.disabled = true; });
-      btn.textContent += " ✓";
-      // Send response back to server → Claude stdin
-      if (geminiWs && geminiWs.readyState === WebSocket.OPEN) {
-        geminiWs.send(JSON.stringify({ type: "input", workspace: geminiWorkspace, text: opt }));
-      }
-      glog("permission_request: sent response=" + opt);
-    };
+    btn.className = "btn" + (i === 0 ? " primary" : "");
+    const label = typeof opt === "object" ? (opt.label || String(opt)) : String(opt);
+    btn.textContent = label;
+    btn.dataset.label = label;
+    if (typeof opt === "object" && opt.description) btn.title = opt.description;
+    btn.onclick = () => respond(label);
     btns.appendChild(btn);
   });
 
