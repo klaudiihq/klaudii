@@ -210,6 +210,25 @@ h3 { font-size: 1rem; font-weight: 600; color: #fff; }
   box-shadow: 0 2px 12px rgba(255,255,255,0.1);
 }
 .btn-google svg { width: 20px; height: 20px; }
+.btn-apple {
+  background: #000;
+  color: #fff;
+  border: none;
+  border-radius: 8px;
+  padding: 0.75rem 1.5rem;
+  font-size: 1rem;
+  font-weight: 500;
+  font-family: var(--font);
+  cursor: pointer;
+  transition: all 0.2s ease;
+  text-decoration: none;
+  min-width: 220px;
+  justify-content: center;
+}
+.btn-apple:hover {
+  background: #222;
+  box-shadow: 0 2px 12px rgba(0,0,0,0.4);
+}
 
 /* --- Forms --- */
 label {

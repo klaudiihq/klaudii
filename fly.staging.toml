@@ -10,6 +10,8 @@ primary_region = "sjc"
   DB_PATH = "/data/relay.db"
   RELAY_WS_URL = "wss://staging.konnect.klaudii.com/ws"
   GOOGLE_REDIRECT_URI = "https://staging.konnect.klaudii.com/auth/google/callback"
+  APPLE_REDIRECT_URI = "https://staging.konnect.klaudii.com/auth/apple/callback"
+  # Sensitive Apple secrets → set via: fly secrets set -a klaudii-cloud-relay-staging APPLE_CLIENT_ID=... APPLE_TEAM_ID=... APPLE_KEY_ID=... APPLE_PRIVATE_KEY=...
 
 [http_service]
   internal_port = 3000
