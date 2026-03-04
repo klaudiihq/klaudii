@@ -674,3 +674,103 @@ textarea { resize: none; }
   .pairing-code-display .code { font-size: 2rem; }
   .konnect-footer { gap: 1rem; flex-wrap: wrap; }
 }
+
+/* --- Mobile pairing view --- */
+.mobile-pair-page {
+  min-height: 100vh;
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  padding: 1.5rem 1rem 3rem;
+  background: var(--bg);
+}
+.mobile-pair-card {
+  width: 100%;
+  max-width: 420px;
+  display: flex;
+  flex-direction: column;
+  gap: 1.75rem;
+}
+.mobile-pair-logo {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  padding-top: 0.5rem;
+}
+.mobile-pair-logo-text {
+  font-size: 1.5rem;
+  font-weight: 700;
+  color: var(--text);
+  letter-spacing: -0.02em;
+}
+.mobile-pair-title {
+  font-size: 1.6rem;
+  font-weight: 700;
+  color: var(--text);
+  margin: 0;
+  line-height: 1.2;
+}
+.mobile-pair-subtitle {
+  color: var(--text-muted);
+  font-size: 0.95rem;
+  margin: -1rem 0 0;
+  line-height: 1.5;
+}
+.mobile-code-block {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  padding: 1.75rem 1.5rem 1.25rem;
+  text-align: center;
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+.mobile-code {
+  font-size: 2.75rem;
+  font-weight: 800;
+  letter-spacing: 0.12em;
+  color: var(--text);
+  font-variant-numeric: tabular-nums;
+  font-family: var(--font-mono, monospace);
+}
+.mobile-countdown {
+  font-size: 0.8rem;
+  color: var(--text-dim);
+  font-variant-numeric: tabular-nums;
+}
+.mobile-pair-steps {
+  margin: 0;
+  padding: 0 0 0 1.25rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+  color: var(--text-muted);
+  font-size: 0.9rem;
+  line-height: 1.5;
+}
+.mobile-pair-steps li { padding-left: 0.25rem; }
+.mobile-pair-steps .step-hint {
+  color: var(--text-dim);
+  font-size: 0.8rem;
+}
+.mobile-download-cta {
+  border-top: 1px solid var(--border);
+  padding-top: 1.5rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+.mobile-download-cta p {
+  margin: 0;
+  font-size: 0.85rem;
+  color: var(--text-muted);
+  text-align: center;
+}
+.mobile-pair-footer {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding-top: 0.25rem;
+}
+.btn-block { display: block; width: 100%; text-align: center; }
