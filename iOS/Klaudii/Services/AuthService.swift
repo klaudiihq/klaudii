@@ -2,7 +2,7 @@ import Foundation
 import AuthenticationServices
 
 /// Handles authentication with the Klaudii kloud relay.
-/// Uses ASWebAuthenticationSession for Google OAuth (system browser, Google-approved).
+/// Uses ASWebAuthenticationSession for OAuth (system browser).
 /// The relay redirects to klaudii://auth/callback?token=X after OAuth completes.
 /// We then exchange that one-time token for a session cookie via /auth/token-exchange.
 @MainActor
@@ -36,7 +36,17 @@ class AuthService: NSObject, ObservableObject, ASWebAuthenticationPresentationCo
 
     /// Opens system browser for Google OAuth, then exchanges the one-time token for a session cookie.
     func login() async throws {
-        let authURL = URL(string: "\(Self.relayBaseURL)/auth/google?mobile=1")!
+        try await oauthLogin(path: "/auth/google?mobile=1")
+    }
+
+    /// Opens system browser for Apple OAuth, then exchanges the one-time token for a session cookie.
+    func loginWithApple() async throws {
+        try await oauthLogin(path: "/auth/apple?mobile=1")
+    }
+
+    /// Shared OAuth flow: opens a browser session, waits for the klaudii:// callback, and exchanges the token.
+    private func oauthLogin(path: String) async throws {
+        let authURL = URL(string: "\(Self.relayBaseURL)\(path)")!
         let callbackScheme = "klaudii"
 
         let callbackURL: URL = try await withCheckedThrowingContinuation { continuation in
