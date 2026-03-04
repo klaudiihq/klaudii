@@ -483,7 +483,7 @@ wss.on("connection", (ws) => {
       return;
     }
 
-    const { type, workspace, message, model, cli, images: rawImages } = msg;
+    const { type, workspace, message, model, cli, images: rawImages, permissionMode } = msg;
     const backend = cli === "claude" ? "claude" : "gemini";
     const backendModule = backend === "claude" ? claudeChat : gemini;
 
@@ -535,7 +535,7 @@ wss.on("connection", (ws) => {
         const globalKeyField = backend === "claude" ? "claudeApiKey" : "geminiApiKey";
         const apiKey = proj[apiKeyField] || config[globalKeyField] || undefined;
         console.log(`[gemini-ws] spawning ${backend} for workspace=${workspace} path=${proj.path} hasApiKey=${!!apiKey}`);
-        const handle = backendModule.sendMessage(workspace, proj.path, message, config, { apiKey, model, images });
+        const handle = backendModule.sendMessage(workspace, proj.path, message, config, { apiKey, model, images, permissionMode });
 
         // Accumulate assistant text and tool events for history persistence
         let assistantText = "";
@@ -623,6 +623,12 @@ wss.on("connection", (ws) => {
         const { text, draftMode, draftSession } = msg;
         broadcastToWorkspace(workspace, { type: "draft", workspace, text: text || "", draftMode, draftSession }, clientId);
         workspaceState.setState(workspace, { draft: text || "", draftMode, draftSession });
+      }
+    } else if (type === "input") {
+      // User responded to a permission/approval request — pipe back to the Claude process stdin
+      if (workspace && msg.text != null) {
+        console.log(`[gemini-ws] input workspace=${workspace} text=${JSON.stringify(msg.text)}`);
+        claudeChat.sendInput(workspace, msg.text);
       }
     }
   });
