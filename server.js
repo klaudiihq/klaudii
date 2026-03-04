@@ -16,6 +16,17 @@ const claudeChat = require("./lib/claude-chat");
 const workspaceState = require("./lib/workspace-state");
 const setup = require("./lib/setup");
 
+process.on('uncaughtException', (err) => {
+  console.error('[fatal] Uncaught exception:', err);
+  process.exit(1);
+});
+
+// Log unhandled rejections but don't exit — most are from transient
+// network failures (e.g. Konnect WebSocket drops) that are non-fatal.
+process.on('unhandledRejection', (reason) => {
+  console.error('[warn] Unhandled rejection:', reason);
+});
+
 let config = loadConfig();
 const app = express();
 app.use(express.json());
@@ -671,5 +682,10 @@ findPort(preferredPort).then((PORT) => {
   });
 }).catch((err) => {
   console.error(`Fatal: ${err.message}`);
+  process.exit(1);
+});
+
+server.on('error', (err) => {
+  console.error('[fatal] HTTP server error:', err);
   process.exit(1);
 });

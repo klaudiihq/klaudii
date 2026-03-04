@@ -1,0 +1,53 @@
+{
+  "filmschoolapp": {
+    "mode": "claude-local",
+    "sessions": {},
+    "drafts": {}
+  },
+  "klaudii--devel": {
+    "mode": "gemini",
+    "sessions": {},
+    "drafts": {},
+    "lastChatActivity": 1772582079344
+  },
+  "klaudii--cloudconnector": {
+    "mode": "claude-local",
+    "sessions": {},
+    "drafts": {},
+    "lastChatActivity": 1772586323545
+  },
+  "klaudii--chromesidepanel": {
+    "mode": "claude-local",
+    "sessions": {},
+    "drafts": {}
+  },
+  "klaudii--iosapp": {
+    "mode": "claude-local",
+    "sessions": {},
+    "drafts": {}
+  },
+  "moviecollection--databasemigration": {
+    "mode": "claude-local",
+    "sessions": {},
+    "drafts": {}
+  },
+  "klaudii--compatiabilitytesting": {
+    "mode": "claude-local",
+    "sessions": {},
+    "drafts": {
+      "claude-local:1": "okay, "
+    },
+    "lastChatActivity": 1772549293167
+  },
+  "klaudii--geminisupport": {
+    "mode": "claude-local",
+    "sessions": {},
+    "drafts": {},
+    "lastChatActivity": 1772586288304
+  },
+  "test-workspace": {
+    "mode": "claude-local",
+    "sessions": {},
+    "drafts": {}
+  }
+}
