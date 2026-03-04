@@ -10,14 +10,20 @@ function init(dbPath) {
   db.pragma("journal_mode = WAL");
   db.pragma("foreign_keys = ON");
 
-  // Run migrations
+  // Migration tracking — each file runs exactly once
+  db.exec(`CREATE TABLE IF NOT EXISTS schema_migrations (
+    filename TEXT PRIMARY KEY,
+    applied_at INTEGER NOT NULL DEFAULT (unixepoch())
+  )`);
+
   const migrationsDir = path.join(__dirname, "..", "migrations");
-  const files = fs.readdirSync(migrationsDir).sort();
+  const files = fs.readdirSync(migrationsDir).sort().filter((f) => f.endsWith(".sql"));
   for (const file of files) {
-    if (file.endsWith(".sql")) {
-      const sql = fs.readFileSync(path.join(migrationsDir, file), "utf8");
-      db.exec(sql);
-    }
+    const already = db.prepare("SELECT 1 FROM schema_migrations WHERE filename = ?").get(file);
+    if (already) continue;
+    const sql = fs.readFileSync(path.join(migrationsDir, file), "utf8");
+    db.exec(sql);
+    db.prepare("INSERT INTO schema_migrations (filename) VALUES (?)").run(file);
   }
 }
 
@@ -44,6 +50,23 @@ function upsertUser(googleId, email, name) {
     return { ...existing, email, name };
   }
   return createUser(googleId, email, name);
+}
+
+function getUserByAppleId(appleId) {
+  return db.prepare("SELECT * FROM users WHERE apple_id = ?").get(appleId);
+}
+
+function upsertUserByApple(appleId, email, name) {
+  const existing = getUserByAppleId(appleId);
+  if (existing) {
+    // Only update name if provided (Apple only sends it on first login)
+    if (name) db.prepare("UPDATE users SET email = ?, name = ? WHERE apple_id = ?").run(email, name, appleId);
+    else db.prepare("UPDATE users SET email = ? WHERE apple_id = ?").run(email, appleId);
+    return { ...existing, email, name: name || existing.name };
+  }
+  const id = generateId();
+  db.prepare("INSERT INTO users (id, apple_id, email, name) VALUES (?, ?, ?, ?)").run(id, appleId, email, name || null);
+  return { id, appleId, email, name };
 }
 
 // --- Servers ---
@@ -101,6 +124,8 @@ module.exports = {
   upsertUser,
   getUserById,
   getUserByGoogleId,
+  getUserByAppleId,
+  upsertUserByApple,
   registerServer,
   getServerById,
   getServersByUser,

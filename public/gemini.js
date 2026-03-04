@@ -29,6 +29,9 @@ let geminiOpenedWhileStreaming = false; // true when chat opened mid-stream
 let geminiStreamPollTimer = null;       // setInterval handle for polling in-flight reply
 let geminiActiveCli = "gemini"; // "gemini" or "claude"
 let geminiSessionNum = null; // current session number (1, 2, 3...)
+let geminiLocalDraftActive = false; // true when user is actively typing — blocks incoming draft events
+let geminiLocalDraftTimeout = null;
+let geminiWasStreamingAtDisconnect = false; // set in onclose, cleared in onopen after recovery check
 
 // Per-workspace message history (in-memory cache, server is source of truth)
 // workspace → [ { role, content } ]  (for current session)
@@ -345,24 +348,27 @@ function geminiUpdateAttachVisibility() {
   if (!show) geminiClearImages();
 }
 
-// Draft sync
+// Draft sync — relay over WS for instant multi-window sync, HTTP PATCH fallback
 let geminiDraftTimer = null;
 
 function geminiSaveDraft(text) {
   if (!geminiWorkspace) return;
   clearTimeout(geminiDraftTimer);
-  // Capture identity at schedule time so a workspace switch within the debounce
-  // window doesn't redirect the save to the wrong chat.
   const workspace = geminiWorkspace;
   const draftMode = geminiActiveCli === "claude" ? "claude-local" : "gemini";
   const draftSession = geminiSessionNum;
   geminiDraftTimer = setTimeout(() => {
-    fetch(`/api/workspace-state/${encodeURIComponent(workspace)}`, {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ draft: text, draftMode, draftSession }),
-    }).catch(() => {});
-  }, 400);
+    if (geminiWs && geminiWs.readyState === WebSocket.OPEN) {
+      geminiWs.send(JSON.stringify({ type: "draft", workspace, text, draftMode, draftSession }));
+    } else {
+      // Fallback to HTTP if WS is disconnected
+      fetch(`/api/workspace-state/${encodeURIComponent(workspace)}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ draft: text, draftMode, draftSession }),
+      }).catch(() => {});
+    }
+  }, 100);
 }
 
 async function geminiRestoreDraft(prefetchedState = null) {
@@ -386,6 +392,11 @@ function geminiConnect() {
   geminiWs.onopen = () => {
     glog("ws-open");
     geminiUpdateStatus(true);
+    // If we disconnected mid-stream, check whether the server recovered content
+    if (geminiWasStreamingAtDisconnect && geminiWorkspace) {
+      geminiWasStreamingAtDisconnect = false;
+      geminiRenderRecoveredContent();
+    }
   };
 
   geminiWs.onclose = (evt) => {
@@ -393,6 +404,7 @@ function geminiConnect() {
     geminiUpdateStatus(false);
     // If a stream was in progress, clear it so the UI doesn't hang
     if (geminiStreaming) {
+      geminiWasStreamingAtDisconnect = true;
       geminiRemoveThinking();
       geminiSetStreaming(false);
       geminiCurrentMsgEl = null;
@@ -565,6 +577,42 @@ function handleGeminiEvent(event) {
       glog("handle: result stats=" + JSON.stringify(event.stats || {}).slice(0, 200));
       break;
 
+    case "draft": {
+      // Another window updated the draft — apply unless user is actively typing here
+      if (!geminiLocalDraftActive) {
+        const input = document.getElementById("gemini-input");
+        if (input) {
+          input.value = event.text || "";
+          // Auto-resize
+          input.style.height = "auto";
+          input.style.height = Math.min(input.scrollHeight, 256) + "px";
+        }
+      }
+      break;
+    }
+
+    case "user_message": {
+      // Another window sent a message — render the user bubble
+      glog("handle: user_message from another window");
+      if (!geminiHistory[event.workspace]) geminiHistory[event.workspace] = [];
+      geminiHistory[event.workspace].push({ role: "user", content: event.content });
+      geminiAppendMessage("user", event.content, false, null, event.ts);
+      // Clear input since the message was sent
+      const input = document.getElementById("gemini-input");
+      if (input) {
+        input.value = "";
+        input.style.height = "auto";
+      }
+      break;
+    }
+
+    case "streaming_start":
+      // Another window started a send — show thinking indicator
+      glog("handle: streaming_start from another window");
+      geminiSetStreaming(true);
+      geminiShowThinking();
+      break;
+
     default:
       glog("handle: unknown event type=" + event.type + " keys=" + Object.keys(event).join(","));
       break;
@@ -682,24 +730,23 @@ function geminiToolDescription(name, params) {
 function geminiRenderCompletedTool(toolName, toolId, params, status, output) {
   const container = document.getElementById("gemini-messages");
   const isError = status === "error";
-  const details = document.createElement("details");
-  details.className = `gemini-tool ${isError ? "error" : "success"}`;
-  details.dataset.toolId = toolId || "";
-  details.dataset.toolName = toolName || "";
+  const pill = document.createElement("details");
+  pill.open = true;
+  pill.className = `gemini-tool ${isError ? "error" : "success"}`;
+  pill.dataset.toolId = toolId || "";
+  pill.dataset.toolName = toolName || "";
+  pill.addEventListener("toggle", () => { if (!pill.open) pill.open = true; });
 
   const desc = geminiToolDescription(toolName, params);
   const summary = document.createElement("summary");
+  summary.className = "gemini-tool-summary";
   const icon = isError ? "\u2717" : "\u2713";
   summary.innerHTML =
     `<span class="gemini-tool-icon ${isError ? "error" : "success"}">${icon}</span>` +
     `<span class="gemini-tool-name">${geminiEscHtml(toolName || "tool")}</span>` +
     (desc ? `<span class="gemini-tool-desc">${geminiEscHtml(desc)}</span>` : "");
-  details.appendChild(summary);
+  pill.appendChild(summary);
 
-  const body = document.createElement("div");
-  body.className = "gemini-tool-body";
-
-  // Params section
   const paramsStr = typeof params === "object" ? JSON.stringify(params, null, 2) : String(params || "");
   if (paramsStr && paramsStr !== "{}") {
     const sec = document.createElement("div");
@@ -708,10 +755,9 @@ function geminiRenderCompletedTool(toolName, toolId, params, status, output) {
     const pre = document.createElement("pre");
     pre.textContent = paramsStr;
     sec.appendChild(pre);
-    body.appendChild(sec);
+    pill.appendChild(sec);
   }
 
-  // Output section
   const trimmed = (output || "").trim();
   if (trimmed) {
     const sec = document.createElement("div");
@@ -720,58 +766,54 @@ function geminiRenderCompletedTool(toolName, toolId, params, status, output) {
     const pre = document.createElement("pre");
     pre.textContent = trimmed.length > 5000 ? trimmed.slice(0, 5000) + "\n...(truncated)" : trimmed;
     sec.appendChild(pre);
-    body.appendChild(sec);
+    pill.appendChild(sec);
   }
 
-  details.appendChild(body);
-  details.open = true;
-  container.appendChild(details);
+  container.appendChild(pill);
   geminiScrollToBottom();
 }
 
 /**
  * Append a tool-use pill. Starts in a "running" state with a spinner.
  * Shows tool name + short description inline.
- * Full params are in a collapsible details body (collapsed by default).
+ * Full params are always visible in the body.
  */
 function geminiAppendToolUse(toolName, toolId, params) {
   const container = document.getElementById("gemini-messages");
-  const details = document.createElement("details");
-  details.className = "gemini-tool running";
-  details.dataset.toolId = toolId;
-  details.dataset.toolName = toolName;
+  const pill = document.createElement("details");
+  pill.open = true;
+  pill.className = "gemini-tool running";
+  pill.dataset.toolId = toolId;
+  pill.dataset.toolName = toolName;
+  pill.addEventListener("toggle", () => { if (!pill.open) pill.open = true; });
 
   const desc = geminiToolDescription(toolName, params);
   const summary = document.createElement("summary");
+  summary.className = "gemini-tool-summary";
   summary.innerHTML =
     `<span class="gemini-tool-spinner"></span>` +
     `<span class="gemini-tool-name">${geminiEscHtml(toolName)}</span>` +
     (desc ? `<span class="gemini-tool-desc">${geminiEscHtml(desc)}</span>` : "");
-  details.appendChild(summary);
+  pill.appendChild(summary);
 
-  // Collapsible body with full params
-  const body = document.createElement("div");
-  body.className = "gemini-tool-body";
   const paramsStr = typeof params === "object" ? JSON.stringify(params, null, 2) : String(params || "");
   if (paramsStr && paramsStr !== "{}") {
-    const paramsSection = document.createElement("div");
-    paramsSection.className = "gemini-tool-section";
-    paramsSection.innerHTML = `<div class="gemini-tool-section-label">Parameters</div>`;
+    const sec = document.createElement("div");
+    sec.className = "gemini-tool-section";
+    sec.innerHTML = `<div class="gemini-tool-section-label">Parameters</div>`;
     const pre = document.createElement("pre");
     pre.textContent = paramsStr;
-    paramsSection.appendChild(pre);
-    body.appendChild(paramsSection);
+    sec.appendChild(pre);
+    pill.appendChild(sec);
   }
-  // Output section will be added by geminiUpdateToolResult
-  details.appendChild(body);
 
-  container.appendChild(details);
+  container.appendChild(pill);
   geminiScrollToBottom();
 }
 
 /**
  * Update a tool pill with its result and mark it done.
- * Matches by tool_id. Output goes into a collapsible section (collapsed by default).
+ * Matches by tool_id. Output is always visible in the body.
  */
 function geminiUpdateToolResult(toolId, status, output, error) {
   const container = document.getElementById("gemini-messages");
@@ -792,9 +834,9 @@ function geminiUpdateToolResult(toolId, status, output, error) {
     pill.classList.add(isError ? "error" : "success");
 
     // Replace spinner with status icon
-    const summary = pill.querySelector("summary");
-    if (summary) {
-      const spinner = summary.querySelector(".gemini-tool-spinner");
+    const summaryEl = pill.querySelector(".gemini-tool-summary");
+    if (summaryEl) {
+      const spinner = summaryEl.querySelector(".gemini-tool-spinner");
       if (spinner) {
         const icon = document.createElement("span");
         icon.className = isError ? "gemini-tool-icon error" : "gemini-tool-icon success";
@@ -803,39 +845,35 @@ function geminiUpdateToolResult(toolId, status, output, error) {
       }
     }
 
-    // Add output to body and auto-expand the pill
+    // Append output section directly to pill
     const trimmed = (error || output || "").trim();
-    const body = pill.querySelector(".gemini-tool-body");
-    if (trimmed && body) {
+    if (trimmed) {
       const section = document.createElement("div");
       section.className = "gemini-tool-section";
       section.innerHTML = `<div class="gemini-tool-section-label">${isError ? "Error" : "Output"}</div>`;
       const pre = document.createElement("pre");
       pre.textContent = trimmed.length > 5000 ? trimmed.slice(0, 5000) + "\n...(truncated)" : trimmed;
       section.appendChild(pre);
-      body.appendChild(section);
+      pill.appendChild(section);
     }
-    // Auto-expand so output is immediately visible
-    pill.open = true;
   } else {
     // No matching pill — standalone fallback
-    const details = document.createElement("details");
-    details.className = `gemini-tool ${isError ? "error" : "success"}`;
+    const pill2 = document.createElement("details");
+    pill2.open = true;
+    pill2.className = `gemini-tool ${isError ? "error" : "success"}`;
+    pill2.addEventListener("toggle", () => { if (!pill2.open) pill2.open = true; });
     const summary = document.createElement("summary");
+    summary.className = "gemini-tool-summary";
     const icon = isError ? "\u2717" : "\u2713";
     summary.innerHTML =
       `<span class="gemini-tool-icon ${isError ? "error" : "success"}">${icon}</span>` +
       `<span class="gemini-tool-name">${geminiEscHtml(toolId || "tool")}</span>` +
       `<span class="gemini-tool-desc">(result)</span>`;
-    details.appendChild(summary);
-    const body = document.createElement("div");
-    body.className = "gemini-tool-body";
+    pill2.appendChild(summary);
     const pre = document.createElement("pre");
     pre.textContent = error || output || "";
-    body.appendChild(pre);
-    details.appendChild(body);
-    details.open = true;
-    container.appendChild(details);
+    pill2.appendChild(pre);
+    container.appendChild(pill2);
   }
 
   geminiScrollToBottom();
@@ -1077,6 +1115,54 @@ function geminiStopStreamPoll() {
 
 // Show "Waiting for response…" dots and poll history every 2 s until the
 // in-flight assistant reply arrives (or the server says streaming is done).
+/**
+ * After a server restart/crash, check if new history entries appeared while
+ * we were disconnected (written by recoverStreams) and render them.
+ */
+async function geminiRenderRecoveredContent() {
+  const ws = geminiWorkspace;
+  const sn = geminiSessionNum;
+  const knownLen = (geminiHistory[ws] || []).length;
+  // Give the server a moment to finish recovery before fetching
+  await new Promise(r => setTimeout(r, 600));
+  try {
+    const history = await geminiFetchHistory(ws, sn);
+    const newMsgs = history.slice(knownLen);
+    if (newMsgs.length === 0) {
+      glog("recovery-check: no new content");
+      return;
+    }
+    glog(`recovery-check: rendering ${newMsgs.length} recovered message(s)`);
+    // Remove the "Connection lost" error so recovered content reads cleanly
+    const container = document.getElementById("gemini-messages");
+    const lastEl = container?.lastElementChild;
+    if (lastEl?.classList.contains("gemini-error")) lastEl.remove();
+
+    const pendingToolUses = new Map();
+    for (const msg of newMsgs) {
+      if (msg.role === "tool_use") {
+        try { const d = JSON.parse(msg.content); pendingToolUses.set(d.tool_id, d); } catch {}
+      } else if (msg.role === "tool_result") {
+        try {
+          const d = JSON.parse(msg.content);
+          const tu = pendingToolUses.get(d.tool_id);
+          if (tu) pendingToolUses.delete(d.tool_id);
+          geminiRenderCompletedTool(tu ? tu.tool_name : d.tool_id, d.tool_id, tu ? tu.parameters : {}, d.status, d.output);
+        } catch {}
+      } else {
+        for (const tu of pendingToolUses.values()) geminiAppendToolUse(tu.tool_name, tu.tool_id, tu.parameters);
+        pendingToolUses.clear();
+        geminiAppendMessage(msg.role, msg.content, false, null, msg.ts);
+      }
+    }
+    for (const tu of pendingToolUses.values()) geminiAppendToolUse(tu.tool_name, tu.tool_id, tu.parameters);
+    geminiHistory[ws] = history;
+    geminiScrollToBottom();
+  } catch (e) {
+    glog("recovery-check: error", e.message);
+  }
+}
+
 function geminiStartStreamPoll(historyLengthAtOpen) {
   geminiStopStreamPoll();
 
@@ -1616,8 +1702,12 @@ window.addEventListener("popstate", () => {
   }
 });
 
-// Draft sync — save as user types
+// Draft sync — save as user types + set local typing guard
 document.getElementById("gemini-input")?.addEventListener("input", (e) => {
+  // Mark as actively typing so incoming remote drafts don't clobber our input
+  geminiLocalDraftActive = true;
+  clearTimeout(geminiLocalDraftTimeout);
+  geminiLocalDraftTimeout = setTimeout(() => { geminiLocalDraftActive = false; }, 1000);
   geminiSaveDraft(e.target.value);
 });
 
@@ -1654,6 +1744,11 @@ if (geminiPanel) {
     Array.from(e.dataTransfer.files || []).forEach((file) => geminiLoadImageFile(file));
   });
 }
+
+// Scroll to bottom whenever the tab/window regains visibility
+document.addEventListener("visibilitychange", () => {
+  if (!document.hidden) geminiScrollToBottom();
+});
 
 // Auto-open chat from URL params on page load
 initFromUrlParams();

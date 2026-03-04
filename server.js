@@ -438,8 +438,18 @@ process.on("SIGTERM", () => { clearPortFile(); process.exit(); });
 const wss = new WebSocket.Server({ server, path: "/ws/gemini" });
 
 let wsClientId = 0;
+function broadcastToWorkspace(workspace, payload, excludeClientId) {
+  const data = JSON.stringify(payload);
+  for (const client of wss.clients) {
+    if (client.readyState === WebSocket.OPEN && client._clientId !== excludeClientId) {
+      client.send(data);
+    }
+  }
+}
+
 wss.on("connection", (ws) => {
   const clientId = ++wsClientId;
+  ws._clientId = clientId;
   console.log(`[gemini-ws] client #${clientId} connected`);
 
   // Track which workspaces this client has active sends — cleared on disconnect
@@ -489,6 +499,12 @@ wss.on("connection", (ws) => {
         return;
       }
 
+      // Reject if another client is already streaming for this workspace
+      if (workspaceState.isStreaming(workspace)) {
+        ws.send(JSON.stringify({ type: "error", workspace, message: "A response is already in progress" }));
+        return;
+      }
+
       try {
         // Stamp chat activity for sort ordering (all modes)
         workspaceState.touchChatActivity(workspace);
@@ -498,6 +514,10 @@ wss.on("connection", (ws) => {
 
         // Persist user message
         backendModule.pushHistory(workspace, "user", message);
+
+        // Notify other windows about the user message and streaming start
+        broadcastToWorkspace(workspace, { type: "user_message", workspace, content: message, ts: Date.now() }, clientId);
+        broadcastToWorkspace(workspace, { type: "streaming_start", workspace }, clientId);
 
         // Resolve API key: per-workspace > global
         const apiKeyField = backend === "claude" ? "claudeApiKey" : "geminiApiKey";
@@ -513,11 +533,7 @@ wss.on("connection", (ws) => {
 
         handle.onEvent((event) => {
           eventsSent++;
-          if (ws.readyState === WebSocket.OPEN) {
-            ws.send(JSON.stringify({ ...event, workspace }));
-          } else {
-            console.log(`[gemini-ws] client #${clientId} ws not open, dropping event #${eventsSent} type=${event.type}`);
-          }
+          broadcastToWorkspace(workspace, { ...event, workspace });
           // Accumulate assistant message content
           if (event.type === "message" && (event.role === "assistant" || !event.role)) {
             assistantText += event.content || "";
@@ -556,14 +572,12 @@ wss.on("connection", (ws) => {
           if (batch.length > 0) {
             backendModule.pushHistoryBatch(workspace, batch);
           }
-          if (ws.readyState === WebSocket.OPEN) {
-            ws.send(JSON.stringify({
-              type: "done",
-              workspace,
-              exitCode: code,
-              stderr: stderr || undefined,
-            }));
-          }
+          broadcastToWorkspace(workspace, {
+            type: "done",
+            workspace,
+            exitCode: code,
+            stderr: stderr || undefined,
+          });
         });
 
         handle.onError((err) => {
@@ -571,13 +585,11 @@ wss.on("connection", (ws) => {
           // Clear streaming flag on error
           workspaceState.setStreaming(workspace, false);
           pendingWorkspaces.delete(workspace);
-          if (ws.readyState === WebSocket.OPEN) {
-            ws.send(JSON.stringify({
-              type: "error",
-              workspace,
-              message: err.message,
-            }));
-          }
+          broadcastToWorkspace(workspace, {
+            type: "error",
+            workspace,
+            message: err.message,
+          });
         });
       } catch (err) {
         console.error(`[gemini-ws] catch workspace=${workspace}: ${err.message}`);
@@ -591,10 +603,15 @@ wss.on("connection", (ws) => {
         backendModule.stopProcess(workspace);
         workspaceState.setStreaming(workspace, false);
         pendingWorkspaces.delete(workspace);
-        // Send done immediately — the killed process won't trigger onDone
-        if (ws.readyState === WebSocket.OPEN) {
-          ws.send(JSON.stringify({ type: "done", workspace, exitCode: null, stopped: true }));
-        }
+        // Broadcast done to all clients viewing this workspace
+        broadcastToWorkspace(workspace, { type: "done", workspace, exitCode: null, stopped: true });
+      }
+    } else if (type === "draft") {
+      // Relay draft text to other windows and persist to disk
+      if (workspace) {
+        const { text, draftMode, draftSession } = msg;
+        broadcastToWorkspace(workspace, { type: "draft", workspace, text: text || "", draftMode, draftSession }, clientId);
+        workspaceState.setState(workspace, { draft: text || "", draftMode, draftSession });
       }
     }
   });
