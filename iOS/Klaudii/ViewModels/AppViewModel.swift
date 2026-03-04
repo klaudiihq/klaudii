@@ -117,16 +117,29 @@ class AppViewModel: ObservableObject {
     func login() async {
         do {
             try await authService.login()
-            if let email = authService.user?.email,
-               Self.demoAutoEmails.contains(email) {
-                enterDemoMode()
-                return
-            }
-            screen = .serverPicker
-            await loadServers()
+            await didSignIn()
         } catch {
             errorMessage = error.localizedDescription
         }
+    }
+
+    func loginWithApple() async {
+        do {
+            try await authService.loginWithApple()
+            await didSignIn()
+        } catch {
+            errorMessage = error.localizedDescription
+        }
+    }
+
+    private func didSignIn() async {
+        if let email = authService.user?.email,
+           Self.demoAutoEmails.contains(email) {
+            enterDemoMode()
+            return
+        }
+        screen = .serverPicker
+        await loadServers()
     }
 
     func loadServers() async {

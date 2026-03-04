@@ -29,7 +29,7 @@ struct LoginView: View {
 
                 Spacer()
 
-                // Sign in button
+                // Sign in buttons
                 VStack(spacing: 12) {
                     Button {
                         isLoggingIn = true
@@ -48,6 +48,28 @@ struct LoginView: View {
                         .frame(maxWidth: .infinity)
                         .padding(.vertical, 14)
                         .background(KTheme.accent)
+                        .cornerRadius(12)
+                    }
+                    .disabled(isLoggingIn)
+                    .opacity(isLoggingIn ? 0.6 : 1)
+
+                    Button {
+                        isLoggingIn = true
+                        Task {
+                            await appVM.loginWithApple()
+                            isLoggingIn = false
+                        }
+                    } label: {
+                        HStack(spacing: 10) {
+                            Image(systemName: "apple.logo")
+                                .font(.system(size: 18))
+                            Text("Sign in with Apple")
+                                .font(.system(size: 15, weight: .semibold))
+                        }
+                        .foregroundColor(.white)
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 14)
+                        .background(Color.black)
                         .cornerRadius(12)
                     }
                     .disabled(isLoggingIn)
