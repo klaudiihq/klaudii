@@ -16,6 +16,17 @@ const claudeChat = require("./lib/claude-chat");
 const workspaceState = require("./lib/workspace-state");
 const setup = require("./lib/setup");
 
+process.on('uncaughtException', (err) => {
+  console.error('[fatal] Uncaught exception:', err);
+  process.exit(1);
+});
+
+// Log unhandled rejections but don't exit — most are from transient
+// network failures (e.g. Konnect WebSocket drops) that are non-fatal.
+process.on('unhandledRejection', (reason) => {
+  console.error('[warn] Unhandled rejection:', reason);
+});
+
 let config = loadConfig();
 const app = express();
 app.use(express.json());
@@ -472,7 +483,7 @@ wss.on("connection", (ws) => {
       return;
     }
 
-    const { type, workspace, message, model, cli, images: rawImages } = msg;
+    const { type, workspace, message, model, cli, images: rawImages, permissionMode } = msg;
     const backend = cli === "claude" ? "claude" : "gemini";
     const backendModule = backend === "claude" ? claudeChat : gemini;
 
@@ -524,7 +535,7 @@ wss.on("connection", (ws) => {
         const globalKeyField = backend === "claude" ? "claudeApiKey" : "geminiApiKey";
         const apiKey = proj[apiKeyField] || config[globalKeyField] || undefined;
         console.log(`[gemini-ws] spawning ${backend} for workspace=${workspace} path=${proj.path} hasApiKey=${!!apiKey}`);
-        const handle = backendModule.sendMessage(workspace, proj.path, message, config, { apiKey, model, images });
+        const handle = backendModule.sendMessage(workspace, proj.path, message, config, { apiKey, model, images, permissionMode });
 
         // Accumulate assistant text and tool events for history persistence
         let assistantText = "";
@@ -613,6 +624,20 @@ wss.on("connection", (ws) => {
         broadcastToWorkspace(workspace, { type: "draft", workspace, text: text || "", draftMode, draftSession }, clientId);
         workspaceState.setState(workspace, { draft: text || "", draftMode, draftSession });
       }
+    } else if (type === "permission_response") {
+      // User approved or denied a permission request — send control response back to Claude stdin
+      const { request_id, behavior, updatedInput } = msg;
+      if (workspace && request_id && behavior) {
+        console.log(`[gemini-ws] permission_response workspace=${workspace} request_id=${request_id} behavior=${behavior}`);
+        claudeChat.sendControlResponse(workspace, request_id, behavior, updatedInput);
+      }
+    } else if (type === "tool_result_response") {
+      // User answered a question tool (AskUserQuestion/ask_followup_question)
+      const { tool_id, content } = msg;
+      if (workspace && tool_id) {
+        console.log(`[gemini-ws] tool_result_response workspace=${workspace} tool_id=${tool_id}`);
+        claudeChat.sendToolResult(workspace, tool_id, content);
+      }
     }
   });
 });
@@ -671,5 +696,10 @@ findPort(preferredPort).then((PORT) => {
   });
 }).catch((err) => {
   console.error(`Fatal: ${err.message}`);
+  process.exit(1);
+});
+
+server.on('error', (err) => {
+  console.error('[fatal] HTTP server error:', err);
   process.exit(1);
 });
