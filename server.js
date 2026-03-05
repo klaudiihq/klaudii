@@ -212,6 +212,17 @@ app.get("/api/gemini/apikey/:workspace", (req, res) => {
   res.json(geminiApiKeyInfo(req.params.workspace));
 });
 
+app.post("/api/gemini/:workspace/confirm", async (req, res) => {
+  const { workspace } = req.params;
+  const { callId, outcome } = req.body;
+  try {
+    const result = await gemini.confirmToolCall(workspace, callId, outcome);
+    res.json(result);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 app.get("/api/gemini/apikey", (_req, res) => {
   res.json(geminiApiKeyInfo(null));
 });
@@ -490,7 +501,18 @@ wss.on("connection", (ws) => {
         return;
       }
 
-      // Reject if another client is already streaming for this workspace
+      // For Claude with an active relay, append to the existing session instead of spawning a new one
+      if (backend === "claude" && claudeChat.isActive(workspace)) {
+        workspaceState.touchChatActivity(workspace);
+        workspaceState.setStreaming(workspace, true);
+        claudeChat.pushHistory(workspace, "user", message);
+        broadcastToWorkspace(workspace, { type: "user_message", workspace, content: message, ts: Date.now() }, clientId);
+        broadcastToWorkspace(workspace, { type: "streaming_start", workspace }, clientId);
+        claudeChat.appendMessage(workspace, message);
+        return;
+      }
+
+      // Reject if another client is already streaming for this workspace (Gemini)
       if (workspaceState.isStreaming(workspace)) {
         ws.send(JSON.stringify({ type: "error", workspace, message: "A response is already in progress" }));
         return;
@@ -515,7 +537,9 @@ wss.on("connection", (ws) => {
         const globalKeyField = backend === "claude" ? "claudeApiKey" : "geminiApiKey";
         const apiKey = proj[apiKeyField] || config[globalKeyField] || undefined;
         console.log(`[gemini-ws] spawning ${backend} for workspace=${workspace} path=${proj.path} hasApiKey=${!!apiKey}`);
-        const handle = await backendModule.sendMessage(workspace, proj.path, message, config, { apiKey, model, images, permissionMode });
+        // For Gemini A2A: bypassPermissions = autoExecute (YOLO), anything else = interactive approval
+        const autoExecute = backend === "gemini" ? (permissionMode === "bypassPermissions") : undefined;
+        const handle = await backendModule.sendMessage(workspace, proj.path, message, config, { apiKey, model, images, permissionMode, autoExecute });
 
         // Accumulate assistant text and tool events for history persistence
         let assistantText = "";
@@ -547,22 +571,30 @@ wss.on("connection", (ws) => {
                 output: out.length > 3000 ? out.slice(0, 3000) + "\n...(truncated)" : out,
               }),
             });
+          } else if (event.type === "result") {
+            // Turn completed — persist history, reset streaming, reset accumulators for next turn
+            console.log(`[gemini-ws] turn done workspace=${workspace} cli=${backend} eventsSent=${eventsSent} assistantLen=${assistantText.length} toolEvents=${toolEvents.length}`);
+            workspaceState.setStreaming(workspace, false);
+            workspaceState.touchChatActivity(workspace);
+            const batch = [...toolEvents];
+            if (assistantText) batch.push({ role: "assistant", content: assistantText });
+            if (batch.length > 0) backendModule.pushHistoryBatch(workspace, batch);
+            broadcastToWorkspace(workspace, { type: "done", workspace, exitCode: 0 });
+            assistantText = "";
+            toolEvents.length = 0;
+            eventsSent = 0;
           }
         });
 
         handle.onDone(({ code, stderr }) => {
-          console.log(`[gemini-ws] done workspace=${workspace} cli=${backend} code=${code} eventsSent=${eventsSent} assistantLen=${assistantText.length} toolEvents=${toolEvents.length}`);
-          // Clear streaming flag — response is complete
+          console.log(`[gemini-ws] relay exited workspace=${workspace} cli=${backend} code=${code}`);
+          // Relay died — flush any incomplete turn and clean up
           workspaceState.setStreaming(workspace, false);
           pendingWorkspaces.delete(workspace);
-          // Stamp activity on completion so sorting reflects response time
           workspaceState.touchChatActivity(workspace);
-          // Persist turn: tool events (in order) + assistant reply in one batch write
           const batch = [...toolEvents];
           if (assistantText) batch.push({ role: "assistant", content: assistantText });
-          if (batch.length > 0) {
-            backendModule.pushHistoryBatch(workspace, batch);
-          }
+          if (batch.length > 0) backendModule.pushHistoryBatch(workspace, batch);
           broadcastToWorkspace(workspace, {
             type: "done",
             workspace,
@@ -631,7 +663,8 @@ claudeChat.recoverStreams();
 
 claudeChat.reconnectActiveRelays(config, (workspace, handle) => {
   console.log(`[server] reconnected to relay workspace=${workspace}`);
-  workspaceState.setStreaming(workspace, true);
+  // Don't assume streaming=true — relay may be idle between turns
+  workspaceState.setStreaming(workspace, false);
 
   let assistantText = "";
   const toolEvents = [];
@@ -639,17 +672,28 @@ claudeChat.reconnectActiveRelays(config, (workspace, handle) => {
   handle.onEvent((event) => {
     broadcastToWorkspace(workspace, { ...event, workspace });
     if (event.type === "message" && (event.role === "assistant" || !event.role)) {
+      workspaceState.setStreaming(workspace, true);
       assistantText += event.content || "";
     } else if (event.type === "tool_use") {
+      workspaceState.setStreaming(workspace, true);
       toolEvents.push({ role: "tool_use", content: JSON.stringify({ tool_name: event.tool_name, tool_id: event.tool_id, parameters: event.parameters || {} }) });
     } else if (event.type === "tool_result") {
       const out = event.output || "";
       toolEvents.push({ role: "tool_result", content: JSON.stringify({ tool_id: event.tool_id, status: event.status || "success", output: out.length > 3000 ? out.slice(0, 3000) + "\n...(truncated)" : out }) });
+    } else if (event.type === "result") {
+      workspaceState.setStreaming(workspace, false);
+      workspaceState.touchChatActivity(workspace);
+      const batch = [...toolEvents];
+      if (assistantText) batch.push({ role: "assistant", content: assistantText });
+      if (batch.length > 0) claudeChat.pushHistoryBatch(workspace, batch);
+      broadcastToWorkspace(workspace, { type: "done", workspace, exitCode: 0 });
+      assistantText = "";
+      toolEvents.length = 0;
     }
   });
 
   handle.onDone(({ code }) => {
-    console.log(`[server] relay done workspace=${workspace} code=${code} assistantLen=${assistantText.length}`);
+    console.log(`[server] relay exited workspace=${workspace} code=${code}`);
     workspaceState.setStreaming(workspace, false);
     workspaceState.touchChatActivity(workspace);
     const batch = [...toolEvents];
@@ -670,7 +714,9 @@ claudeChat.reconnectActiveRelays(config, (workspace, handle) => {
 function gracefulShutdown(signal) {
   console.log(`[server] ${signal} received, shutting down...`);
   gemini.stopAllProcesses();
-  claudeChat.stopAllProcesses();
+  // Do NOT kill Claude relay daemons — they are detached and designed to survive server
+  // restarts so reconnectActiveRelays() can pick them up on the next boot.
+  // Killing them here would destroy in-progress turns with no recovery path.
   // Small delay for close handlers to persist history and delete log files
   setTimeout(() => {
     // Recover anything that didn't flush in time
