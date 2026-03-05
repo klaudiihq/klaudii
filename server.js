@@ -133,6 +133,15 @@ app.post("/api/gemini/sessions/:project/switch", (req, res) => {
   res.json({ ok: true, current: Number(session) });
 });
 
+// Partial stream content — accumulated text from the active crash-recovery log.
+// Used by clients switching back to a workspace mid-stream so they can show what
+// was generated before they left.
+app.get("/api/gemini/stream-partial/:project", (req, res) => {
+  const text = gemini.getStreamPartial(req.params.project);
+  if (text === null) return res.status(404).json({ error: "no active stream" });
+  res.json({ text });
+});
+
 // Chat history (server-side, synced across devices)
 app.get("/api/gemini/history/:project", (req, res) => {
   const sessionNum = req.query.session ? Number(req.query.session) : undefined;
