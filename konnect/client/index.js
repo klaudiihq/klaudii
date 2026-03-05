@@ -4,7 +4,11 @@ const clientCrypto = require("./crypto");
 const pairing = require("./pairing");
 const http = require("http");
 
+let localPort = 9876;
+
 function init(app, config) {
+  localPort = Number(process.env.PORT || config.port || 9876);
+
   // Add cloud API routes to the local Klaudii server
   setupRoutes(app);
 
@@ -137,7 +141,7 @@ function localRequest(method, urlPath, body) {
   return new Promise((resolve, reject) => {
     const options = {
       hostname: "127.0.0.1",
-      port: 9876, // Klaudii's local port
+      port: localPort,
       path: urlPath,
       method: method.toUpperCase(),
       headers: { "Content-Type": "application/json" },

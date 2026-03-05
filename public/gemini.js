@@ -32,6 +32,7 @@ let geminiSessionNum = null; // current session number (1, 2, 3...)
 let geminiLocalDraftActive = false; // true when user is actively typing — blocks incoming draft events
 let geminiLocalDraftTimeout = null;
 let geminiWasStreamingAtDisconnect = false; // set in onclose, cleared in onopen after recovery check
+let geminiHistoryFetchFailed = false;        // set when history fetch fails (server not ready); triggers re-fetch on reconnect
 
 // Per-workspace message history (in-memory cache, server is source of truth)
 // workspace → [ { role, content } ]  (for current session)
@@ -84,6 +85,7 @@ async function geminiFetchHistory(workspace, sessionNum) {
     const data = await res.json();
     geminiHistory[workspace] = Array.isArray(data) ? data : [];
   } catch {
+    geminiHistoryFetchFailed = true;
     geminiHistory[workspace] = geminiHistory[workspace] || [];
   }
   return geminiHistory[workspace];
@@ -282,6 +284,8 @@ async function geminiFetchQuota() {
 // Current streaming assistant message element
 let geminiCurrentMsgEl = null;
 let geminiCurrentMsgText = "";
+// Partial assistant bubble shown while polling mid-stream (opened while away)
+let geminiPartialMsgEl = null;
 
 // --- Image attachments ---
 
@@ -348,16 +352,16 @@ function geminiUpdateAttachVisibility() {
   if (!show) geminiClearImages();
 }
 
-// Only show permission mode selector for Claude
+// Show permission mode selector for both Claude and Gemini
 function geminiUpdatePermissionVisibility() {
   const el = document.getElementById("gemini-permission-mode");
   if (!el) return;
-  el.style.display = geminiActiveCli === "claude" ? "" : "none";
+  el.style.display = ""; // visible for all backends
 }
 
 function geminiGetPermissionMode() {
   const el = document.getElementById("gemini-permission-mode");
-  return (el && geminiActiveCli === "claude") ? (el.value || "bypassPermissions") : undefined;
+  return el ? (el.value || "bypassPermissions") : undefined;
 }
 
 function geminiSavePermissionMode(value) {
@@ -416,10 +420,29 @@ function geminiConnect() {
   geminiWs.onopen = () => {
     glog("ws-open");
     geminiUpdateStatus(true);
-    // If we disconnected mid-stream, check whether the server recovered content
-    if (geminiWasStreamingAtDisconnect && geminiWorkspace) {
+    // If history fetch failed while server was restarting, re-render now that it's up
+    if (geminiHistoryFetchFailed && geminiWorkspace) {
+      geminiHistoryFetchFailed = false;
+      geminiWasStreamingAtDisconnect = false; // clear here too — showChat re-renders everything
+      glog("ws-open: retrying history fetch after server restart");
+      geminiShowChat();
+    } else if (geminiWasStreamingAtDisconnect && geminiWorkspace) {
+      // Disconnected mid-stream — check whether it's still running or completed
       geminiWasStreamingAtDisconnect = false;
-      geminiRenderRecoveredContent();
+      fetch(`/api/workspace-state/${encodeURIComponent(geminiWorkspace)}`)
+        .then(r => r.json())
+        .then(wsState => {
+          if (wsState.streaming) {
+            // Stream survived the reconnect (transient blip) — re-enter poll mode
+            // with partial content so the user catches up immediately
+            geminiOpenedWhileStreaming = true;
+            geminiShowChat();
+          } else {
+            // Stream completed while disconnected — render recovered content
+            geminiRenderRecoveredContent();
+          }
+        })
+        .catch(() => geminiRenderRecoveredContent());
     }
   };
 
@@ -527,7 +550,7 @@ function handleGeminiEvent(event) {
       const toolName = event.tool_name || event.name || "tool";
       const toolId = event.tool_id || "";
       const params = event.parameters || event.args || event.input || {};
-      glog(`handle: tool_use name=${toolName} id=${toolId}`);
+      glog(`handle: tool_use name=${toolName} id=${toolId} awaiting=${!!event.awaiting_approval}`);
       // Remove or discard the current message element before the tool pill
       if (geminiCurrentMsgEl) {
         if (!geminiCurrentMsgText) {
@@ -538,8 +561,10 @@ function handleGeminiEvent(event) {
       }
       geminiCurrentMsgEl = null;
       geminiCurrentMsgText = "";
-      // Intercept question-type tools and render as interactive card
-      if (/ask.*question|askfollowup|ask_followup/i.test(toolName)) {
+      if (event.awaiting_approval) {
+        // Interactive approval prompt — show Approve/Deny buttons
+        geminiShowApprovalPrompt(event);
+      } else if (/ask.*question|askfollowup|ask_followup/i.test(toolName)) {
         glog(`handle: ask-tool params=${JSON.stringify(params)}`);
         // AskUserQuestion: {questions:[{question,header,options:[{label,description}]}]}
         // ask_followup_question: {question:string, options:[string]}
@@ -560,6 +585,9 @@ function handleGeminiEvent(event) {
       const error = event.error;
       glog(`handle: tool_result id=${toolId} status=${status} outputLen=${output.length}`);
       geminiUpdateToolResult(toolId, status, output, error);
+      // Model continues processing after the tool — show thinking indicator so the
+      // UI doesn't appear frozen between tool completion and the next text chunk.
+      if (geminiStreaming) geminiShowThinking("Thinking\u2026");
       break;
     }
 
@@ -567,10 +595,12 @@ function handleGeminiEvent(event) {
       geminiRemoveThinking();
       glog("handle: error message=" + (event.message || "?"));
       geminiAppendError(event.message || "Unknown error");
+      if (geminiStreaming) geminiSetStreaming(false);
       break;
 
     case "done":
       geminiRemoveThinking();
+      geminiStopStreamPoll(); // cancel any open-while-streaming poll — live WS beat it
       glog(`handle: done exitCode=${event.exitCode} stopped=${event.stopped || false} assistantTextLen=${geminiCurrentMsgText.length} stderr=${(event.stderr || "").slice(0, 200)}`);
       if (geminiCurrentMsgText) {
         history.push({ role: "assistant", content: geminiCurrentMsgText });
@@ -582,6 +612,27 @@ function handleGeminiEvent(event) {
       if (geminiStreaming) geminiSetStreaming(false);
       geminiCurrentMsgEl = null;
       geminiCurrentMsgText = "";
+
+      // If a partial bubble was showing (opened mid-stream), replace it with the full response
+      if (geminiPartialMsgEl) {
+        const partialEl = geminiPartialMsgEl;
+        geminiPartialMsgEl = null;
+        const doneWs = event.workspace;
+        const doneSn = geminiSessionNum;
+        geminiFetchHistory(doneWs, doneSn)
+          .then(hist => {
+            const lastMsg = hist && [...hist].reverse().find(m => m.role === "assistant");
+            if (lastMsg) {
+              const mdEl = partialEl.querySelector(".md-content");
+              if (mdEl) mdEl.innerHTML = geminiRenderMarkdown(lastMsg.content);
+              geminiStampMessageTime(partialEl, lastMsg.ts || Date.now());
+              geminiHistory[doneWs] = hist;
+            }
+            partialEl.classList.remove("gemini-streaming");
+            geminiScrollToBottom();
+          })
+          .catch(() => { partialEl.classList.remove("gemini-streaming"); });
+      }
 
       // Exit code 41 = auth failure (Gemini), 1 with auth error (Claude) — show auth panel
       if (event.exitCode === 41) {
@@ -649,6 +700,13 @@ function handleGeminiEvent(event) {
     case "permission_request":
       geminiRemoveThinking();
       glog("handle: permission_request request_id=" + event.request_id + " tool=" + event.tool_name);
+      // Auto-approve question tools — the questions card handles the interaction
+      if (event.tool_name === "AskUserQuestion" || event.tool_name === "ask_followup_question") {
+        if (geminiWs && geminiWs.readyState === WebSocket.OPEN) {
+          geminiWs.send(JSON.stringify({ type: "permission_response", workspace: geminiWorkspace, request_id: event.request_id, behavior: "allow" }));
+        }
+        break;
+      }
       geminiShowPermissionRequest(event.request_id, event.tool_name, event.tool_input);
       break;
 
@@ -898,6 +956,45 @@ function geminiToolDescription(name, params) {
       return vals.length === 1 ? vals[0] : "";
     }
   }
+}
+
+function geminiShowApprovalPrompt(event) {
+  const container = document.getElementById("gemini-messages");
+  const div = document.createElement("div");
+  div.className = "gemini-approval-prompt";
+  const params = event.parameters || {};
+  const paramsStr = JSON.stringify(params, null, 2);
+  div.innerHTML = `
+    <div class="gemini-approval-header">
+      <span class="gemini-approval-icon">🔧</span>
+      <span class="gemini-approval-tool">${geminiEscHtml(event.tool_name || "tool")}</span>
+    </div>
+    <pre class="gemini-approval-params">${geminiEscHtml(paramsStr)}</pre>
+    <div class="gemini-approval-buttons">
+      <button class="btn primary gemini-approve-btn">Approve</button>
+      <button class="btn gemini-deny-btn">Deny</button>
+    </div>`;
+  const callId = event.call_id;
+  div.querySelector(".gemini-approve-btn").onclick = () => {
+    div.querySelectorAll("button").forEach((b) => { b.disabled = true; });
+    div.querySelector(".gemini-approval-buttons").innerHTML = '<span class="gemini-approval-resolved">✓ Approved</span>';
+    geminiConfirmTool(callId, "proceed_once");
+  };
+  div.querySelector(".gemini-deny-btn").onclick = () => {
+    div.querySelectorAll("button").forEach((b) => { b.disabled = true; });
+    div.querySelector(".gemini-approval-buttons").innerHTML = '<span class="gemini-approval-resolved denied">✗ Denied</span>';
+    geminiConfirmTool(callId, "cancel");
+  };
+  container.appendChild(div);
+  container.scrollTop = container.scrollHeight;
+}
+
+function geminiConfirmTool(callId, outcome) {
+  fetch(`/api/gemini/${encodeURIComponent(geminiWorkspace)}/confirm`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ callId, outcome }),
+  }).catch((e) => glog("confirmTool error:", e));
 }
 
 /**
@@ -1286,8 +1383,7 @@ function geminiStopStreamPoll() {
     clearInterval(geminiStreamPollTimer);
     geminiStreamPollTimer = null;
   }
-  const el = document.getElementById("gemini-poll-thinking");
-  if (el) el.remove();
+  geminiRemoveThinking();
 }
 
 // Show "Waiting for response…" dots and poll history every 2 s until the
@@ -1300,6 +1396,10 @@ async function geminiRenderRecoveredContent() {
   const ws = geminiWorkspace;
   const sn = geminiSessionNum;
   const knownLen = (geminiHistory[ws] || []).length;
+  // Always remove the "Connection lost" banner — we're reconnected regardless of content
+  const container = document.getElementById("gemini-messages");
+  const lastEl = container?.lastElementChild;
+  if (lastEl?.classList.contains("gemini-error")) lastEl.remove();
   // Give the server a moment to finish recovery before fetching
   await new Promise(r => setTimeout(r, 600));
   try {
@@ -1310,10 +1410,6 @@ async function geminiRenderRecoveredContent() {
       return;
     }
     glog(`recovery-check: rendering ${newMsgs.length} recovered message(s)`);
-    // Remove the "Connection lost" error so recovered content reads cleanly
-    const container = document.getElementById("gemini-messages");
-    const lastEl = container?.lastElementChild;
-    if (lastEl?.classList.contains("gemini-error")) lastEl.remove();
 
     const pendingToolUses = new Map();
     for (const msg of newMsgs) {
@@ -1342,26 +1438,51 @@ async function geminiRenderRecoveredContent() {
 
 function geminiStartStreamPoll(historyLengthAtOpen) {
   geminiStopStreamPoll();
-
-  const container = document.getElementById("gemini-messages");
-  const thinkingEl = document.createElement("div");
-  thinkingEl.id = "gemini-poll-thinking";
-  thinkingEl.className = "gemini-thinking";
-  thinkingEl.innerHTML =
-    `<div class="gemini-thinking-dots"><span></span><span></span><span></span></div>` +
-    `<span class="gemini-thinking-label">Waiting for response\u2026</span>`;
-  container.appendChild(thinkingEl);
-  thinkingEl.scrollIntoView({ behavior: "smooth", block: "end" });
+  geminiShowThinking();
 
   const ws = geminiWorkspace;
   const sn = geminiSessionNum;
 
+  // Immediately show partial content so the user sees what was generated before they left
+  fetch(`/api/gemini/stream-partial/${encodeURIComponent(ws)}`)
+    .then(r => r.ok ? r.json() : null)
+    .then(data => {
+      if (!data || !data.text || geminiWorkspace !== ws) return;
+      geminiRemoveThinking();
+      geminiPartialMsgEl = geminiAppendMessage("assistant", data.text, true, null, null);
+      geminiShowThinking();
+    })
+    .catch(() => {});
+
   geminiStreamPollTimer = setInterval(async () => {
     try {
-      const history = await geminiFetchHistory(ws, sn);
+      // Fetch history and latest partial content in parallel
+      const [history, partialData] = await Promise.all([
+        geminiFetchHistory(ws, sn),
+        fetch(`/api/gemini/stream-partial/${encodeURIComponent(ws)}`).then(r => r.ok ? r.json() : null).catch(() => null),
+      ]);
+
+      // Keep partial bubble in sync with what's been generated so far
+      if (partialData && partialData.text) {
+        if (geminiPartialMsgEl) {
+          const mdEl = geminiPartialMsgEl.querySelector(".md-content");
+          if (mdEl) {
+            mdEl.innerHTML = geminiRenderMarkdown(partialData.text);
+            geminiScrollToBottom();
+          }
+        } else if (geminiWorkspace === ws) {
+          geminiRemoveThinking();
+          geminiPartialMsgEl = geminiAppendMessage("assistant", partialData.text, true, null, null);
+          geminiShowThinking();
+        }
+      }
+
       if (history.length > historyLengthAtOpen) {
         geminiStopStreamPoll();
+        // Remove the partial bubble — render fresh from server history
+        if (geminiPartialMsgEl) { geminiPartialMsgEl.remove(); geminiPartialMsgEl = null; }
         const newMsgs = history.slice(historyLengthAtOpen);
+        const container = document.getElementById("gemini-messages");
         const pendingToolUses = new Map();
         for (const msg of newMsgs) {
           if (msg.role === "tool_use") {
@@ -1394,14 +1515,21 @@ function geminiStartStreamPoll(historyLengthAtOpen) {
         for (const tu of pendingToolUses.values()) {
           geminiAppendToolUse(tu.tool_name, tu.tool_id, tu.parameters);
         }
+        geminiSetStreaming(false);
         container.scrollTop = container.scrollHeight;
         return;
       }
-      // Also bail if the server says streaming stopped (e.g. error)
+      // Also bail if the server says streaming stopped (e.g. error or done)
       const wsRes = await fetch(`/api/workspace-state/${encodeURIComponent(ws)}`);
       const wsState = await wsRes.json();
       if (!wsState.streaming) {
         geminiStopStreamPoll();
+        // Leave partial content visible if no new history — something ended without persisting
+        if (geminiPartialMsgEl) {
+          geminiPartialMsgEl.classList.remove("gemini-streaming");
+          geminiPartialMsgEl = null;
+        }
+        geminiSetStreaming(false);
       }
     } catch { /* ignore transient poll errors */ }
   }, 2000);
@@ -1452,12 +1580,17 @@ async function geminiShowChat(wsState = null) {
       geminiAppendToolUse(tu.tool_name, tu.tool_id, tu.parameters);
     }
 
-    // If a stream was in-flight when we opened, poll until the reply lands
+    // If a stream was in-flight when we opened, poll until the reply lands.
+    // Leave streaming=true so the input stays disabled while we wait.
     if (geminiOpenedWhileStreaming) {
       geminiOpenedWhileStreaming = false;
       const lastMsg = history[history.length - 1];
       if (lastMsg && lastMsg.role === "user") {
         geminiStartStreamPoll(history.length);
+        // Skip the geminiSetStreaming(false) below — poll completion handles it
+        const input = document.getElementById("gemini-input");
+        if (input) await geminiRestoreDraft(wsState);
+        return;
       }
     }
   }
@@ -1499,6 +1632,7 @@ async function openGeminiChat(project, projectPath, cli) {
   // Reset streaming state and image attachments
   geminiCurrentMsgEl = null;
   geminiCurrentMsgText = "";
+  geminiPartialMsgEl = null;
   geminiSetStreaming(false);
   geminiClearImages();
   geminiUpdateAttachVisibility();
@@ -1680,8 +1814,8 @@ function geminiInputKeydown(event) {
 function sendGeminiMessage() {
   const input = document.getElementById("gemini-input");
   const message = input.value.trim();
-  if (!message || geminiStreaming) {
-    glog(`send: blocked (empty=${!message} streaming=${geminiStreaming})`);
+  if (!message) {
+    glog("send: blocked (empty message)");
     return;
   }
 
@@ -1702,10 +1836,12 @@ function sendGeminiMessage() {
   input.style.height = "auto";
   geminiSaveDraft("");
 
-  // Start streaming — show thinking indicator until first content arrives
-  geminiSetStreaming(true);
-  geminiShowThinking();
-  window._geminiSendTime = Date.now();
+  // Start streaming — show thinking indicator until first content arrives (skip if already streaming)
+  if (!geminiStreaming) {
+    geminiSetStreaming(true);
+    geminiShowThinking();
+    window._geminiSendTime = Date.now();
+  }
   glog("send: thinking indicator shown, waiting for events...");
 
   // Send over WebSocket (include model if not Auto)
@@ -1734,26 +1870,71 @@ function sendGeminiMessage() {
 }
 
 function geminiShowThinking() {
+  if (document.getElementById("gemini-thinking")) return; // already visible
   window._geminiThinkingStart = Date.now();
+
   const container = document.getElementById("gemini-messages");
   const div = document.createElement("div");
   div.className = "gemini-thinking";
   div.id = "gemini-thinking";
-  const cliLabel = geminiActiveCli === "claude" ? "Claude" : "Gemini";
-  div.innerHTML = `<span class="gemini-thinking-dots"><span></span><span></span><span></span></span> <span class="gemini-thinking-label">Starting ${cliLabel}...</span>`;
+
+  const SIZE = 40;
+  const canvas = document.createElement("canvas");
+  canvas.width = SIZE;
+  canvas.height = SIZE;
+  div.appendChild(canvas);
   container.appendChild(div);
   geminiScrollToBottom();
 
-  // Update label with elapsed time so user knows it's not frozen
-  window._geminiThinkingTimer = setInterval(() => {
-    const label = div.querySelector(".gemini-thinking-label");
-    if (!label) return;
-    const elapsed = Math.round((Date.now() - window._geminiThinkingStart) / 1000);
-    if (elapsed >= 5) {
-      const cliName = geminiActiveCli === "claude" ? "Claude" : "Gemini";
-      label.textContent = `Waiting for ${cliName}... (${elapsed}s)`;
+  const ctx = canvas.getContext("2d");
+  const COUNT = 20;
+  const cx = SIZE / 2, cy = SIZE / 2;
+
+  const particles = Array.from({ length: COUNT }, (_, i) => ({
+    angle: (i / COUNT) * Math.PI * 2,
+    radius: 4 + Math.random() * 10,
+    speed: (i % 2 === 0 ? 1 : -1) * (0.018 + Math.random() * 0.022),
+    colorIdx: i % 3,
+    wobble: Math.random() * Math.PI * 2,
+  }));
+
+  let speedMult = 1;
+  let speedTarget = 1;
+  let targetCooldown = 0;
+
+  function frame(t) {
+    // Drift toward a new speed target every 60-150 frames
+    if (--targetCooldown <= 0) {
+      targetCooldown = 60 + Math.random() * 90;
+      const r = Math.random();
+      speedTarget = r < 0.15 ? 0.15 + Math.random() * 0.35  // slow drift
+                 : r < 0.65 ? 0.7  + Math.random() * 0.8    // normal
+                 :             2.5  + Math.random() * 2.5;   // energetic burst
     }
-  }, 1000);
+    speedMult += (speedTarget - speedMult) * 0.04;
+
+    // Re-read theme colors each frame so theme switches take effect live
+    const cs = getComputedStyle(document.documentElement);
+    const colors = [
+      cs.getPropertyValue("--s-green").trim(),
+      cs.getPropertyValue("--s-blue-text").trim(),
+      cs.getPropertyValue("--text-strong").trim(),
+    ];
+
+    ctx.clearRect(0, 0, SIZE, SIZE); // transparent — no background box
+    for (const p of particles) {
+      p.angle += p.speed * speedMult;
+      const r = p.radius + Math.sin(t * 0.003 + p.wobble) * 2.5;
+      const x = cx + Math.cos(p.angle) * r;
+      const y = cy + Math.sin(p.angle) * r;
+      ctx.fillStyle = colors[p.colorIdx];
+      ctx.beginPath();
+      ctx.arc(x, y, 1, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    window._geminiOrbitalRaf = requestAnimationFrame(frame);
+  }
+  window._geminiOrbitalRaf = requestAnimationFrame(frame);
 }
 
 function geminiRemoveThinking() {
@@ -1762,6 +1943,10 @@ function geminiRemoveThinking() {
     const elapsed = window._geminiThinkingStart ? Date.now() - window._geminiThinkingStart : "?";
     glog(`removeThinking: visible for ${elapsed}ms`);
     el.remove();
+  }
+  if (window._geminiOrbitalRaf) {
+    cancelAnimationFrame(window._geminiOrbitalRaf);
+    window._geminiOrbitalRaf = null;
   }
   if (window._geminiThinkingTimer) {
     clearInterval(window._geminiThinkingTimer);
@@ -1787,8 +1972,6 @@ function geminiSetStreaming(active) {
   geminiStreaming = active;
   const input = document.getElementById("gemini-input");
   const sendBtn = document.getElementById("gemini-send");
-
-  if (input) input.disabled = active;
 
   const modelSelect = document.getElementById("gemini-model");
   if (modelSelect) modelSelect.disabled = active;

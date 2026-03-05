@@ -134,6 +134,13 @@
     <div class="settings-section">
       <div class="settings-section-label">Display</div>
       <label class="settings-toggle-opt">
+        <input type="checkbox" id="settings-reuse-local-tab">
+        <span class="settings-toggle-text">
+          <span class="settings-toggle-title">Reuse tab for local Klaudii</span>
+          <span class="settings-toggle-desc">When on, clicking a session reuses the existing dashboard tab. When off, each click opens a new tab (faster if the dashboard is already loaded)</span>
+        </span>
+      </label>
+      <label class="settings-toggle-opt">
         <input type="checkbox" id="settings-branch-first">
         <span class="settings-toggle-text">
           <span class="settings-toggle-title">Branches on top</span>
@@ -158,6 +165,7 @@
         <button class="btn btn-sm" id="btn-settings-test">Test Connection</button>
       </div>
       <div id="settings-status" class="settings-status"></div>
+      <div id="settings-build-info" class="settings-build-info"></div>
     </div>
   </div>
 
@@ -180,6 +188,7 @@
     </div>
   </footer>
 
+  <script src="build-info.js"></script>
   <script src="sidepanel.js"></script>
 </body>
 </html>

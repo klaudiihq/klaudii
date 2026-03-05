@@ -1,0 +1,732 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Chat UI Wireframe</title>
+<style>
+
+/* =========================================================
+   Tokens — dark (default) and light
+   ========================================================= */
+
+:root {
+  --bg:            #0f1117;
+  --bg-card:       #1a1d25;
+  --bg-hover:      #252830;
+  --bg-input:      #0f1117;
+  --bg-btn:        #2a2d35;
+  --bg-btn-hover:  #3a3d45;
+  --bg-badge:      #2a2d35;
+
+  --border:        #2a2d35;
+  --border-btn:    #3a3d45;
+  --border-active: #555;
+
+  --text:          #e0e0e0;
+  --text-strong:   #fff;
+  --text-secondary:#ccc;
+  --text-dim:      #aaa;
+  --text-muted:    #888;
+  --text-faint:    #666;
+  --text-fainter:  #555;
+
+  --s-green:       #4ade80;
+  --s-green-bg:    #1a3a2a;
+  --s-yellow:      #fbbf24;
+  --s-red:         #f87171;
+  --s-blue-text:   #60a5fa;
+  --s-blue-bg:     #1e3a5f;
+
+  --btn-primary:       #2563eb;
+  --btn-primary-hover: #1d4ed8;
+}
+
+html.light {
+  --bg:            #edf0f5;
+  --bg-card:       #f5f7fa;
+  --bg-hover:      #e4e7ec;
+  --bg-input:      #f5f7fa;
+  --bg-btn:        #eef0f5;
+  --bg-btn-hover:  #e2e5ec;
+  --bg-badge:      #e5e8f0;
+
+  --border:        #dce0ea;
+  --border-btn:    #b8bfc9;
+  --border-active: #9099b2;
+
+  --text:          #1e2433;
+  --text-strong:   #0d1017;
+  --text-secondary:#3a4153;
+  --text-dim:      #5a6477;
+  --text-muted:    #6b7a8d;
+  --text-faint:    #9ca3af;
+  --text-fainter:  #b8c0d0;
+
+  --s-green:       #15803d;
+  --s-green-bg:    #dcfce7;
+  --s-yellow:      #b45309;
+  --s-red:         #dc2626;
+  --s-blue-text:   #1d4ed8;
+  --s-blue-bg:     #dbeafe;
+
+  --btn-primary:       #2563eb;
+  --btn-primary-hover: #1d4ed8;
+}
+
+/* =========================================================
+   Reset
+   ========================================================= */
+
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+body {
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  font-size: 14px;
+  background: var(--bg);
+  color: var(--text);
+  height: 100vh;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+/* =========================================================
+   Top bar
+   ========================================================= */
+
+.topbar {
+  height: 48px;
+  min-height: 48px;
+  background: var(--bg-card);
+  border-bottom: 1px solid var(--border);
+  display: flex;
+  align-items: center;
+  padding: 0 1rem;
+  gap: 0.75rem;
+  flex-shrink: 0;
+}
+
+.topbar-logo {
+  font-weight: 700;
+  font-size: 1.1rem;
+  color: var(--text-strong);
+  letter-spacing: -0.02em;
+}
+
+.topbar-logo span {
+  color: var(--s-green);
+}
+
+.badge {
+  font-size: 0.65rem;
+  padding: 0.1rem 0.5rem;
+  border-radius: 999px;
+  background: var(--s-green-bg);
+  color: var(--s-green);
+}
+
+.topbar-right {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.3rem;
+  padding: 0.35rem 0.75rem;
+  font-size: 0.8rem;
+  font-family: inherit;
+  border-radius: 6px;
+  border: 1px solid var(--border-btn);
+  background: var(--bg-btn);
+  color: var(--text);
+  cursor: pointer;
+  white-space: nowrap;
+}
+.btn:hover { background: var(--bg-btn-hover); }
+.btn.primary {
+  background: var(--btn-primary);
+  border-color: var(--btn-primary);
+  color: #fff;
+}
+.btn.primary:hover { background: var(--btn-primary-hover); }
+.btn-theme {
+  border: none;
+  background: none;
+  font-size: 1rem;
+  cursor: pointer;
+  color: var(--text-muted);
+  padding: 0.25rem;
+}
+.btn-theme:hover { color: var(--text); }
+
+/* =========================================================
+   Split layout: sidebar + chat panel
+   ========================================================= */
+
+.app-layout {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+}
+
+/* Sidebar */
+.sidebar {
+  flex: 0 0 340px;
+  max-width: 340px;
+  border-right: 1px solid var(--border);
+  overflow-y: auto;
+  background: var(--bg);
+  padding: 0.75rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+/* Session card */
+.card {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  overflow: hidden;
+  cursor: pointer;
+  transition: border-color 0.1s;
+}
+.card:hover { border-color: var(--border-active); }
+.card.active-workspace {
+  border-color: var(--s-green);
+  background: var(--s-green-bg);
+  box-shadow: 0 0 0 1px var(--s-green);
+}
+.card-body { padding: 8px 10px; }
+
+.card-header {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  margin-bottom: 0.25rem;
+}
+.card-title {
+  font-weight: 600;
+  font-size: 0.85rem;
+  color: var(--text-strong);
+}
+.card-branch {
+  font-size: 0.75rem;
+  color: var(--text-faint);
+}
+.status-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+.status-dot.running { background: var(--s-green); }
+.status-dot.idle    { background: var(--text-fainter); }
+.card-meta {
+  font-size: 0.72rem;
+  color: var(--text-muted);
+}
+
+/* =========================================================
+   Chat panel
+   ========================================================= */
+
+.chat-panel {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  background: var(--bg-card);
+  overflow: hidden;
+}
+
+/* Chat top bar */
+.chat-bar {
+  height: 44px;
+  min-height: 44px;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  padding: 0 1rem;
+  gap: 0.5rem;
+  background: var(--bg-card);
+  border-bottom: 1px solid var(--border);
+}
+.chat-bar-title {
+  font-size: 0.9rem;
+  font-weight: 600;
+  color: var(--text-strong);
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+.chat-bar-title .branch {
+  font-weight: 400;
+  color: var(--text-faint);
+  font-size: 0.85rem;
+}
+.chat-bar-status {
+  font-size: 0.65rem;
+  padding: 0.1rem 0.4rem;
+  border-radius: 999px;
+  background: var(--s-green-bg);
+  color: var(--s-green);
+}
+.chat-bar-actions {
+  margin-left: auto;
+  display: flex;
+  gap: 0.4rem;
+  align-items: center;
+}
+.session-select {
+  background: var(--bg-btn);
+  color: var(--text);
+  border: 1px solid var(--border-btn);
+  border-radius: 6px;
+  padding: 0.2rem 1.2rem 0.2rem 0.4rem;
+  font-size: 0.7rem;
+  font-family: inherit;
+  cursor: pointer;
+  appearance: none;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6'%3E%3Cpath d='M0 0l5 6 5-6z' fill='%23888'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 0.35rem center;
+}
+
+/* Messages area */
+.messages {
+  flex: 1;
+  overflow-y: auto;
+  padding: 1rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  max-width: 800px;
+  width: 100%;
+  margin: 0 auto;
+  scrollbar-width: none;
+}
+.messages::-webkit-scrollbar { display: none; }
+
+/* Message bubbles */
+.msg {
+  line-height: 1.5;
+  font-size: 0.9rem;
+}
+.msg.user {
+  max-width: 70%;
+  margin-left: auto;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+}
+.user-bubble {
+  background: var(--btn-primary);
+  color: #fff;
+  padding: 0.6rem 1rem;
+  border-radius: 12px 12px 2px 12px;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+.msg-ts {
+  font-size: 0.7rem;
+  color: var(--text-fainter);
+  margin-top: 0.2rem;
+}
+.msg.user .msg-ts { text-align: right; margin-right: 2px; }
+
+.msg.assistant {
+  max-width: 100%;
+  color: var(--text-dim);
+  padding: 0.4rem 0;
+}
+.md-content { line-height: 1.6; }
+.md-content p { margin: 0.4rem 0; }
+.md-content p:first-child { margin-top: 0; }
+.md-content code {
+  background: var(--bg-hover);
+  padding: 0.1rem 0.35rem;
+  border-radius: 4px;
+  font-family: ui-monospace, monospace;
+  font-size: 0.85em;
+  color: var(--s-yellow);
+}
+.md-content pre {
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 0.75rem 1rem;
+  overflow-x: auto;
+  margin: 0.5rem 0;
+}
+.md-content pre code {
+  background: none; padding: 0; color: var(--text); font-size: 0.82rem;
+}
+.md-content strong { color: var(--text); }
+
+/* Tool pill */
+.tool-pill {
+  display: block;
+  font-size: 0.8rem;
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--s-green);
+  border-radius: 6px;
+  margin: 0.25rem 0;
+  overflow: visible;
+  background: var(--bg-hover);
+}
+.tool-pill-summary {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.45rem 0.75rem;
+  background: var(--bg-hover);
+  border-bottom: 1px solid var(--border);
+  border-radius: 6px 6px 0 0;
+}
+.tool-icon { font-size: 0.8rem; color: var(--s-green); }
+.tool-name {
+  font-family: ui-monospace, monospace;
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: var(--text-strong);
+}
+.tool-desc {
+  font-size: 0.78rem;
+  color: var(--text-dim);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.tool-body {
+  font-family: ui-monospace, monospace;
+  font-size: 0.7rem;
+  color: var(--text-dim);
+  padding: 0.4rem 0.65rem;
+  max-height: 120px;
+  overflow-y: auto;
+}
+
+/* Thinking indicator */
+.thinking {
+  display: flex;
+  align-items: center;
+  padding: 0.5rem 0;
+  gap: 8px;
+}
+.thinking-dots { display: flex; gap: 4px; }
+.thinking-dots span {
+  width: 6px; height: 6px;
+  border-radius: 50%;
+  background: var(--text-muted);
+  animation: dot-bounce 1.2s ease-in-out infinite;
+}
+.thinking-dots span:nth-child(2) { animation-delay: 0.2s; }
+.thinking-dots span:nth-child(3) { animation-delay: 0.4s; }
+@keyframes dot-bounce {
+  0%, 60%, 100% { opacity: 0.3; transform: translateY(0); }
+  30% { opacity: 1; transform: translateY(-4px); }
+}
+.thinking-label { font-size: 0.8rem; color: var(--text-muted); }
+
+/* Permission / question card */
+.permission-card {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--s-yellow);
+  border-radius: 8px;
+  padding: 0.75rem 1rem;
+  margin: 0.5rem 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+.permission-header {
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+.permission-question { font-size: 0.9rem; color: var(--text); line-height: 1.4; }
+.permission-btns { display: flex; gap: 0.5rem; flex-wrap: wrap; margin-top: 0.25rem; }
+
+/* =========================================================
+   Input area
+   ========================================================= */
+
+.input-area-wrap {
+  flex-shrink: 0;
+  background: var(--bg-card);
+  border-top: 1px solid var(--border);
+}
+
+.input-area {
+  display: flex;
+  gap: 0.5rem;
+  padding: 0.75rem 1rem;
+  max-width: 800px;
+  width: 100%;
+  margin: 0 auto;
+  align-items: stretch;
+}
+
+.input-wrap {
+  flex: 1;
+  position: relative;
+  min-width: 0;
+}
+
+.input-wrap textarea {
+  width: 100%;
+  background: var(--bg-input);
+  color: var(--text);
+  border: 1px solid var(--border-btn);
+  border-radius: 8px;
+  padding: 0.5rem 2rem 0.5rem 0.75rem;
+  font-size: 0.9rem;
+  font-family: inherit;
+  resize: none;
+  line-height: 1.4;
+  min-height: 3.6rem;
+  max-height: 16rem;
+  overflow-y: auto;
+}
+.input-wrap textarea:focus {
+  outline: none;
+  border-color: var(--btn-primary);
+}
+
+.attach-overlay {
+  position: absolute;
+  bottom: 6px; right: 6px;
+  width: 24px; height: 24px;
+  border-radius: 6px;
+  border: 1px solid var(--border-btn);
+  background: var(--bg-btn);
+  color: var(--text-muted);
+  font-size: 16px;
+  line-height: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+}
+.attach-overlay:hover { color: var(--text); background: var(--bg-btn-hover); }
+
+.input-controls {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  justify-content: flex-end;
+  flex-shrink: 0;
+}
+.input-controls-row { display: flex; gap: 0.35rem; }
+
+.sel {
+  background: var(--bg-btn);
+  color: var(--text);
+  border: 1px solid var(--border-btn);
+  border-radius: 6px;
+  padding: 0.3rem 1.2rem 0.3rem 0.4rem;
+  font-size: 0.7rem;
+  font-family: inherit;
+  cursor: pointer;
+  appearance: none;
+  -webkit-appearance: none;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6'%3E%3Cpath d='M0 0l5 6 5-6z' fill='%23888'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 0.3rem center;
+}
+.sel:hover { background-color: var(--bg-btn-hover); }
+
+/* =========================================================
+   Scrollbar hide
+   ========================================================= */
+
+* { scrollbar-width: none; }
+::-webkit-scrollbar { display: none; }
+
+/* =========================================================
+   Theme toggle
+   ========================================================= */
+
+#theme-btn { cursor: pointer; user-select: none; }
+</style>
+</head>
+<body>
+
+<!-- Split layout -->
+<div class="app-layout">
+
+  <!-- Sidebar: session cards -->
+  <aside class="sidebar">
+
+    <div class="card active-workspace">
+      <div class="card-body">
+        <div class="card-header">
+          <span class="status-dot running"></span>
+          <span class="card-title">myapp</span>
+          <span class="card-branch">/ feature-auth</span>
+        </div>
+        <div class="card-meta">claude-sonnet-4-6 · 2m ago</div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-body">
+        <div class="card-header">
+          <span class="status-dot idle"></span>
+          <span class="card-title">api-service</span>
+          <span class="card-branch">/ main</span>
+        </div>
+        <div class="card-meta">Stopped · 1h ago</div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-body">
+        <div class="card-header">
+          <span class="status-dot idle"></span>
+          <span class="card-title">docs-site</span>
+          <span class="card-branch">/ redesign</span>
+        </div>
+        <div class="card-meta">Stopped · yesterday</div>
+      </div>
+    </div>
+
+  </aside>
+
+  <!-- Chat panel -->
+  <main class="chat-panel">
+
+    <!-- Chat bar -->
+    <div class="chat-bar">
+      <div class="chat-bar-title">
+        Claude <span class="branch">myapp / feature-auth</span>
+      </div>
+      <span class="chat-bar-status">connected</span>
+      <div class="chat-bar-actions">
+        <select class="session-select">
+          <option>Session 1</option>
+          <option>Session 2</option>
+        </select>
+        <button class="btn">New Chat</button>
+        <button class="btn">Close</button>
+      </div>
+    </div>
+
+    <!-- Messages -->
+    <div class="messages">
+
+      <!-- User message -->
+      <div class="msg user">
+        <div class="user-bubble">Can you add input validation to the login form?</div>
+        <div class="msg-ts">2:14 PM</div>
+      </div>
+
+      <!-- Assistant with tool use -->
+      <div class="msg assistant">
+        <div class="md-content">
+          <p>I'll add validation to the login form. Let me read the current implementation first.</p>
+        </div>
+
+        <div class="tool-pill">
+          <div class="tool-pill-summary">
+            <span class="tool-icon">✓</span>
+            <span class="tool-name">Read</span>
+            <span class="tool-desc">src/components/LoginForm.tsx</span>
+          </div>
+          <div class="tool-body">// LoginForm.tsx — 87 lines</div>
+        </div>
+
+        <div class="tool-pill">
+          <div class="tool-pill-summary">
+            <span class="tool-icon">✓</span>
+            <span class="tool-name">Edit</span>
+            <span class="tool-desc">src/components/LoginForm.tsx</span>
+          </div>
+          <div class="tool-body">+ const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;<br>+ if (!emailRegex.test(email)) setError("Invalid email");<br>+ if (password.length &lt; 8) setError("Password too short");</div>
+        </div>
+
+        <div class="md-content" style="margin-top:0.4rem">
+          <p>Done. I've added validation for:</p>
+          <ul style="padding-left:1.5rem;margin:0.4rem 0">
+            <li>Email format (regex check)</li>
+            <li>Password minimum length (8 chars)</li>
+            <li>Required field checks before submit</li>
+          </ul>
+          <p>Errors display inline below each field using the existing <code>setError</code> state.</p>
+        </div>
+        <div class="msg-ts">2:14 PM</div>
+      </div>
+
+      <!-- User message -->
+      <div class="msg user">
+        <div class="user-bubble">Also validate that the passwords match on the signup form</div>
+        <div class="msg-ts">2:15 PM</div>
+      </div>
+
+      <!-- Permission card -->
+      <div class="permission-card">
+        <div class="permission-header">Claude wants to use: Edit</div>
+        <div class="permission-question">src/components/SignupForm.tsx</div>
+        <div class="permission-btns">
+          <button class="btn primary">Allow ✓</button>
+          <button class="btn">Deny</button>
+        </div>
+      </div>
+
+      <!-- Thinking -->
+      <div class="thinking">
+        <div class="thinking-dots">
+          <span></span><span></span><span></span>
+        </div>
+        <span class="thinking-label">Working…</span>
+      </div>
+
+    </div>
+
+    <!-- Input area -->
+    <div class="input-area-wrap">
+      <div class="input-area">
+        <div class="input-wrap">
+          <textarea placeholder="Message Claude…" rows="3"></textarea>
+          <button class="attach-overlay" title="Attach image">+</button>
+        </div>
+        <div class="input-controls">
+          <div class="input-controls-row">
+            <select class="sel">
+              <option>claude-sonnet-4-6</option>
+              <option>claude-opus-4-6</option>
+              <option>claude-haiku-4-5</option>
+            </select>
+            <select class="sel">
+              <option>Yolo</option>
+              <option>Plan</option>
+              <option>Auto Accept Edits</option>
+            </select>
+          </div>
+          <button class="btn primary">Send</button>
+        </div>
+      </div>
+    </div>
+
+  </main>
+</div>
+
+<script>
+function toggleTheme() {
+  document.documentElement.classList.toggle("light");
+  document.getElementById("theme-btn").textContent =
+    document.documentElement.classList.contains("light") ? "☽" : "☀";
+}
+</script>
+</body>
+</html>

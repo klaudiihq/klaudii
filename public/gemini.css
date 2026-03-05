@@ -460,85 +460,27 @@ summary.gemini-tool-summary::marker { display: none; }
   padding: 0.75rem 1rem;
   background: var(--bg-card);
   border-top: 1px solid var(--border);
-  align-items: flex-end;
+  align-items: stretch;
   flex-shrink: 0;
+  max-width: 800px;
+  width: 100%;
+  margin: 0 auto;
 }
 
-/* Model selector */
-.gemini-model-select {
-  flex-shrink: 0;
-  align-self: flex-end;
-  margin-bottom: 1px;
-  background: var(--bg-btn);
-  color: var(--text);
-  border: 1px solid var(--border-btn);
-  border-radius: 6px;
-  padding: 0.35rem 1.4rem 0.35rem 0.5rem;
-  font-size: 0.75rem;
-  font-family: inherit;
-  cursor: pointer;
-  appearance: none;
-  -webkit-appearance: none;
-  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6'%3E%3Cpath d='M0 0l5 6 5-6z' fill='%23888'/%3E%3C/svg%3E");
-  background-repeat: no-repeat;
-  background-position: right 0.4rem center;
-}
-
-.gemini-model-select:hover {
-  background-color: var(--bg-btn-hover);
-}
-
-.gemini-model-select:focus {
-  outline: none;
-  border-color: var(--btn-primary);
-}
-
-.gemini-model-select:disabled {
-  opacity: 0.4;
-  cursor: not-allowed;
-}
-
-/* Permission mode selector (Claude only) */
-.gemini-permission-select {
-  flex-shrink: 0;
-  align-self: flex-end;
-  margin-bottom: 1px;
-  background: var(--bg-btn);
-  color: var(--text);
-  border: 1px solid var(--border-btn);
-  border-radius: 6px;
-  padding: 0.35rem 1.4rem 0.35rem 0.5rem;
-  font-size: 0.75rem;
-  font-family: inherit;
-  cursor: pointer;
-  appearance: none;
-  -webkit-appearance: none;
-  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6'%3E%3Cpath d='M0 0l5 6 5-6z' fill='%23888'/%3E%3C/svg%3E");
-  background-repeat: no-repeat;
-  background-position: right 0.4rem center;
-}
-
-.gemini-permission-select:hover {
-  background-color: var(--bg-btn-hover);
-}
-
-.gemini-permission-select:focus {
-  outline: none;
-  border-color: var(--btn-primary);
-}
-
-.gemini-permission-select:disabled {
-  opacity: 0.4;
-  cursor: not-allowed;
+/* Textarea wrapper (relative for + overlay) */
+.gemini-input-wrap {
+  flex: 1;
+  position: relative;
+  min-width: 0;
 }
 
 .gemini-input-area textarea {
-  flex: 1;
+  width: 100%;
   background: var(--bg-input);
   color: var(--text);
   border: 1px solid var(--border-btn);
   border-radius: 8px;
-  padding: 0.5rem 0.75rem;
+  padding: 0.5rem 2rem 0.5rem 0.75rem;
   font-size: 0.9rem;
   font-family: inherit;
   resize: none;
@@ -557,10 +499,88 @@ summary.gemini-tool-summary::marker { display: none; }
   opacity: 0.5;
 }
 
-.gemini-input-area .btn {
+/* + attach overlay inside textarea */
+.gemini-attach-overlay {
+  position: absolute;
+  bottom: 6px;
+  right: 6px;
+  width: 24px;
+  height: 24px;
+  border-radius: 6px;
+  border: 1px solid var(--border-btn);
+  background: var(--bg-btn);
+  color: var(--text-muted);
+  font-size: 16px;
+  line-height: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  padding: 0;
+}
+
+.gemini-attach-overlay:hover {
+  color: var(--text);
+  background: var(--bg-btn-hover);
+}
+
+.gemini-attach-overlay.has-images {
+  color: var(--btn-primary);
+  border-color: var(--btn-primary);
+}
+
+/* Right-side controls column */
+.gemini-input-controls {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  justify-content: flex-end;
   flex-shrink: 0;
-  align-self: flex-end;
-  margin-bottom: 1px;
+}
+
+.gemini-input-controls-row {
+  display: flex;
+  gap: 0.35rem;
+}
+
+.gemini-input-controls .btn {
+  flex-shrink: 0;
+}
+
+/* Shared select styling for model + permission selectors */
+.gemini-model-select,
+.gemini-permission-select {
+  background: var(--bg-btn);
+  color: var(--text);
+  border: 1px solid var(--border-btn);
+  border-radius: 6px;
+  padding: 0.3rem 1.2rem 0.3rem 0.4rem;
+  font-size: 0.7rem;
+  font-family: inherit;
+  cursor: pointer;
+  appearance: none;
+  -webkit-appearance: none;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6'%3E%3Cpath d='M0 0l5 6 5-6z' fill='%23888'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 0.3rem center;
+  min-width: 0;
+}
+
+.gemini-model-select:hover,
+.gemini-permission-select:hover {
+  background-color: var(--bg-btn-hover);
+}
+
+.gemini-model-select:focus,
+.gemini-permission-select:focus {
+  outline: none;
+  border-color: var(--btn-primary);
+}
+
+.gemini-model-select:disabled,
+.gemini-permission-select:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
 }
 
 /* --- Auth panel --- */
@@ -696,39 +716,14 @@ summary.gemini-tool-summary::marker { display: none; }
   border-top: 1px solid var(--border);
 }
 
-/* --- Thinking indicator --- */
+/* --- Thinking indicator (orbital canvas) --- */
 
 .gemini-thinking {
-  display: flex;
-  align-items: center;
-  padding: 0.5rem 0;
+  padding: 0.4rem 0;
 }
 
-.gemini-thinking-dots {
-  display: flex;
-  gap: 4px;
-}
-
-.gemini-thinking-dots span {
-  width: 6px;
-  height: 6px;
-  border-radius: 50%;
-  background: var(--text-muted);
-  animation: gemini-dot-bounce 1.2s ease-in-out infinite;
-}
-
-.gemini-thinking-dots span:nth-child(2) { animation-delay: 0.2s; }
-.gemini-thinking-dots span:nth-child(3) { animation-delay: 0.4s; }
-
-.gemini-thinking-label {
-  margin-left: 8px;
-  font-size: 0.8rem;
-  color: var(--text-muted);
-}
-
-@keyframes gemini-dot-bounce {
-  0%, 60%, 100% { opacity: 0.3; transform: translateY(0); }
-  30% { opacity: 1; transform: translateY(-4px); }
+.gemini-thinking canvas {
+  display: block;
 }
 
 /* --- Auth status / spinner --- */
@@ -836,26 +831,6 @@ summary.gemini-tool-summary::marker { display: none; }
   opacity: 1;
 }
 
-/* Attach button */
-.gemini-attach-btn {
-  flex-shrink: 0;
-  align-self: flex-end;
-  margin-bottom: 1px;
-  padding: 0.35rem 0.5rem;
-  color: var(--text-muted);
-  background: var(--bg-btn);
-  border: 1px solid var(--border-btn);
-}
-
-.gemini-attach-btn:hover {
-  color: var(--text);
-  background: var(--bg-btn-hover);
-}
-
-.gemini-attach-btn.has-images {
-  color: var(--btn-primary);
-  border-color: var(--btn-primary);
-}
 
 /* Drag-over state */
 .gemini-panel.drag-over {
@@ -880,3 +855,55 @@ summary.gemini-tool-summary::marker { display: none; }
 }
 
 /* Chatonly layout rules live in style.css */
+
+/* ── Gemini tool approval prompt ────────────────────────────────── */
+.gemini-approval-prompt {
+  background: var(--bg-secondary, #1a1a1a);
+  border: 1px solid var(--warning, #f59e0b);
+  border-left: 3px solid var(--warning, #f59e0b);
+  border-radius: 8px;
+  padding: 0.75rem 1rem;
+  margin: 0.5rem 0;
+}
+
+.gemini-approval-header {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-bottom: 0.5rem;
+  font-weight: 600;
+  font-size: 0.85rem;
+}
+
+.gemini-approval-tool {
+  font-family: var(--font-mono, monospace);
+  color: var(--warning, #f59e0b);
+}
+
+.gemini-approval-params {
+  font-family: var(--font-mono, monospace);
+  font-size: 0.75rem;
+  background: var(--bg-tertiary, #111);
+  border-radius: 4px;
+  padding: 0.5rem;
+  margin: 0.4rem 0;
+  overflow-x: auto;
+  max-height: 200px;
+  overflow-y: auto;
+  white-space: pre-wrap;
+  word-break: break-all;
+}
+
+.gemini-approval-buttons {
+  display: flex;
+  gap: 0.5rem;
+  margin-top: 0.5rem;
+}
+
+.gemini-approval-resolved {
+  font-size: 0.8rem;
+  opacity: 0.7;
+}
+.gemini-approval-resolved.denied {
+  color: var(--error, #ef4444);
+}

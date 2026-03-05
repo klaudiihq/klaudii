@@ -58,6 +58,7 @@ let activeTabUrl = null;
 let sortMode = localStorage.getItem("sortMode") || "activity";
 let branchFirst = false;
 let openMode = "inplace";
+let reuseLocalTab = false;
 let attentionFlash = false;
 let autoApprove = false;
 let openTabs = new Map();       // urlPath (no query string) → tabId, for open claude.ai tabs in this window
@@ -79,7 +80,7 @@ let addRepos = [];          // cached list from /api/github/repos
 // --- Init ---
 
 async function init() {
-  const config = await chrome.storage.sync.get(["klaudiiUrl", "klaudiiUrls", "openMode", "attentionFlash", "autoApprove", "themeMode", "branchFirst"]);
+  const config = await chrome.storage.sync.get(["klaudiiUrl", "klaudiiUrls", "openMode", "reuseLocalTab", "attentionFlash", "autoApprove", "themeMode", "branchFirst"]);
 
   // Migrate from single klaudiiUrl to klaudiiUrls list
   if (config.klaudiiUrls && config.klaudiiUrls.length) {
@@ -90,6 +91,7 @@ async function init() {
   klaudiiUrl = klaudiiUrls[0];
 
   openMode = config.openMode || "inplace";
+  reuseLocalTab = config.reuseLocalTab === true;
   attentionFlash = config.attentionFlash === true;
   autoApprove = config.autoApprove === true;
   branchFirst = config.branchFirst === true;
@@ -1381,8 +1383,16 @@ document.addEventListener("click", async (e) => {
     // CLI mode — open Klaudii dashboard with chat pre-opened
     const serverUrl = card.dataset.serverUrl || klaudiiUrl;
     const tool = chatMode === "gemini" ? "gemini" : "claude";
-    const dashUrl = `${serverUrl.replace(/\/+$/, "")}/?workspace=${encodeURIComponent(project)}&tool=${tool}`;
-    chrome.runtime.sendMessage({ action: "switchToUrl", url: dashUrl, windowId: undefined });
+    const dashUrl = `${serverUrl.replace(/\/+$/, "")}/?mode=chatonly&workspace=${encodeURIComponent(project)}&tool=${tool}`;
+    if (reuseLocalTab) {
+      chrome.windows.getCurrent((win) => {
+        chrome.runtime.sendMessage({ action: "switchToUrl", url: dashUrl, windowId: win?.id });
+      });
+    } else if (openMode === "tabs") {
+      chrome.runtime.sendMessage({ action: "openUrl", url: dashUrl });
+    } else {
+      chrome.runtime.sendMessage({ action: "navigateTab", url: dashUrl });
+    }
   }
 });
 
@@ -1555,7 +1565,7 @@ function openSettings() {
 
   if (settingsOpen) {
     // Populate current values
-    chrome.storage.sync.get(["klaudiiUrl", "klaudiiUrls", "openMode", "attentionFlash", "branchFirst"], (config) => {
+    chrome.storage.sync.get(["klaudiiUrl", "klaudiiUrls", "openMode", "reuseLocalTab", "attentionFlash", "branchFirst"], (config) => {
       let urls = config.klaudiiUrls;
       if (!urls || !urls.length) urls = [config.klaudiiUrl || DEFAULT_KLAUDII_URL];
       document.getElementById("settings-urls").value = urls.join("\n");
@@ -1564,8 +1574,17 @@ function openSettings() {
       const radio = document.querySelector(`input[name="settings-openMode"][value="${mode}"]`);
       if (radio) radio.checked = true;
 
+      document.getElementById("settings-reuse-local-tab").checked = config.reuseLocalTab === true;
       document.getElementById("settings-branch-first").checked = config.branchFirst === true;
       document.getElementById("settings-attention-flash").checked = config.attentionFlash === true;
+
+      const bi = window.BUILD_INFO;
+      const buildEl = document.getElementById("settings-build-info");
+      if (bi && bi.hash) {
+        buildEl.textContent = `built ${bi.date} · ${bi.hash}`;
+      } else {
+        buildEl.textContent = "dev build";
+      }
     });
 
     panel.classList.remove("hidden");
@@ -1585,6 +1604,7 @@ function saveSettings() {
   if (!urls.length) urls.push(DEFAULT_KLAUDII_URL);
 
   const openModeVal = document.querySelector('input[name="settings-openMode"]:checked')?.value || "inplace";
+  const reuseLocalTabVal = document.getElementById("settings-reuse-local-tab").checked;
   const branchFirstVal = document.getElementById("settings-branch-first").checked;
   const attentionFlashVal = document.getElementById("settings-attention-flash").checked;
 
@@ -1592,6 +1612,7 @@ function saveSettings() {
     klaudiiUrls: urls,
     klaudiiUrl: urls[0],
     openMode: openModeVal,
+    reuseLocalTab: reuseLocalTabVal,
     branchFirst: branchFirstVal,
     attentionFlash: attentionFlashVal,
   });
@@ -1600,6 +1621,7 @@ function saveSettings() {
   klaudiiUrls = urls;
   klaudiiUrl = urls[0];
   openMode = openModeVal;
+  reuseLocalTab = reuseLocalTabVal;
   branchFirst = branchFirstVal;
   attentionFlash = attentionFlashVal;
 
@@ -1613,6 +1635,7 @@ function initSettingsListeners() {
   document.querySelectorAll('input[name="settings-openMode"]').forEach((r) =>
     r.addEventListener("change", saveSettings)
   );
+  document.getElementById("settings-reuse-local-tab").addEventListener("change", saveSettings);
   document.getElementById("settings-branch-first").addEventListener("change", saveSettings);
   document.getElementById("settings-attention-flash").addEventListener("change", saveSettings);
 
