@@ -42,7 +42,7 @@ jobs:
           ACCESS_TOKEN=$(gcloud auth print-access-token)
           BASE="https://${GCP_REGION}-aiplatform.googleapis.com/v1/projects/${GCP_PROJECT_ID}/locations/${GCP_REGION}/publishers/anthropic/models"
 
-          for MODEL in claude-sonnet-4-5-20250514 claude-sonnet-4-20250514 claude-3-5-sonnet-v2@20241022 claude-3-5-sonnet@20241022 claude-3-5-sonnet claude-3-sonnet@20240229; do
+          for MODEL in claude-sonnet-4-6 claude-sonnet-4-5@20250929 claude-sonnet-4@20250514 claude-3-5-sonnet-v2@20241022; do
             ENDPOINT="${BASE}/${MODEL}:rawPredict"
             STATUS=$(curl -s -o /dev/null -w "%{http_code}" \
               -X POST "$ENDPOINT" \
