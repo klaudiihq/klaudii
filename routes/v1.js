@@ -218,7 +218,8 @@ module.exports = function createV1Router(deps) {
     if (!workspaceState) return res.json({ mode: "claude-local", sessionNum: null, draft: "" });
     const workspace = decodeURIComponent(req.params.workspace);
     const state = workspaceState.getWorkspace(workspace);
-    res.json({ ...state, streaming: workspaceState.isStreaming(workspace) });
+    const pending = workspaceState.getPendingPermission(workspace);
+    res.json({ ...state, streaming: workspaceState.isStreaming(workspace), ...(pending ? { pendingPermission: pending } : {}) });
   });
 
   router.patch("/workspace-state/:workspace", (req, res) => {
