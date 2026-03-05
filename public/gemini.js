@@ -594,10 +594,7 @@ function handleGeminiEvent(event) {
       const error = event.error;
       glog(`handle: tool_result id=${toolId} tool=${toolName} status=${status} outputLen=${output.length}`);
       // AskUserQuestion results are already shown in the question card — skip rendering.
-      // Check both tool_name on the event and whether a question card exists for this tool.
-      const isAskTool = /ask.*question/i.test(toolName) ||
-        document.querySelector(`.gemini-question-card`) !== null;
-      if (!isAskTool) {
+      if (!/ask.*question/i.test(toolName)) {
         geminiUpdateToolResult(toolId, status, output, error);
       }
       // Model continues processing after the tool — show thinking indicator so the
@@ -1119,13 +1116,14 @@ function geminiShowToolQuestions(id, questions, toolInput, isPermissionRequest) 
         if (answers[qi] !== null) return;
         btns.querySelectorAll("button").forEach(b => {
           b.disabled = true;
+          b.classList.remove("primary");
           b.classList.add("greyed");
         });
         const chosen = btns.querySelector(`[data-label="${CSS.escape(label)}"]`);
         if (chosen) {
           chosen.textContent += " \u2713";
           chosen.classList.remove("greyed");
-          chosen.classList.add("selected");
+          chosen.classList.add("selected", "primary");
         }
         answers[qi] = label;
         glog(`tool_question[${qi}]: selected=${label}`);
