@@ -1134,6 +1134,74 @@ function geminiConfirmTool(callId, outcome) {
  * Render a completed tool pill directly from history data (tool_use + tool_result combined).
  * Creates the pill in its final open state without the two-step running→done dance.
  */
+/**
+ * Render a completed AskUserQuestion in history.
+ * Shows the question text, option buttons (disabled, with selected one marked), and status.
+ */
+function geminiRenderCompletedQuestion(params, output, status) {
+  const container = document.getElementById("gemini-messages");
+  const div = document.createElement("div");
+  div.className = "gemini-permission-request";
+  if (status === "error") div.classList.add("gemini-question-error");
+
+  const headerEl = document.createElement("div");
+  headerEl.className = "gemini-permission-header";
+  headerEl.textContent = status === "error" ? "Question (failed)" : "Question";
+  div.appendChild(headerEl);
+
+  // Parse selected answers from output: "User has answered your questions: "Q"="A", "Q2"="B". You can..."
+  const selectedAnswers = {};
+  const answerMatches = (output || "").matchAll(/"([^"]+)"="([^"]+)"/g);
+  for (const m of answerMatches) selectedAnswers[m[1]] = m[2];
+
+  const questions = params.questions || [{ question: params.question || "", options: params.options || [] }];
+
+  questions.forEach((q) => {
+    const section = document.createElement("div");
+    section.className = "gemini-question-section";
+
+    if (q.question) {
+      const qEl = document.createElement("div");
+      qEl.className = "gemini-permission-question";
+      qEl.textContent = q.question;
+      section.appendChild(qEl);
+    }
+
+    const btns = document.createElement("div");
+    btns.className = "gemini-permission-buttons";
+    const rawOptions = q.options || [];
+
+    if (rawOptions.length) {
+      rawOptions.forEach((opt) => {
+        const btn = document.createElement("button");
+        const label = typeof opt === "object" ? (opt.label || String(opt)) : String(opt);
+        const isSelected = selectedAnswers[q.question] === label || selectedAnswers[q.header] === label;
+        btn.className = "btn" + (isSelected ? " primary" : "");
+        btn.textContent = label + (isSelected ? " ✓" : "");
+        btn.disabled = true;
+        if (typeof opt === "object" && opt.description) btn.title = opt.description;
+        btns.appendChild(btn);
+      });
+    } else if (Object.keys(selectedAnswers).length) {
+      // No options defined — show the answer as text
+      const key = q.question || q.header || Object.keys(selectedAnswers)[0];
+      const answer = selectedAnswers[key];
+      if (answer) {
+        const ansEl = document.createElement("div");
+        ansEl.className = "gemini-permission-question";
+        ansEl.style.fontStyle = "italic";
+        ansEl.textContent = answer;
+        section.appendChild(ansEl);
+      }
+    }
+
+    if (btns.children.length) section.appendChild(btns);
+    div.appendChild(section);
+  });
+
+  container.appendChild(div);
+}
+
 function geminiRenderCompletedTool(toolName, toolId, params, status, output) {
   const container = document.getElementById("gemini-messages");
   const isError = status === "error";
@@ -1553,7 +1621,12 @@ async function geminiRenderRecoveredContent() {
           const d = JSON.parse(msg.content);
           const tu = pendingToolUses.get(d.tool_id);
           if (tu) pendingToolUses.delete(d.tool_id);
-          geminiRenderCompletedTool(tu ? tu.tool_name : (d.tool_name || "tool"), d.tool_id, tu ? tu.parameters : {}, d.status, d.output);
+          const tName = tu ? tu.tool_name : (d.tool_name || "tool");
+          if (/ask.*question/i.test(tName)) {
+            geminiRenderCompletedQuestion(tu ? tu.parameters : {}, d.output || "", d.status);
+          } else {
+            geminiRenderCompletedTool(tName, d.tool_id, tu ? tu.parameters : {}, d.status, d.output);
+          }
         } catch {}
       } else {
         geminiAppendMessage(msg.role, msg.content, false, null, msg.ts);
@@ -1626,13 +1699,12 @@ function geminiStartStreamPoll(historyLengthAtOpen) {
               const d = JSON.parse(msg.content);
               const tu = d.tool_id ? pendingToolUses.get(d.tool_id) : null;
               if (tu) pendingToolUses.delete(d.tool_id);
-              geminiRenderCompletedTool(
-                tu ? tu.tool_name : (d.tool_name || "tool"),
-                d.tool_id,
-                tu ? tu.parameters : {},
-                d.status,
-                d.output
-              );
+              const tName = tu ? tu.tool_name : (d.tool_name || "tool");
+              if (/ask.*question/i.test(tName)) {
+                geminiRenderCompletedQuestion(tu ? tu.parameters : {}, d.output || "", d.status);
+              } else {
+                geminiRenderCompletedTool(tName, d.tool_id, tu ? tu.parameters : {}, d.status, d.output);
+              }
             } catch { /* ignore */ }
           } else {
             geminiAppendMessage(msg.role, msg.content, false, null, msg.ts);
@@ -1689,13 +1761,15 @@ async function geminiShowChat(wsState = null) {
           // ExitPlanMode: render as plan card instead of generic tool pill
           if (name === "ExitPlanMode") {
             geminiShowPlanApproval(d.tool_id, (tu ? tu.parameters : {}).plan || d.output || "", false);
-            // Mark as already responded so buttons are disabled
             const card = document.querySelector(".gemini-plan-approval:last-child");
             if (card) {
               card.classList.add("approved");
               card.querySelector(".gemini-plan-header").textContent = "Plan";
               card.querySelectorAll("button").forEach(b => { b.disabled = true; b.style.display = "none"; });
             }
+          } else if (/ask.*question/i.test(name)) {
+            // AskUserQuestion: render completed question card with selected answer
+            geminiRenderCompletedQuestion(tu ? tu.parameters : {}, d.output || "", d.status);
           } else {
             geminiRenderCompletedTool(name, d.tool_id, tu ? tu.parameters : {}, d.status, d.output);
           }
