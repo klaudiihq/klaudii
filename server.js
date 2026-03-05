@@ -31,6 +31,18 @@ let config = loadConfig();
 const app = express();
 app.use(express.json());
 
+// Allow Chrome extension to reach the API from any origin
+app.use((req, res, next) => {
+  const origin = req.headers.origin || "";
+  if (origin.startsWith("chrome-extension://") || origin.startsWith("moz-extension://")) {
+    res.setHeader("Access-Control-Allow-Origin", origin);
+    res.setHeader("Access-Control-Allow-Methods", "GET, POST, PATCH, DELETE, OPTIONS");
+    res.setHeader("Access-Control-Allow-Headers", "Content-Type");
+    if (req.method === "OPTIONS") return res.sendStatus(204);
+  }
+  next();
+});
+
 // --- Setup / limp-mode routes (registered before static middleware) ---
 setup.start();
 
