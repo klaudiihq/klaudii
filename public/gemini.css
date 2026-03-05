@@ -998,3 +998,129 @@ summary.gemini-tool-summary::marker { display: none; }
 .gemini-approval-resolved.denied {
   color: var(--error, #ef4444);
 }
+
+/* --- Color diffs for Edit tool --- */
+
+.gemini-diff {
+  font-family: "SF Mono", "Menlo", "Monaco", monospace;
+  font-size: 0.78rem;
+  line-height: 1.5;
+  margin: 0;
+  padding: 0.5rem;
+  background: var(--bg, #1a1a2e);
+  border-radius: 4px;
+  overflow-x: auto;
+  white-space: pre;
+}
+.diff-removed {
+  background: rgba(248, 81, 73, 0.15);
+  color: #f85149;
+}
+.diff-added {
+  background: rgba(63, 185, 80, 0.15);
+  color: #3fb950;
+}
+
+/* --- Thinking blocks --- */
+
+.gemini-thinking-block {
+  margin: 0.25rem 0;
+  font-size: 0.8rem;
+  opacity: 0.7;
+}
+.gemini-thinking-block summary {
+  cursor: pointer;
+  font-style: italic;
+  color: var(--text-muted, #888);
+}
+.gemini-thinking-body {
+  font-family: "SF Mono", "Menlo", monospace;
+  font-size: 0.75rem;
+  white-space: pre-wrap;
+  padding: 0.5rem;
+  margin-top: 0.25rem;
+  background: var(--bg, #1a1a2e);
+  border-radius: 4px;
+  max-height: 300px;
+  overflow-y: auto;
+  color: var(--text-muted, #888);
+}
+
+/* --- System notes (compaction, permission mode changes) --- */
+
+.gemini-system-note {
+  font-size: 0.72rem;
+  color: var(--text-muted, #888);
+  text-align: center;
+  padding: 0.25rem 0;
+  opacity: 0.7;
+}
+
+/* --- Background task cards --- */
+
+.gemini-task-card {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.5rem 0.75rem;
+  margin: 0.25rem 0;
+  border-radius: 6px;
+  font-size: 0.8rem;
+  background: var(--bg-card, #232339);
+  border-left: 3px solid var(--accent, #6d6dff);
+}
+.gemini-task-card.running .gemini-task-status { color: var(--accent, #6d6dff); }
+.gemini-task-card.success .gemini-task-status { color: #3fb950; }
+.gemini-task-card.error .gemini-task-status { color: #f85149; }
+.gemini-task-desc { font-weight: 500; }
+.gemini-task-detail {
+  width: 100%;
+  font-size: 0.72rem;
+  color: var(--text-muted, #888);
+}
+.gemini-task-summary {
+  width: 100%;
+  font-size: 0.75rem;
+  margin-top: 0.25rem;
+}
+
+/* --- Result footer (cost / tokens / duration) --- */
+
+.gemini-result-footer {
+  font-size: 0.68rem;
+  color: var(--text-muted, #888);
+  text-align: right;
+  padding: 0.15rem 0.5rem;
+  opacity: 0.6;
+}
+.gemini-result-error {
+  font-size: 0.8rem;
+  color: #f85149;
+  padding: 0.35rem 0.75rem;
+  margin: 0.25rem 0;
+  background: rgba(248, 81, 73, 0.1);
+  border-radius: 4px;
+  border-left: 3px solid #f85149;
+}
+
+/* --- Permission description/reason --- */
+
+.gemini-permission-desc {
+  font-size: 0.82rem;
+  margin-bottom: 0.25rem;
+}
+.gemini-permission-reason {
+  font-size: 0.75rem;
+  color: var(--text-muted, #888);
+  font-style: italic;
+  margin-bottom: 0.25rem;
+}
+
+/* --- Tool elapsed time --- */
+
+.gemini-tool-timer {
+  font-size: 0.72rem;
+  color: var(--text-muted, #888);
+  margin-left: 0.5rem;
+}

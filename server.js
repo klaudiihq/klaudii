@@ -709,6 +709,26 @@ wss.on("connection", (ws) => {
         console.log(`[gemini-ws] tool_result_response workspace=${workspace} tool_id=${tool_id}`);
         claudeChat.sendToolResult(workspace, tool_id, content);
       }
+    } else if (type === "set_model") {
+      // Runtime model switch — send control_request to Claude relay
+      const { model: newModel } = msg;
+      if (workspace && newModel) {
+        console.log(`[gemini-ws] set_model workspace=${workspace} model=${newModel}`);
+        claudeChat.sendControlRequest(workspace, "set_model", { model: newModel });
+      }
+    } else if (type === "set_permission_mode") {
+      // Runtime permission mode switch
+      const { mode: newMode } = msg;
+      if (workspace && newMode) {
+        console.log(`[gemini-ws] set_permission_mode workspace=${workspace} mode=${newMode}`);
+        claudeChat.sendControlRequest(workspace, "set_permission_mode", { permissionMode: newMode });
+      }
+    } else if (type === "interrupt") {
+      // Soft interrupt — tell Claude to stop current turn gracefully
+      if (workspace) {
+        console.log(`[gemini-ws] interrupt workspace=${workspace}`);
+        claudeChat.sendControlRequest(workspace, "interrupt");
+      }
     }
   });
 });
