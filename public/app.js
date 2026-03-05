@@ -30,7 +30,7 @@ const PERM_BADGE_LABELS = { yolo: "bypass", ask: "ask", strict: "plan" };
 const PERM_MODE_LABELS = { yolo: "Bypass Permissions", ask: "Ask Permissions", strict: "Plan Mode" };
 
 const CHAT_MODES = ["gemini", "claude-local", "claude-remote"];
-const CHAT_MODE_LABELS = { "gemini": "Gemini", "claude-local": "Claude Local", "claude-remote": "Claude Remote" };
+const CHAT_MODE_LABELS = { "gemini": "Gemini", "claude-local": "Claude", "claude-remote": "Claude RC" };
 
 function relativeTime(ts) {
   if (!ts) return null;

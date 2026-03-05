@@ -668,12 +668,39 @@ wss.on("connection", (ws) => {
         workspaceState.setState(workspace, { draft: text || "", draftMode, draftSession });
       }
     } else if (type === "permission_response") {
-      // User approved or denied a permission request — send control response back to Claude stdin
+      // User approved or denied a permission request — send control response back to Claude stdin.
+      // Only the FIRST response for a given request_id is forwarded; duplicates from other
+      // WS clients are silently dropped. This prevents race conditions when multiple tabs
+      // are open and one sends a stale/auto response.
       const { request_id, behavior, updatedInput } = msg;
       if (workspace && request_id && behavior) {
-        console.log(`[gemini-ws] permission_response workspace=${workspace} request_id=${request_id} behavior=${behavior}`);
-        workspaceState.setPendingPermission(workspace, null);
-        claudeChat.sendControlResponse(workspace, request_id, behavior, updatedInput);
+        const pending = workspaceState.getPendingPermission(workspace);
+        if (!pending || pending.request_id !== request_id) {
+          console.log(`[gemini-ws] permission_response IGNORED (already resolved) workspace=${workspace} request_id=${request_id}`);
+        } else if (
+          behavior === "allow" &&
+          /ask.*question/i.test(pending.tool_name) &&
+          (!updatedInput || !updatedInput.answers || !Object.keys(updatedInput.answers).length)
+        ) {
+          // AskUserQuestion requires answers in updatedInput.answers. Reject empty
+          // responses — these come from stale clients that auto-approve without the
+          // AskUserQuestion special-casing.
+          console.log(`[gemini-ws] permission_response REJECTED (AskUserQuestion with no answers) workspace=${workspace} request_id=${request_id} client=#${clientId}`);
+        } else {
+          console.log(`[gemini-ws] permission_response workspace=${workspace} request_id=${request_id} behavior=${behavior} client=#${clientId}`);
+          workspaceState.setPendingPermission(workspace, null);
+          claudeChat.sendControlResponse(workspace, request_id, behavior, updatedInput);
+          // Notify all other clients that this permission was resolved so they can
+          // disable their approval UI (e.g. another tab had the same prompt open).
+          broadcastToWorkspace(workspace, {
+            type: "permission_resolved",
+            workspace,
+            request_id,
+            behavior,
+            tool_name: pending.tool_name,
+            updatedInput: behavior === "allow" ? updatedInput : undefined,
+          }, clientId);
+        }
       }
     } else if (type === "tool_result_response") {
       // User answered a question tool (AskUserQuestion/ask_followup_question)
