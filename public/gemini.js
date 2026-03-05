@@ -134,6 +134,10 @@ async function geminiSwitchSession(num) {
   if (!geminiWorkspace || num === geminiSessionNum) return;
   glog(`switchSession: workspace=${geminiWorkspace} from=${geminiSessionNum} to=${num}`);
 
+  // Flush current input draft for the old session before switching
+  const input = document.getElementById("gemini-input");
+  if (input) geminiSaveDraft(input.value);
+
   // Stop any running process
   if (geminiStreaming) geminiStopStreaming();
 
@@ -169,7 +173,7 @@ async function geminiSwitchSession(num) {
   const cur = getChatParams();
   setChatParams({ ...cur, session: num });
 
-  // Reload history for the new session
+  // Reload history for the new session (geminiShowChat calls geminiRestoreDraft)
   geminiShowChat();
 }
 
@@ -213,9 +217,11 @@ async function geminiFetchModels() {
       select.appendChild(opt);
     }
 
-    // Restore previous selection if it still exists
-    if (prev && [...select.options].some((o) => o.value === prev)) {
-      select.value = prev;
+    // Restore previous selection: prefer in-memory, then localStorage
+    const savedModel = geminiWorkspace ? localStorage.getItem(`klaudii-model-${geminiWorkspace}`) : null;
+    const preferred = prev || savedModel;
+    if (preferred && [...select.options].some((o) => o.value === preferred)) {
+      select.value = preferred;
     }
 
     geminiModelsFetched = true;
@@ -381,7 +387,6 @@ let geminiDraftTimer = null;
 function geminiSaveDraft(text) {
   if (!geminiWorkspace) return;
   clearTimeout(geminiDraftTimer);
-  if (!text) return; // don't spam WS with empty drafts
   const workspace = geminiWorkspace;
   const draftMode = geminiActiveCli === "claude" ? "claude-local" : "gemini";
   const draftSession = geminiSessionNum;
@@ -404,7 +409,7 @@ async function geminiRestoreDraft(prefetchedState = null) {
   try {
     const state = prefetchedState || await fetch(`/api/workspace-state/${encodeURIComponent(geminiWorkspace)}`).then(r => r.json());
     const input = document.getElementById("gemini-input");
-    if (input && state.draft) input.value = state.draft;
+    if (input) input.value = state.draft || "";
   } catch { /* non-fatal */ }
 }
 
@@ -571,15 +576,11 @@ function handleGeminiEvent(event) {
         // Interactive approval prompt — show Approve/Deny buttons
         geminiShowApprovalPrompt(event);
       } else if (/ask.*question|askfollowup|ask_followup/i.test(toolName)) {
-        glog(`handle: ask-tool params=${JSON.stringify(params)}`);
-        // AskUserQuestion: {questions:[{question,header,options:[{label,description}]}]}
-        // Fallback path for bypass mode / Gemini — answers sent via tool_result_response.
-        // In non-bypass mode, AskUserQuestion always goes through permission_request
-        // (requiresUserInteraction=true), which handles answers via updatedInput.answers.
-        const questions = params.questions?.length
-          ? params.questions
-          : [{ question: params.question || params.prompt || "", options: params.options || params.choices || [] }];
-        geminiShowToolQuestions(toolId, questions, params, false);
+        // AskUserQuestion always triggers permission_request (requiresUserInteraction=true),
+        // so just show a pending pill here. The permission_request handler renders the
+        // interactive question card with proper answer routing via updatedInput.answers.
+        glog(`handle: ask-tool (pending pill) toolId=${toolId}`);
+        geminiAppendToolUse(toolName, toolId, params);
       } else {
         geminiAppendToolUse(toolName, toolId, params);
       }
@@ -712,6 +713,9 @@ function handleGeminiEvent(event) {
       // sent back as `updatedInput.answers` in the permission_response — NOT as a
       // separate tool_result. The tool's call() reads answers from its input.
       if (event.tool_name === "AskUserQuestion" || event.tool_name === "ask_followup_question") {
+        // Remove the pending tool pill that tool_use created for this tool
+        const pendingPill = document.querySelector(`.gemini-tool.running[data-tool-name="AskUserQuestion"], .gemini-tool.running[data-tool-name="ask_followup_question"]`);
+        if (pendingPill) pendingPill.remove();
         const toolInput = event.tool_input || {};
         const questions = toolInput.questions?.length
           ? toolInput.questions
@@ -734,9 +738,52 @@ function handleGeminiEvent(event) {
       geminiShowPermissionRequest(event.request_id, event.tool_name, event.tool_input);
       break;
 
+    case "permission_resolved":
+      // Another client already responded to this permission_request.
+      // Update the UI to show the resolved state with answers.
+      glog("handle: permission_resolved request_id=" + event.request_id + " behavior=" + event.behavior + " tool=" + event.tool_name);
+      geminiResolvePermissionUI(event.request_id, event.behavior, event.tool_name, event.updatedInput);
+      break;
+
     default:
       glog("handle: unknown event type=" + event.type + " keys=" + Object.keys(event).join(","));
       break;
+  }
+}
+
+/**
+ * Update permission/question UI for a request_id that was resolved by another client.
+ * For AskUserQuestion, highlights the selected answers. For other tools, disables buttons.
+ */
+function geminiResolvePermissionUI(requestId, behavior, toolName, updatedInput) {
+  const container = document.getElementById("gemini-messages");
+  if (!container) return;
+  const sel = CSS.escape(requestId);
+  const cards = container.querySelectorAll(
+    `.gemini-permission-request[data-request-id="${sel}"], .gemini-plan-approval[data-request-id="${sel}"], .gemini-question-card[data-request-id="${sel}"]`
+  );
+
+  for (const card of cards) {
+    // For AskUserQuestion, highlight the selected answers on the option buttons
+    if (/ask.*question/i.test(toolName) && updatedInput?.answers) {
+      const selectedValues = new Set(Object.values(updatedInput.answers));
+      card.querySelectorAll("button").forEach(b => {
+        b.disabled = true;
+        if (selectedValues.has(b.textContent.trim())) {
+          b.classList.add("selected");
+          b.textContent += " \u2713";
+        }
+      });
+    } else {
+      card.querySelectorAll("button").forEach(b => { b.disabled = true; });
+    }
+
+    const note = document.createElement("div");
+    note.style.fontSize = "0.75rem";
+    note.style.opacity = "0.7";
+    note.style.marginTop = "0.25rem";
+    note.textContent = behavior === "allow" ? "Answered in another window" : "Denied in another window";
+    card.appendChild(note);
   }
 }
 
@@ -744,6 +791,7 @@ function geminiShowPermissionRequest(requestId, toolName, toolInput) {
   const container = document.getElementById("gemini-messages");
   const div = document.createElement("div");
   div.className = "gemini-permission-request";
+  div.dataset.requestId = requestId;
 
   const header = document.createElement("div");
   header.className = "gemini-permission-header";
@@ -821,6 +869,7 @@ function geminiShowPlanApproval(id, planText, isPermissionRequest) {
 
   const div = document.createElement("div");
   div.className = "gemini-plan-approval";
+  if (isPermissionRequest) div.dataset.requestId = id;
 
   const header = document.createElement("div");
   header.className = "gemini-plan-header";
@@ -894,7 +943,8 @@ function geminiShowPlanApproval(id, planText, isPermissionRequest) {
 function geminiShowToolQuestions(id, questions, toolInput, isPermissionRequest) {
   const container = document.getElementById("gemini-messages");
   const div = document.createElement("div");
-  div.className = "gemini-permission-request";
+  div.className = isPermissionRequest ? "gemini-permission-request gemini-question-card" : "gemini-permission-request";
+  if (isPermissionRequest) div.dataset.requestId = id;
 
   const headerEl = document.createElement("div");
   headerEl.className = "gemini-permission-header";
@@ -1781,12 +1831,18 @@ async function geminiShowChat(wsState = null) {
         geminiAppendMessage(msg.role, msg.content, false, null, msg.ts);
       }
     }
-    // Flush any tool_uses that never got a result (still in-progress or orphaned)
+    // Flush any tool_uses that never got a result.
+    // If we're not currently streaming, these are orphaned/stale — render as completed.
+    // If we ARE streaming, they may still be in-progress — render as running.
+    const isCurrentlyStreaming = wsState?.streaming || geminiStreaming;
     for (const tu of pendingToolUses.values()) {
       if (tu.tool_name === "ExitPlanMode") {
         geminiShowPlanApproval(tu.tool_id, tu.parameters.plan || "");
-      } else {
+      } else if (isCurrentlyStreaming) {
         geminiAppendToolUse(tu.tool_name, tu.tool_id, tu.parameters);
+      } else {
+        // Orphaned — render as a completed tool with no output
+        geminiRenderCompletedTool(tu.tool_name, tu.tool_id, tu.parameters, "interrupted", "");
       }
     }
 
@@ -1829,6 +1885,10 @@ async function openGeminiChat(project, projectPath, cli) {
   glog(`openChat: project=${project} path=${projectPath} cli=${geminiActiveCli}`);
   geminiWorkspace = project || null;
   geminiWorkspacePath = projectPath || null;
+
+  // Clear typing guard so draft restoration isn't blocked
+  geminiLocalDraftActive = false;
+  clearTimeout(geminiLocalDraftTimeout);
 
   const cliLabel = geminiActiveCli === "claude" ? "Claude" : "Gemini";
 
@@ -1952,6 +2012,11 @@ async function openGeminiChat(project, projectPath, cli) {
 
 function closeGeminiChat() {
   glog("closeChat");
+
+  // Flush current input draft immediately so it persists across close/reopen
+  const input = document.getElementById("gemini-input");
+  if (input) geminiSaveDraft(input.value);
+
   geminiStopStreamPoll();
   document.getElementById("gemini-overlay").classList.add("hidden");
   document.body.classList.remove("chat-open");
@@ -2289,6 +2354,11 @@ window.addEventListener("popstate", () => {
 // Persist permission mode selection per workspace
 document.getElementById("gemini-permission-mode")?.addEventListener("change", function() {
   geminiSavePermissionMode(this.value);
+});
+
+// Persist model selection per workspace
+document.getElementById("gemini-model")?.addEventListener("change", function() {
+  if (geminiWorkspace) localStorage.setItem(`klaudii-model-${geminiWorkspace}`, this.value);
 });
 
 // Draft sync — save as user types + set local typing guard

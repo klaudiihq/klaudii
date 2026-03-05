@@ -449,6 +449,11 @@ h2 {
 .chat-mode-pill.mode-claude-local:hover  { filter: brightness(1.1); }
 .chat-mode-pill.mode-claude-remote:hover { filter: brightness(1.1); }
 
+/* Streaming/active state — darker backgrounds for readability */
+.chat-mode-pill.streaming.mode-gemini        { background: var(--s-blue-deep); }
+.chat-mode-pill.streaming.mode-claude-local  { background: color-mix(in srgb, var(--s-yellow) 25%, var(--bg)); }
+.chat-mode-pill.streaming.mode-claude-remote { background: color-mix(in srgb, var(--s-green) 25%, var(--bg)); }
+
 /* Remote timing row */
 .remote-timing {
   font-size: 10px;
