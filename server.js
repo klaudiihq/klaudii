@@ -573,7 +573,11 @@ wss.on("connection", (ws) => {
           if (event.type === "permission_request") {
             workspaceState.setPendingPermission(workspace, event);
           }
-          broadcastToWorkspace(workspace, { ...event, workspace });
+          // Don't broadcast raw result events — we handle them below with
+          // a curated version (stats only) + "done" sentinel.
+          if (event.type !== "result") {
+            broadcastToWorkspace(workspace, { ...event, workspace });
+          }
           // Accumulate assistant message content
           if (event.type === "message" && (event.role === "assistant" || !event.role)) {
             assistantText += event.content || "";
@@ -764,7 +768,10 @@ claudeChat.reconnectActiveRelays(config, (workspace, handle) => {
     if (event.type === "permission_request") {
       workspaceState.setPendingPermission(workspace, event);
     }
-    broadcastToWorkspace(workspace, { ...event, workspace });
+    // Don't broadcast raw result events — handled below with curated stats + "done"
+    if (event.type !== "result") {
+      broadcastToWorkspace(workspace, { ...event, workspace });
+    }
     if (event.type === "message" && (event.role === "assistant" || !event.role)) {
       workspaceState.setStreaming(workspace, true);
       assistantText += event.content || "";
