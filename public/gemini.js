@@ -741,7 +741,7 @@ function handleGeminiEvent(event) {
         geminiShowPlanApproval(event.request_id, (event.tool_input || {}).plan || "", true);
         break;
       }
-      geminiShowPermissionRequest(event.request_id, event.tool_name, event.tool_input);
+      geminiShowPermissionRequest(event.request_id, event.tool_name, event.tool_input, event.description, event.decision_reason);
       break;
 
     case "permission_resolved":
@@ -750,6 +750,84 @@ function handleGeminiEvent(event) {
       glog("handle: permission_resolved request_id=" + event.request_id + " behavior=" + event.behavior + " tool=" + event.tool_name);
       geminiResolvePermissionUI(event.request_id, event.behavior, event.tool_name, event.updatedInput);
       break;
+
+    case "thinking":
+      geminiRemoveThinking();
+      glog("handle: thinking contentLen=" + (event.content || "").length);
+      geminiAppendThinkingBlock(event.content || "");
+      break;
+
+    case "tool_progress": {
+      const tpId = event.tool_use_id || "";
+      const elapsed = event.elapsed_time_seconds;
+      glog(`handle: tool_progress id=${tpId} elapsed=${elapsed}s`);
+      if (tpId && elapsed != null) {
+        const pill = document.querySelector(`.gemini-tool.running[data-tool-id="${CSS.escape(tpId)}"]`);
+        if (pill) {
+          let timerEl = pill.querySelector(".gemini-tool-timer");
+          if (!timerEl) {
+            timerEl = document.createElement("span");
+            timerEl.className = "gemini-tool-timer";
+            const summary = pill.querySelector(".gemini-tool-summary");
+            if (summary) summary.appendChild(timerEl);
+          }
+          timerEl.textContent = ` ${Math.round(elapsed)}s`;
+        }
+      }
+      break;
+    }
+
+    case "result":
+      glog("handle: result stats=" + JSON.stringify(event.stats || {}).slice(0, 200) + " subtype=" + (event.subtype || "success"));
+      geminiShowResultFooter(event.stats, event.subtype, event.errors);
+      break;
+
+    case "system_status":
+      glog("handle: system_status status=" + event.status + " permMode=" + event.permissionMode);
+      if (event.permissionMode) {
+        geminiAppendSystemNote("Permission mode changed to " + event.permissionMode);
+      }
+      break;
+
+    case "compact_boundary":
+      glog("handle: compact_boundary pre=" + event.pre_tokens + " post=" + event.post_tokens);
+      geminiAppendSystemNote(
+        "Context compacted" + (event.pre_tokens ? ` (was ~${Math.round(event.pre_tokens / 1000)}k tokens)` : "")
+      );
+      break;
+
+    case "task_started":
+      glog("handle: task_started id=" + event.task_id + " desc=" + event.description);
+      geminiAppendTaskCard(event.task_id, event.description, "running");
+      break;
+
+    case "task_progress": {
+      glog("handle: task_progress id=" + event.task_id);
+      const taskCard = document.querySelector(`.gemini-task-card[data-task-id="${CSS.escape(event.task_id)}"]`);
+      if (taskCard) {
+        const detail = taskCard.querySelector(".gemini-task-detail");
+        if (detail && event.tool_name) detail.textContent = `Last tool: ${event.tool_name}`;
+      }
+      break;
+    }
+
+    case "task_notification": {
+      glog("handle: task_notification id=" + event.task_id + " status=" + event.status);
+      const taskEl = document.querySelector(`.gemini-task-card[data-task-id="${CSS.escape(event.task_id)}"]`);
+      if (taskEl) {
+        taskEl.classList.remove("running");
+        taskEl.classList.add(event.status === "completed" ? "success" : "error");
+        const statusEl = taskEl.querySelector(".gemini-task-status");
+        if (statusEl) statusEl.textContent = event.status === "completed" ? "✓ Completed" : "✗ " + event.status;
+        if (event.summary) {
+          const sumEl = document.createElement("div");
+          sumEl.className = "gemini-task-summary";
+          sumEl.textContent = event.summary;
+          taskEl.appendChild(sumEl);
+        }
+      }
+      break;
+    }
 
     default:
       glog("handle: unknown event type=" + event.type + " keys=" + Object.keys(event).join(","));
@@ -795,7 +873,7 @@ function geminiResolvePermissionUI(requestId, behavior, toolName, updatedInput) 
   }
 }
 
-function geminiShowPermissionRequest(requestId, toolName, toolInput) {
+function geminiShowPermissionRequest(requestId, toolName, toolInput, description, decisionReason) {
   const container = document.getElementById("gemini-messages");
   const div = document.createElement("div");
   div.className = "gemini-permission-request";
@@ -805,6 +883,22 @@ function geminiShowPermissionRequest(requestId, toolName, toolInput) {
   header.className = "gemini-permission-header";
   header.textContent = toolName ? `Claude wants to use: ${toolName}` : "Claude is asking for permission";
   div.appendChild(header);
+
+  // Show human-readable description if available
+  if (description) {
+    const descEl = document.createElement("div");
+    descEl.className = "gemini-permission-desc";
+    descEl.textContent = description;
+    div.appendChild(descEl);
+  }
+
+  // Show decision reason if available
+  if (decisionReason) {
+    const reasonEl = document.createElement("div");
+    reasonEl.className = "gemini-permission-reason";
+    reasonEl.textContent = decisionReason;
+    div.appendChild(reasonEl);
+  }
 
   // Show key input fields for context (command, file_path, etc.)
   if (toolInput && Object.keys(toolInput).length) {
@@ -1287,19 +1381,25 @@ function geminiRenderCompletedTool(toolName, toolId, params, status, output) {
     (desc ? `<span class="gemini-tool-desc">${geminiEscHtml(desc)}</span>` : "");
   pill.appendChild(summary);
 
-  const paramsStr = typeof params === "object" ? JSON.stringify(params, null, 2) : String(params || "");
-  if (paramsStr && paramsStr !== "{}") {
-    const sec = document.createElement("div");
-    sec.className = "gemini-tool-section";
-    sec.innerHTML = `<div class="gemini-tool-section-label">Parameters</div>`;
-    const pre = document.createElement("pre");
-    pre.textContent = paramsStr;
-    sec.appendChild(pre);
-    pill.appendChild(sec);
+  // Edit tool: show diff instead of raw params
+  if (!isError && /^edit$/i.test(toolName) && params && params.old_string != null) {
+    geminiRenderEditDiffFromParams(pill, params);
+  } else {
+    const paramsStr = typeof params === "object" ? JSON.stringify(params, null, 2) : String(params || "");
+    if (paramsStr && paramsStr !== "{}") {
+      const sec = document.createElement("div");
+      sec.className = "gemini-tool-section";
+      sec.innerHTML = `<div class="gemini-tool-section-label">Parameters</div>`;
+      const pre = document.createElement("pre");
+      pre.textContent = paramsStr;
+      sec.appendChild(pre);
+      pill.appendChild(sec);
+    }
   }
 
   const trimmed = (output || "").trim();
-  if (trimmed) {
+  // Skip output for successful Edit diffs — the diff itself is the output
+  if (trimmed && !(!isError && /^edit$/i.test(toolName) && params?.old_string != null)) {
     const sec = document.createElement("div");
     sec.className = "gemini-tool-section";
     sec.innerHTML = `<div class="gemini-tool-section-label">${isError ? "Error" : "Output"}</div>`;
@@ -1385,9 +1485,16 @@ function geminiUpdateToolResult(toolId, status, output, error) {
       }
     }
 
-    // Append output section directly to pill
+    const toolName = pill.dataset.toolName || "";
+
+    // For Edit tool: replace raw params with a color diff
+    if (!isError && /^edit$/i.test(toolName)) {
+      geminiRenderEditDiff(pill);
+    }
+
+    // Append output section (skip for Edit — the diff is the output)
     const trimmed = (error || output || "").trim();
-    if (trimmed) {
+    if (trimmed && !(!isError && /^edit$/i.test(toolName))) {
       const section = document.createElement("div");
       section.className = "gemini-tool-section";
       section.innerHTML = `<div class="gemini-tool-section-label">${isError ? "Error" : "Output"}</div>`;
@@ -1432,6 +1539,175 @@ function geminiAppendError(message) {
   div.textContent = message;
   container.appendChild(div);
   geminiScrollToBottom();
+}
+
+/**
+ * Render a color diff for an Edit tool pill.
+ * Extracts old_string/new_string from the pill's stored params and replaces
+ * the Parameters section with a unified diff view.
+ */
+function geminiRenderEditDiff(pill) {
+  // Parse params from the pre element in the Parameters section
+  const paramSection = pill.querySelector(".gemini-tool-section");
+  if (!paramSection) return;
+  const paramPre = paramSection.querySelector("pre");
+  if (!paramPre) return;
+  let params;
+  try { params = JSON.parse(paramPre.textContent); } catch { return; }
+
+  const oldStr = params.old_string || "";
+  const newStr = params.new_string || "";
+  const filePath = params.file_path || "";
+
+  // Replace the params section with a diff view
+  paramSection.innerHTML = "";
+  const label = document.createElement("div");
+  label.className = "gemini-tool-section-label";
+  label.textContent = filePath || "Diff";
+  paramSection.appendChild(label);
+
+  const diffEl = document.createElement("pre");
+  diffEl.className = "gemini-diff";
+
+  // Build simple unified diff lines
+  const oldLines = oldStr.split("\n");
+  const newLines = newStr.split("\n");
+
+  oldLines.forEach(line => {
+    const span = document.createElement("span");
+    span.className = "diff-removed";
+    span.textContent = "- " + line + "\n";
+    diffEl.appendChild(span);
+  });
+  newLines.forEach(line => {
+    const span = document.createElement("span");
+    span.className = "diff-added";
+    span.textContent = "+ " + line + "\n";
+    diffEl.appendChild(span);
+  });
+
+  paramSection.appendChild(diffEl);
+}
+
+/**
+ * Render a diff for Edit tool in completed tool history (non-live).
+ * Called from geminiRenderCompletedTool when tool_name is Edit.
+ */
+function geminiRenderEditDiffFromParams(pill, params) {
+  const oldStr = params.old_string || "";
+  const newStr = params.new_string || "";
+  const filePath = params.file_path || "";
+
+  const sec = document.createElement("div");
+  sec.className = "gemini-tool-section";
+  const label = document.createElement("div");
+  label.className = "gemini-tool-section-label";
+  label.textContent = filePath || "Diff";
+  sec.appendChild(label);
+
+  const diffEl = document.createElement("pre");
+  diffEl.className = "gemini-diff";
+  (oldStr.split("\n")).forEach(line => {
+    const span = document.createElement("span");
+    span.className = "diff-removed";
+    span.textContent = "- " + line + "\n";
+    diffEl.appendChild(span);
+  });
+  (newStr.split("\n")).forEach(line => {
+    const span = document.createElement("span");
+    span.className = "diff-added";
+    span.textContent = "+ " + line + "\n";
+    diffEl.appendChild(span);
+  });
+  sec.appendChild(diffEl);
+  pill.appendChild(sec);
+}
+
+/** Render a collapsible thinking block (extended thinking / chain-of-thought). */
+function geminiAppendThinkingBlock(content) {
+  const container = document.getElementById("gemini-messages");
+  // Append to existing thinking block if one is open (streaming)
+  const existing = container.querySelector("details.gemini-thinking-block:last-child");
+  if (existing && existing.open) {
+    const body = existing.querySelector(".gemini-thinking-body");
+    if (body) {
+      body.textContent += content;
+      geminiScrollToBottom();
+      return;
+    }
+  }
+  const details = document.createElement("details");
+  details.className = "gemini-thinking-block";
+  const summary = document.createElement("summary");
+  summary.textContent = "Thinking\u2026";
+  details.appendChild(summary);
+  const body = document.createElement("div");
+  body.className = "gemini-thinking-body";
+  body.textContent = content;
+  details.appendChild(body);
+  container.appendChild(details);
+  geminiScrollToBottom();
+}
+
+/** Show a thin system note (compaction, permission mode change, etc.). */
+function geminiAppendSystemNote(text) {
+  const container = document.getElementById("gemini-messages");
+  const div = document.createElement("div");
+  div.className = "gemini-system-note";
+  div.textContent = text;
+  container.appendChild(div);
+  geminiScrollToBottom();
+}
+
+/** Show a background task card. */
+function geminiAppendTaskCard(taskId, description, status) {
+  const container = document.getElementById("gemini-messages");
+  const div = document.createElement("div");
+  div.className = "gemini-task-card running";
+  div.dataset.taskId = taskId;
+  div.innerHTML =
+    `<span class="gemini-task-status">\u21BB Running</span>` +
+    `<span class="gemini-task-desc">${geminiEscHtml(description)}</span>` +
+    `<div class="gemini-task-detail"></div>`;
+  container.appendChild(div);
+  geminiScrollToBottom();
+}
+
+/** Show cost/token/duration footer after a turn completes. */
+function geminiShowResultFooter(stats, subtype, errors) {
+  if (!stats && !subtype) return;
+  const container = document.getElementById("gemini-messages");
+
+  // Show error banner for non-success results
+  if (subtype && subtype !== "success") {
+    const errorDiv = document.createElement("div");
+    errorDiv.className = "gemini-result-error";
+    if (subtype === "error_max_turns") {
+      errorDiv.textContent = "Claude reached the maximum number of turns" + (stats?.turns ? ` (${stats.turns})` : "");
+    } else if (subtype === "error_max_budget_usd") {
+      errorDiv.textContent = "Claude exceeded the budget limit" + (stats?.cost ? ` ($${stats.cost.toFixed(2)})` : "");
+    } else if (subtype === "error_during_execution") {
+      errorDiv.textContent = "Error during execution";
+      if (errors?.length) errorDiv.textContent += ": " + errors.map(e => e.message || e).join("; ");
+    } else {
+      errorDiv.textContent = "Turn ended: " + subtype;
+    }
+    container.appendChild(errorDiv);
+  }
+
+  // Show cost/token stats as a subtle footer
+  if (stats && (stats.cost != null || stats.total_tokens || stats.duration_ms)) {
+    const parts = [];
+    if (stats.cost != null) parts.push("$" + stats.cost.toFixed(4));
+    if (stats.total_tokens) parts.push(stats.total_tokens >= 1000 ? (stats.total_tokens / 1000).toFixed(1) + "k tokens" : stats.total_tokens + " tokens");
+    if (stats.duration_ms) parts.push((stats.duration_ms / 1000).toFixed(1) + "s");
+    if (parts.length) {
+      const footer = document.createElement("div");
+      footer.className = "gemini-result-footer";
+      footer.textContent = parts.join(" \u00B7 ");
+      container.appendChild(footer);
+    }
+  }
 }
 
 function geminiScrollToBottom() {
@@ -2256,6 +2532,11 @@ function geminiStopStreaming() {
   glog("stopStreaming");
   if (!geminiWorkspace) return;
   if (geminiWs && geminiWs.readyState === WebSocket.OPEN) {
+    // For Claude: send soft interrupt first. If Claude doesn't respond within
+    // 5 seconds, the server will escalate to kill.
+    if (geminiActiveCli === "claude") {
+      geminiWs.send(JSON.stringify({ type: "interrupt", workspace: geminiWorkspace }));
+    }
     geminiWs.send(JSON.stringify({ type: "stop", workspace: geminiWorkspace, cli: geminiActiveCli }));
   }
   // Immediate feedback — don't wait for server round-trip
@@ -2366,14 +2647,24 @@ window.addEventListener("popstate", () => {
   }
 });
 
-// Persist permission mode selection per workspace
+// Persist permission mode + send runtime switch to active relay
 document.getElementById("gemini-permission-mode")?.addEventListener("change", function() {
   geminiSavePermissionMode(this.value);
+  if (this.value && geminiActiveCli === "claude" && geminiWs && geminiWs.readyState === WebSocket.OPEN) {
+    geminiWs.send(JSON.stringify({ type: "set_permission_mode", workspace: geminiWorkspace, mode: this.value }));
+    glog("perm-switch: sent set_permission_mode=" + this.value);
+  }
 });
 
-// Persist model selection per workspace
+// Persist model selection per workspace + send runtime model switch to active relay
 document.getElementById("gemini-model")?.addEventListener("change", function() {
-  if (geminiWorkspace) localStorage.setItem(`klaudii-model-${geminiWorkspace}`, this.value);
+  const newModel = this.value;
+  if (geminiWorkspace) localStorage.setItem(`klaudii-model-${geminiWorkspace}`, newModel);
+  // Send runtime model switch to active Claude relay (takes effect on next API call)
+  if (newModel && geminiActiveCli === "claude" && geminiWs && geminiWs.readyState === WebSocket.OPEN) {
+    geminiWs.send(JSON.stringify({ type: "set_model", workspace: geminiWorkspace, model: newModel }));
+    glog("model-switch: sent set_model=" + newModel);
+  }
 });
 
 // Draft sync — save as user types + set local typing guard
