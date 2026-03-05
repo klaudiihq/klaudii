@@ -40,28 +40,8 @@ jobs:
           GCP_REGION: ${{ secrets.GCP_REGION }}
         run: |
           ACCESS_TOKEN=$(gcloud auth print-access-token)
-          BASE="https://${GCP_REGION}-aiplatform.googleapis.com/v1/projects/${GCP_PROJECT_ID}/locations/${GCP_REGION}/publishers/anthropic/models"
-
-          for MODEL in claude-sonnet-4-6 claude-sonnet-4-5@20250929 claude-sonnet-4@20250514 claude-3-5-sonnet-v2@20241022; do
-            ENDPOINT="${BASE}/${MODEL}:rawPredict"
-            STATUS=$(curl -s -o /dev/null -w "%{http_code}" \
-              -X POST "$ENDPOINT" \
-              -H "Authorization: Bearer ${ACCESS_TOKEN}" \
-              -H "Content-Type: application/json" \
-              -d '{"anthropic_version":"vertex-2023-10-16","max_tokens":1,"messages":[{"role":"user","content":"hi"}]}')
-            if [ "$STATUS" = "200" ]; then
-              echo "Using model: $MODEL"
-              break
-            fi
-            echo "Model $MODEL returned $STATUS, trying next..."
-          done
-
-          if [ "$STATUS" != "200" ]; then
-            echo "::error::No Claude Sonnet model available in ${GCP_REGION}"
-            exit 1
-          fi
-
-          ENDPOINT="${BASE}/${MODEL}:rawPredict"
+          MODEL="gemini-2.5-flash"
+          ENDPOINT="https://${GCP_REGION}-aiplatform.googleapis.com/v1/projects/${GCP_PROJECT_ID}/locations/${GCP_REGION}/publishers/google/models/${MODEL}:generateContent"
 
           # Truncate large diffs
           head -c 100000 /tmp/pr-diff.patch > /tmp/pr-diff-truncated.patch
@@ -72,9 +52,8 @@ jobs:
           python3 -c "
           import json
           data = {
-              'anthropic_version': 'vertex-2023-10-16',
-              'max_tokens': 4096,
-              'system': '''You are a code reviewer for the Klaudii project (a web-based manager for Claude Code CLI sessions). Review this PR diff for:
+              'systemInstruction': {
+                  'parts': [{'text': '''You are a code reviewer for the Klaudii project (a web-based manager for Claude Code CLI sessions). Review this PR diff for:
 
           1. SECURITY: API keys, tokens, secrets, credentials, private URLs
           2. PRIVACY: Conversation history, chat logs, user messages, drafts, session state
@@ -86,8 +65,10 @@ jobs:
           **Security & Privacy**: PASS or FAIL with specifics
           **Code Review**: Brief notes on anything notable (keep it short)
 
-          Be strict on security/privacy. Be helpful but concise on code quality.''',
-              'messages': [{'role': 'user', 'content': 'Review this PR diff:\n\n' + $ESCAPED_DIFF}]
+          Be strict on security/privacy. Be helpful but concise on code quality.'''}]
+              },
+              'contents': [{'role': 'user', 'parts': [{'text': 'Review this PR diff:\n\n' + $ESCAPED_DIFF}]}],
+              'generationConfig': {'maxOutputTokens': 4096}
           }
           with open('/tmp/review-request.json', 'w') as f:
               json.dump(data, f)
@@ -98,7 +79,12 @@ jobs:
             -H "Content-Type: application/json" \
             -d @/tmp/review-request.json)
 
-          REVIEW=$(echo "$RESPONSE" | python3 -c "import sys,json; r=json.load(sys.stdin); print(r['content'][0]['text'])" 2>/dev/null || echo "ERROR: Failed to parse API response: $RESPONSE")
+          REVIEW=$(echo "$RESPONSE" | python3 -c "
+          import sys, json
+          r = json.load(sys.stdin)
+          parts = r.get('candidates', [{}])[0].get('content', {}).get('parts', [])
+          print(parts[0]['text'] if parts else 'ERROR: No response')
+          " 2>/dev/null || echo "ERROR: Failed to parse API response: $RESPONSE")
 
           echo "$REVIEW" > /tmp/review-result.txt
 
@@ -128,7 +114,7 @@ jobs:
           ${REVIEW}
 
           ---
-          *Automated review by Claude Sonnet on Vertex AI · [sync-to-public](../../actions/workflows/sync-to-public.yml) will run LLM review again before pushing to the public repo.*
+          *Automated review by Gemini Flash on Vertex AI · [sync-to-public](../../actions/workflows/sync-to-public.yml) will run LLM review again before pushing to the public repo.*
           EOF
           )
 

@@ -78,32 +78,8 @@ jobs:
           GCP_REGION: ${{ secrets.GCP_REGION }}
         run: |
           ACCESS_TOKEN=$(gcloud auth print-access-token)
-          BASE="https://${GCP_REGION}-aiplatform.googleapis.com/v1/projects/${GCP_PROJECT_ID}/locations/${GCP_REGION}/publishers/anthropic/models"
-
-          # Try models newest-first until one responds
-          for MODEL in claude-sonnet-4-6 claude-sonnet-4-5@20250929 claude-sonnet-4@20250514 claude-3-5-sonnet-v2@20241022; do
-            ENDPOINT="${BASE}/${MODEL}:rawPredict"
-            BODY=$(curl -s -w "\n%{http_code}" \
-              -X POST "$ENDPOINT" \
-              -H "Authorization: Bearer ${ACCESS_TOKEN}" \
-              -H "Content-Type: application/json" \
-              -d '{"anthropic_version":"vertex-2023-10-16","max_tokens":1,"messages":[{"role":"user","content":"hi"}]}')
-            STATUS=$(echo "$BODY" | tail -1)
-            if [ "$STATUS" = "200" ]; then
-              echo "Using model: $MODEL"
-              echo "Selected model: $MODEL" >> "$GITHUB_STEP_SUMMARY"
-              break
-            fi
-            ERRMSG=$(echo "$BODY" | head -n -1 | head -5)
-            echo "Model $MODEL returned $STATUS: $ERRMSG"
-          done
-
-          if [ "$STATUS" != "200" ]; then
-            echo "::error::No Claude Sonnet model available in ${GCP_REGION}"
-            exit 1
-          fi
-
-          ENDPOINT="${BASE}/${MODEL}:rawPredict"
+          MODEL="gemini-2.5-flash"
+          ENDPOINT="https://${GCP_REGION}-aiplatform.googleapis.com/v1/projects/${GCP_PROJECT_ID}/locations/${GCP_REGION}/publishers/google/models/${MODEL}:generateContent"
 
           DIFF_CONTENT=$(cat /tmp/sync-diff.patch)
           ESCAPED_DIFF=$(echo "$DIFF_CONTENT" | python3 -c 'import sys,json; print(json.dumps(sys.stdin.read()))')
@@ -111,21 +87,29 @@ jobs:
           python3 -c "
           import json
           data = {
-              'anthropic_version': 'vertex-2023-10-16',
-              'max_tokens': 4096,
-              'system': 'You are a security reviewer for a public GitHub repo. Review the following git diff that is about to be pushed to a PUBLIC repository.\n\nFlag ANY of the following as BLOCKED:\n- API keys, tokens, secrets, passwords, or credentials\n- Conversation history, chat logs, user messages, or drafts\n- Session state, workspace state, or runtime data files\n- Planning documents, scratch notes, or internal assessments that reference private discussions\n- Personal information (emails, names in non-attribution contexts, private URLs)\n- References to private infrastructure (internal IPs, private hostnames, database URLs)\n\nRespond with EXACTLY one of:\n- APPROVED — if the diff is clean for public release\n- BLOCKED — followed by a list of specific issues found\n\nBe strict. When in doubt, block.',
-              'messages': [{'role': 'user', 'content': 'Review this diff for a public repo sync:\n\n' + $ESCAPED_DIFF}]
+              'systemInstruction': {
+                  'parts': [{'text': 'You are a security reviewer for a public GitHub repo. Review the following git diff that is about to be pushed to a PUBLIC repository.\n\nFlag ANY of the following as BLOCKED:\n- API keys, tokens, secrets, passwords, or credentials\n- Conversation history, chat logs, user messages, or drafts\n- Session state, workspace state, or runtime data files\n- Planning documents, scratch notes, or internal assessments that reference private discussions\n- Personal information (emails, names in non-attribution contexts, private URLs)\n- References to private infrastructure (internal IPs, private hostnames, database URLs)\n\nRespond with EXACTLY one of:\n- APPROVED — if the diff is clean for public release\n- BLOCKED — followed by a list of specific issues found\n\nBe strict. When in doubt, block.'}]
+              },
+              'contents': [{'role': 'user', 'parts': [{'text': 'Review this diff for a public repo sync:\n\n' + $ESCAPED_DIFF}]}],
+              'generationConfig': {'maxOutputTokens': 4096}
           }
           with open('/tmp/review-request.json', 'w') as f:
               json.dump(data, f)
           "
+
+          echo "Using model: $MODEL" >> "$GITHUB_STEP_SUMMARY"
 
           RESPONSE=$(curl -s -X POST "$ENDPOINT" \
             -H "Authorization: Bearer ${ACCESS_TOKEN}" \
             -H "Content-Type: application/json" \
             -d @/tmp/review-request.json)
 
-          REVIEW=$(echo "$RESPONSE" | python3 -c "import sys,json; r=json.load(sys.stdin); print(r['content'][0]['text'])" 2>/dev/null || echo "ERROR: Failed to parse API response: $RESPONSE")
+          REVIEW=$(echo "$RESPONSE" | python3 -c "
+          import sys, json
+          r = json.load(sys.stdin)
+          parts = r.get('candidates', [{}])[0].get('content', {}).get('parts', [])
+          print(parts[0]['text'] if parts else 'ERROR: No response')
+          " 2>/dev/null || echo "ERROR: Failed to parse API response: $RESPONSE")
 
           echo "### LLM Review Result" >> "$GITHUB_STEP_SUMMARY"
           echo '```' >> "$GITHUB_STEP_SUMMARY"
