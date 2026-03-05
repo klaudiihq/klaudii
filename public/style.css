@@ -1160,8 +1160,9 @@ body.chat-open .card {
 
 /* Highlight the active workspace card in sidebar */
 body.chat-open .card.active-workspace {
-  border-color: var(--btn-primary);
-  box-shadow: 0 0 0 1px var(--btn-primary);
+  border-color: var(--s-green);
+  background: var(--s-green-bg);
+  box-shadow: 0 0 0 1px var(--s-green);
 }
 
 /* =========================================================

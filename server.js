@@ -212,6 +212,17 @@ app.get("/api/gemini/apikey/:workspace", (req, res) => {
   res.json(geminiApiKeyInfo(req.params.workspace));
 });
 
+app.post("/api/gemini/:workspace/confirm", async (req, res) => {
+  const { workspace } = req.params;
+  const { callId, outcome } = req.body;
+  try {
+    const result = await gemini.confirmToolCall(workspace, callId, outcome);
+    res.json(result);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 app.get("/api/gemini/apikey", (_req, res) => {
   res.json(geminiApiKeyInfo(null));
 });
@@ -407,25 +418,7 @@ connector.init(app, config);
 
 const server = http.createServer(app);
 
-// --- Port hunting ---
-const net = require("net");
 const os  = require("os");
-
-function tryPort(port) {
-  return new Promise((resolve, reject) => {
-    const probe = net.createServer();
-    probe.unref();
-    probe.once("error", reject);
-    probe.listen(port, "0.0.0.0", () => probe.close(() => resolve(port)));
-  });
-}
-
-async function findPort(preferred = 9876, max = 9950) {
-  for (let p = preferred; p <= max; p++) {
-    try { return await tryPort(p); } catch {}
-  }
-  throw new Error("No available port found in range 9876–9950");
-}
 
 function writePortFile(port) {
   const dir = path.join(os.homedir(), "Library", "Application Support", "com.klaudii.server");
@@ -440,9 +433,7 @@ function clearPortFile() {
   try { require("fs").unlinkSync(f); } catch {}
 }
 
-process.on("exit",    clearPortFile);
-process.on("SIGINT",  () => { clearPortFile(); process.exit(); });
-process.on("SIGTERM", () => { clearPortFile(); process.exit(); });
+process.on("exit", clearPortFile);
 
 // --- Gemini WebSocket ---
 
@@ -473,7 +464,7 @@ wss.on("connection", (ws) => {
     pendingWorkspaces.clear();
   });
 
-  ws.on("message", (raw) => {
+  ws.on("message", async (raw) => {
     let msg;
     try {
       msg = JSON.parse(raw);
@@ -510,7 +501,18 @@ wss.on("connection", (ws) => {
         return;
       }
 
-      // Reject if another client is already streaming for this workspace
+      // For Claude with an active relay, append to the existing session instead of spawning a new one
+      if (backend === "claude" && claudeChat.isActive(workspace)) {
+        workspaceState.touchChatActivity(workspace);
+        workspaceState.setStreaming(workspace, true);
+        claudeChat.pushHistory(workspace, "user", message);
+        broadcastToWorkspace(workspace, { type: "user_message", workspace, content: message, ts: Date.now() }, clientId);
+        broadcastToWorkspace(workspace, { type: "streaming_start", workspace }, clientId);
+        claudeChat.appendMessage(workspace, message);
+        return;
+      }
+
+      // Reject if another client is already streaming for this workspace (Gemini)
       if (workspaceState.isStreaming(workspace)) {
         ws.send(JSON.stringify({ type: "error", workspace, message: "A response is already in progress" }));
         return;
@@ -535,7 +537,9 @@ wss.on("connection", (ws) => {
         const globalKeyField = backend === "claude" ? "claudeApiKey" : "geminiApiKey";
         const apiKey = proj[apiKeyField] || config[globalKeyField] || undefined;
         console.log(`[gemini-ws] spawning ${backend} for workspace=${workspace} path=${proj.path} hasApiKey=${!!apiKey}`);
-        const handle = backendModule.sendMessage(workspace, proj.path, message, config, { apiKey, model, images, permissionMode });
+        // For Gemini A2A: bypassPermissions = autoExecute (YOLO), anything else = interactive approval
+        const autoExecute = backend === "gemini" ? (permissionMode === "bypassPermissions") : undefined;
+        const handle = await backendModule.sendMessage(workspace, proj.path, message, config, { apiKey, model, images, permissionMode, autoExecute });
 
         // Accumulate assistant text and tool events for history persistence
         let assistantText = "";
@@ -567,22 +571,30 @@ wss.on("connection", (ws) => {
                 output: out.length > 3000 ? out.slice(0, 3000) + "\n...(truncated)" : out,
               }),
             });
+          } else if (event.type === "result") {
+            // Turn completed — persist history, reset streaming, reset accumulators for next turn
+            console.log(`[gemini-ws] turn done workspace=${workspace} cli=${backend} eventsSent=${eventsSent} assistantLen=${assistantText.length} toolEvents=${toolEvents.length}`);
+            workspaceState.setStreaming(workspace, false);
+            workspaceState.touchChatActivity(workspace);
+            const batch = [...toolEvents];
+            if (assistantText) batch.push({ role: "assistant", content: assistantText });
+            if (batch.length > 0) backendModule.pushHistoryBatch(workspace, batch);
+            broadcastToWorkspace(workspace, { type: "done", workspace, exitCode: 0 });
+            assistantText = "";
+            toolEvents.length = 0;
+            eventsSent = 0;
           }
         });
 
         handle.onDone(({ code, stderr }) => {
-          console.log(`[gemini-ws] done workspace=${workspace} cli=${backend} code=${code} eventsSent=${eventsSent} assistantLen=${assistantText.length} toolEvents=${toolEvents.length}`);
-          // Clear streaming flag — response is complete
+          console.log(`[gemini-ws] relay exited workspace=${workspace} cli=${backend} code=${code}`);
+          // Relay died — flush any incomplete turn and clean up
           workspaceState.setStreaming(workspace, false);
           pendingWorkspaces.delete(workspace);
-          // Stamp activity on completion so sorting reflects response time
           workspaceState.touchChatActivity(workspace);
-          // Persist turn: tool events (in order) + assistant reply in one batch write
           const batch = [...toolEvents];
           if (assistantText) batch.push({ role: "assistant", content: assistantText });
-          if (batch.length > 0) {
-            backendModule.pushHistoryBatch(workspace, batch);
-          }
+          if (batch.length > 0) backendModule.pushHistoryBatch(workspace, batch);
           broadcastToWorkspace(workspace, {
             type: "done",
             workspace,
@@ -647,12 +659,64 @@ wss.on("connection", (ws) => {
 gemini.recoverStreams();
 claudeChat.recoverStreams();
 
+// --- Reconnect to any Claude relay daemons that survived a server restart ---
+
+claudeChat.reconnectActiveRelays(config, (workspace, handle) => {
+  console.log(`[server] reconnected to relay workspace=${workspace}`);
+  // Don't assume streaming=true — relay may be idle between turns
+  workspaceState.setStreaming(workspace, false);
+
+  let assistantText = "";
+  const toolEvents = [];
+
+  handle.onEvent((event) => {
+    broadcastToWorkspace(workspace, { ...event, workspace });
+    if (event.type === "message" && (event.role === "assistant" || !event.role)) {
+      workspaceState.setStreaming(workspace, true);
+      assistantText += event.content || "";
+    } else if (event.type === "tool_use") {
+      workspaceState.setStreaming(workspace, true);
+      toolEvents.push({ role: "tool_use", content: JSON.stringify({ tool_name: event.tool_name, tool_id: event.tool_id, parameters: event.parameters || {} }) });
+    } else if (event.type === "tool_result") {
+      const out = event.output || "";
+      toolEvents.push({ role: "tool_result", content: JSON.stringify({ tool_id: event.tool_id, status: event.status || "success", output: out.length > 3000 ? out.slice(0, 3000) + "\n...(truncated)" : out }) });
+    } else if (event.type === "result") {
+      workspaceState.setStreaming(workspace, false);
+      workspaceState.touchChatActivity(workspace);
+      const batch = [...toolEvents];
+      if (assistantText) batch.push({ role: "assistant", content: assistantText });
+      if (batch.length > 0) claudeChat.pushHistoryBatch(workspace, batch);
+      broadcastToWorkspace(workspace, { type: "done", workspace, exitCode: 0 });
+      assistantText = "";
+      toolEvents.length = 0;
+    }
+  });
+
+  handle.onDone(({ code }) => {
+    console.log(`[server] relay exited workspace=${workspace} code=${code}`);
+    workspaceState.setStreaming(workspace, false);
+    workspaceState.touchChatActivity(workspace);
+    const batch = [...toolEvents];
+    if (assistantText) batch.push({ role: "assistant", content: assistantText });
+    if (batch.length > 0) claudeChat.pushHistoryBatch(workspace, batch);
+    broadcastToWorkspace(workspace, { type: "done", workspace, exitCode: code });
+  });
+
+  handle.onError((err) => {
+    console.error(`[server] relay error workspace=${workspace}: ${err.message}`);
+    workspaceState.setStreaming(workspace, false);
+    broadcastToWorkspace(workspace, { type: "error", workspace, message: err.message });
+  });
+});
+
 // --- Graceful shutdown: flush partial streams before exit ---
 
 function gracefulShutdown(signal) {
   console.log(`[server] ${signal} received, shutting down...`);
   gemini.stopAllProcesses();
-  claudeChat.stopAllProcesses();
+  // Do NOT kill Claude relay daemons — they are detached and designed to survive server
+  // restarts so reconnectActiveRelays() can pick them up on the next boot.
+  // Killing them here would destroy in-progress turns with no recovery path.
   // Small delay for close handlers to persist history and delete log files
   setTimeout(() => {
     // Recover anything that didn't flush in time
@@ -665,11 +729,10 @@ function gracefulShutdown(signal) {
 process.on("SIGTERM", () => gracefulShutdown("SIGTERM"));
 process.on("SIGINT", () => gracefulShutdown("SIGINT"));
 
-const preferredPort = Number(process.env.PORT || config.port || 9876);
-findPort(preferredPort).then((PORT) => {
-  server.listen(PORT, "0.0.0.0", () => {
-    writePortFile(PORT);
-    console.log(`Klaudii manager running at http://0.0.0.0:${PORT}`);
+const PORT = Number(process.env.PORT || config.port || 9876);
+server.listen(PORT, "0.0.0.0", () => {
+  writePortFile(PORT);
+  console.log(`Klaudii manager running at http://0.0.0.0:${PORT}`);
   console.log(`  tmux: ${tmux.isTmuxInstalled() ? "installed" : "NOT FOUND — run: brew install tmux"}`);
   console.log(`  ttyd: ${ttyd.isTtydInstalled() ? "installed" : "NOT FOUND — run: brew install ttyd"}`);
   console.log(`  gemini: ${gemini.isInstalled(config) ? "installed" : "not found"}`);
@@ -692,11 +755,7 @@ findPort(preferredPort).then((PORT) => {
   gemini.startQuotaRefresh();
 
   // Start periodic claude-chat auth probe (immediate + every 5 min)
-    claudeChat.startAuthCheck(config);
-  });
-}).catch((err) => {
-  console.error(`Fatal: ${err.message}`);
-  process.exit(1);
+  claudeChat.startAuthCheck(config);
 });
 
 server.on('error', (err) => {
