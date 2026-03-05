@@ -427,9 +427,22 @@ function geminiConnect() {
       glog("ws-open: retrying history fetch after server restart");
       geminiShowChat();
     } else if (geminiWasStreamingAtDisconnect && geminiWorkspace) {
-      // If we disconnected mid-stream, check whether the server recovered content
+      // Disconnected mid-stream — check whether it's still running or completed
       geminiWasStreamingAtDisconnect = false;
-      geminiRenderRecoveredContent();
+      fetch(`/api/workspace-state/${encodeURIComponent(geminiWorkspace)}`)
+        .then(r => r.json())
+        .then(wsState => {
+          if (wsState.streaming) {
+            // Stream survived the reconnect (transient blip) — re-enter poll mode
+            // with partial content so the user catches up immediately
+            geminiOpenedWhileStreaming = true;
+            geminiShowChat();
+          } else {
+            // Stream completed while disconnected — render recovered content
+            geminiRenderRecoveredContent();
+          }
+        })
+        .catch(() => geminiRenderRecoveredContent());
     }
   };
 
@@ -1383,6 +1396,10 @@ async function geminiRenderRecoveredContent() {
   const ws = geminiWorkspace;
   const sn = geminiSessionNum;
   const knownLen = (geminiHistory[ws] || []).length;
+  // Always remove the "Connection lost" banner — we're reconnected regardless of content
+  const container = document.getElementById("gemini-messages");
+  const lastEl = container?.lastElementChild;
+  if (lastEl?.classList.contains("gemini-error")) lastEl.remove();
   // Give the server a moment to finish recovery before fetching
   await new Promise(r => setTimeout(r, 600));
   try {
@@ -1393,10 +1410,6 @@ async function geminiRenderRecoveredContent() {
       return;
     }
     glog(`recovery-check: rendering ${newMsgs.length} recovered message(s)`);
-    // Remove the "Connection lost" error so recovered content reads cleanly
-    const container = document.getElementById("gemini-messages");
-    const lastEl = container?.lastElementChild;
-    if (lastEl?.classList.contains("gemini-error")) lastEl.remove();
 
     const pendingToolUses = new Map();
     for (const msg of newMsgs) {
