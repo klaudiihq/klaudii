@@ -753,6 +753,13 @@ summary.gemini-tool-summary::marker { display: none; }
   flex-wrap: wrap;
   margin-top: 0.25rem;
 }
+.gemini-permission-buttons button.selected {
+  opacity: 1;
+  font-weight: 600;
+}
+.gemini-permission-buttons button.greyed {
+  opacity: 0.4;
+}
 
 /* --- Plan approval card --- */
 

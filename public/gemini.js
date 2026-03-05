@@ -576,11 +576,10 @@ function handleGeminiEvent(event) {
         // Interactive approval prompt — show Approve/Deny buttons
         geminiShowApprovalPrompt(event);
       } else if (/ask.*question|askfollowup|ask_followup/i.test(toolName)) {
-        // AskUserQuestion always triggers permission_request (requiresUserInteraction=true),
-        // so just show a pending pill here. The permission_request handler renders the
-        // interactive question card with proper answer routing via updatedInput.answers.
-        glog(`handle: ask-tool (pending pill) toolId=${toolId}`);
-        geminiAppendToolUse(toolName, toolId, params);
+        // AskUserQuestion always triggers permission_request (requiresUserInteraction=true).
+        // Don't render anything here — the permission_request handler renders the
+        // interactive question card. Rendering a pill would leave an orphan.
+        glog(`handle: ask-tool (skipped, waiting for permission_request) toolId=${toolId}`);
       } else {
         geminiAppendToolUse(toolName, toolId, params);
       }
@@ -589,11 +588,18 @@ function handleGeminiEvent(event) {
 
     case "tool_result": {
       const toolId = event.tool_id || "";
+      const toolName = event.tool_name || "";
       const output = event.output || event.content || "";
       const status = event.status || "success";
       const error = event.error;
-      glog(`handle: tool_result id=${toolId} status=${status} outputLen=${output.length}`);
-      geminiUpdateToolResult(toolId, status, output, error);
+      glog(`handle: tool_result id=${toolId} tool=${toolName} status=${status} outputLen=${output.length}`);
+      // AskUserQuestion results are already shown in the question card — skip rendering.
+      // Check both tool_name on the event and whether a question card exists for this tool.
+      const isAskTool = /ask.*question/i.test(toolName) ||
+        document.querySelector(`.gemini-question-card`) !== null;
+      if (!isAskTool) {
+        geminiUpdateToolResult(toolId, status, output, error);
+      }
       // Model continues processing after the tool — show thinking indicator so the
       // UI doesn't appear frozen between tool completion and the next text chunk.
       if (geminiStreaming) geminiShowThinking("Thinking\u2026");
@@ -772,6 +778,8 @@ function geminiResolvePermissionUI(requestId, behavior, toolName, updatedInput) 
         if (selectedValues.has(b.textContent.trim())) {
           b.classList.add("selected");
           b.textContent += " \u2713";
+        } else {
+          b.classList.add("greyed");
         }
       });
     } else {
@@ -1015,9 +1023,16 @@ function geminiShowToolQuestions(id, questions, toolInput, isPermissionRequest) 
       if (typeof opt === "object" && opt.description) btn.title = opt.description;
       btn.onclick = () => {
         if (answers[qi] !== null) return;
-        btns.querySelectorAll("button").forEach(b => { b.disabled = true; });
+        btns.querySelectorAll("button").forEach(b => {
+          b.disabled = true;
+          b.classList.add("greyed");
+        });
         const chosen = btns.querySelector(`[data-label="${CSS.escape(label)}"]`);
-        if (chosen) chosen.textContent += " ✓";
+        if (chosen) {
+          chosen.textContent += " \u2713";
+          chosen.classList.remove("greyed");
+          chosen.classList.add("selected");
+        }
         answers[qi] = label;
         glog(`tool_question[${qi}]: selected=${label}`);
         if (answers.every(a => a !== null)) sendResult();
@@ -1226,8 +1241,8 @@ function geminiRenderCompletedQuestion(params, output, status) {
         const btn = document.createElement("button");
         const label = typeof opt === "object" ? (opt.label || String(opt)) : String(opt);
         const isSelected = selectedAnswers[q.question] === label || selectedAnswers[q.header] === label;
-        btn.className = "btn" + (isSelected ? " primary" : "");
-        btn.textContent = label + (isSelected ? " ✓" : "");
+        btn.className = "btn" + (isSelected ? " selected" : " greyed");
+        btn.textContent = label + (isSelected ? " \u2713" : "");
         btn.disabled = true;
         if (typeof opt === "object" && opt.description) btn.title = opt.description;
         btns.appendChild(btn);
