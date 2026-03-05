@@ -706,17 +706,19 @@ function handleGeminiEvent(event) {
     case "permission_request":
       geminiRemoveThinking();
       glog("handle: permission_request request_id=" + event.request_id + " tool=" + event.tool_name);
-      // Auto-approve question tools — the questions card handles the interaction
+      // Auto-approve question tools — the questions card handles the interaction.
+      // updatedInput MUST be the original tool input — Claude CLI's Zod schema
+      // requires it as Record<string, unknown>, not undefined/null.
       if (event.tool_name === "AskUserQuestion" || event.tool_name === "ask_followup_question") {
         if (geminiWs && geminiWs.readyState === WebSocket.OPEN) {
-          geminiWs.send(JSON.stringify({ type: "permission_response", workspace: geminiWorkspace, request_id: event.request_id, behavior: "allow" }));
+          geminiWs.send(JSON.stringify({ type: "permission_response", workspace: geminiWorkspace, request_id: event.request_id, behavior: "allow", updatedInput: event.tool_input || {} }));
         }
         break;
       }
       // Auto-approve EnterPlanMode — it just switches Claude into planning mode
       if (event.tool_name === "EnterPlanMode") {
         if (geminiWs && geminiWs.readyState === WebSocket.OPEN) {
-          geminiWs.send(JSON.stringify({ type: "permission_response", workspace: geminiWorkspace, request_id: event.request_id, behavior: "allow" }));
+          geminiWs.send(JSON.stringify({ type: "permission_response", workspace: geminiWorkspace, request_id: event.request_id, behavior: "allow", updatedInput: event.tool_input || {} }));
         }
         break;
       }
@@ -775,7 +777,7 @@ function geminiShowPermissionRequest(requestId, toolName, toolInput) {
         workspace: geminiWorkspace,
         request_id: requestId,
         behavior,
-        updatedInput: behavior === "allow" ? toolInput : undefined,
+        updatedInput: behavior === "allow" ? (toolInput || {}) : undefined,
       }));
     }
     glog("permission_request: sent behavior=" + behavior + " request_id=" + requestId);
@@ -837,20 +839,23 @@ function geminiShowPlanApproval(id, planText, isPermissionRequest) {
     header.textContent = approved ? "Plan approved" : "Plan rejected";
 
     if (isPermissionRequest) {
-      // Non-bypass mode: send permission_response
+      // Non-bypass mode: send permission_response.
+      // updatedInput is REQUIRED by Claude CLI's Zod schema for "allow" responses.
       if (geminiWs && geminiWs.readyState === WebSocket.OPEN) {
-        geminiWs.send(JSON.stringify({
+        const payload = {
           type: "permission_response",
           workspace: geminiWorkspace,
           request_id: id,
           behavior: approved ? "allow" : "deny",
-        }));
+        };
+        if (approved) payload.updatedInput = { plan: planText };
+        geminiWs.send(JSON.stringify(payload));
       }
     } else {
       // Bypass mode: plan already executed. Send follow-up message to instruct Claude.
       if (!approved && geminiWs && geminiWs.readyState === WebSocket.OPEN) {
         geminiWs.send(JSON.stringify({
-          type: "message",
+          type: "send",
           workspace: geminiWorkspace,
           message: "I reject this plan. Please revise it.",
           backend: "claude",
