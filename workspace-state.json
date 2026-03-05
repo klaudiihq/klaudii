@@ -7,24 +7,38 @@
   "klaudii--devel": {
     "mode": "gemini",
     "sessions": {},
-    "drafts": {},
-    "lastChatActivity": 1772582079344
+    "drafts": {
+      "gemini:1": "can you go and study the code that's in the ../klaudii--geminisupport branch and look what we're doing with the relay and bydirectional streaming json in and out of the claude cli and then go look at gemini, read the source code of gemini CLI at github and figure out how we can get the same thing to work.  "
+    },
+    "lastChatActivity": 1772666973161
   },
   "klaudii--cloudconnector": {
-    "mode": "claude-local",
+    "mode": "gemini",
     "sessions": {},
-    "drafts": {},
-    "lastChatActivity": 1772586323545
+    "drafts": {
+      "claude-local:new": "okay, I don't really want them to ",
+      "claude-local:1": "Can you ",
+      "gemini:new": "YOu didn't get my answer, right? "
+    },
+    "lastChatActivity": 1772681913525
   },
   "klaudii--chromesidepanel": {
-    "mode": "claude-local",
+    "mode": "gemini",
     "sessions": {},
-    "drafts": {}
+    "drafts": {
+      "claude-local:new": "so, Is the sidebar ready for me to reload and test? ",
+      "claude-local:3": "actually, it seems like the narrower patterns work, can we try that first? \n  \"host_permissions\": [\n    \"http://localhost:*/*\",\n    \"https://localhost:*/*\",\n    \"http://127.0.0.1:*/*\",\n    \"http://10.*\",\n    \"http://192.168.*\",\n    \"http://172.16.*\",\n    \"https://claude.ai/*\",\n    \"https://konnect.klaudii.com/*\"\n  ],"
+    },
+    "lastChatActivity": 1772691395905
   },
   "klaudii--iosapp": {
     "mode": "claude-local",
     "sessions": {},
-    "drafts": {}
+    "drafts": {
+      "claude-local:new": "relay socket never appeared for workspace=klaudii--chromesidepanel\n",
+      "claude-local:1": "maketh thine inquiry yet again, my lady "
+    },
+    "lastChatActivity": 1772734439341
   },
   "moviecollection--databasemigration": {
     "mode": "claude-local",
@@ -32,7 +46,7 @@
     "drafts": {}
   },
   "klaudii--compatiabilitytesting": {
-    "mode": "claude-local",
+    "mode": "gemini",
     "sessions": {},
     "drafts": {
       "claude-local:1": "okay, "
@@ -42,10 +56,20 @@
   "klaudii--geminisupport": {
     "mode": "claude-local",
     "sessions": {},
-    "drafts": {},
-    "lastChatActivity": 1772586288304
+    "drafts": {
+      "claude-local:2": "yes, please, do the restart",
+      "claude-local:new": "okay, this seems to be workCan you catch me up on everything that happened? Then go take a look at the code, it changed since you last touched it.\n",
+      "claude-local:3": "While we're waiting, input box persistence is really flaky, and always restoring old persisted inputs.  C",
+      "claude-local:4": "Can you remove the line just above the input box?  and have the input just a little shorter (maybe 10 pixels).  Can you also change the display names of the launch modes to Claude, Claude RC, and Gemini (with cap letters) and make the running indicator background much darker, it's borderline impossible to read. "
+    },
+    "lastChatActivity": 1772702891630
   },
   "test-workspace": {
+    "mode": "claude-local",
+    "sessions": {},
+    "drafts": {}
+  },
+  "iosapp": {
     "mode": "claude-local",
     "sessions": {},
     "drafts": {}
