@@ -157,6 +157,7 @@ function renderSessions(sessions, procs) {
     const ghUrl = s.remoteUrl || null;
     const status = s.status || (s.running ? "running" : "stopped");
     const isRunning = status === "running" || status === "exited";
+    const displayStatus = (status === "stopped" && s.relayActive) ? "running" : status;
 
     // Git links
     const repoLink = ghUrl
@@ -253,7 +254,7 @@ function renderSessions(sessions, procs) {
           <div class="card-badges">
             ${modePill}
             ${permBadge}
-            <span class="card-status ${status}">${status}</span>
+            <span class="card-status ${displayStatus}">${displayStatus}</span>
           </div>
         </div>
         ${activityRow}
