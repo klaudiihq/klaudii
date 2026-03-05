@@ -81,19 +81,21 @@ jobs:
           BASE="https://${GCP_REGION}-aiplatform.googleapis.com/v1/projects/${GCP_PROJECT_ID}/locations/${GCP_REGION}/publishers/anthropic/models"
 
           # Try models newest-first until one responds
-          for MODEL in claude-sonnet-4-5-20250514 claude-sonnet-4-20250514 claude-3-5-sonnet-v2@20241022; do
+          for MODEL in claude-sonnet-4-5-20250514 claude-sonnet-4-20250514 claude-3-5-sonnet-v2@20241022 claude-3-5-sonnet@20241022 claude-3-5-sonnet claude-3-sonnet@20240229; do
             ENDPOINT="${BASE}/${MODEL}:rawPredict"
-            STATUS=$(curl -s -o /dev/null -w "%{http_code}" \
+            BODY=$(curl -s -w "\n%{http_code}" \
               -X POST "$ENDPOINT" \
               -H "Authorization: Bearer ${ACCESS_TOKEN}" \
               -H "Content-Type: application/json" \
               -d '{"anthropic_version":"vertex-2023-10-16","max_tokens":1,"messages":[{"role":"user","content":"hi"}]}')
+            STATUS=$(echo "$BODY" | tail -1)
             if [ "$STATUS" = "200" ]; then
               echo "Using model: $MODEL"
               echo "Selected model: $MODEL" >> "$GITHUB_STEP_SUMMARY"
               break
             fi
-            echo "Model $MODEL returned $STATUS, trying next..."
+            ERRMSG=$(echo "$BODY" | head -n -1 | head -5)
+            echo "Model $MODEL returned $STATUS: $ERRMSG"
           done
 
           if [ "$STATUS" != "200" ]; then
