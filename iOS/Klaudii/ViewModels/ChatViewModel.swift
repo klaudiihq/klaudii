@@ -55,6 +55,8 @@ class ChatViewModel: ObservableObject {
     private var channel: KloudRelay.RelayChannel?
     private var streamingMessageId: UUID?
     private var connectTask: Task<Void, Never>?
+    private var isManualDisconnect = false
+    private var reconnectDelay: Double = 2.0
 
     init(relay: KloudRelay, workspace: String) {
         self.relay = relay
@@ -63,6 +65,7 @@ class ChatViewModel: ObservableObject {
     }
 
     func disconnect() {
+        isManualDisconnect = true
         connectTask?.cancel()
         channel?.close()
         channel = nil
@@ -116,24 +119,47 @@ class ChatViewModel: ObservableObject {
     private func connect() async {
         await fetchWorkspaceMode()
         await loadHistory()
+        await openChannel()
+    }
+
+    private func openChannel() async {
+        guard !isManualDisconnect else { return }
         do {
             let ch = try await relay.openChannel(path: "/ws/gemini")
             channel = ch
             isConnected = true
             connectionError = nil
+            reconnectDelay = 2.0
 
             ch.onMessage = { [weak self] text in
                 Task { @MainActor [weak self] in self?.handleRawMessage(text) }
             }
             ch.onClose = { [weak self] in
                 Task { @MainActor [weak self] in
-                    self?.isConnected = false
-                    self?.isStreaming = false
-                    self?.streamingMessageId = nil
+                    guard let self else { return }
+                    self.channel = nil
+                    self.isConnected = false
+                    self.isStreaming = false
+                    self.streamingMessageId = nil
+                    guard !self.isManualDisconnect else { return }
+                    self.scheduleChannelReconnect()
                 }
             }
         } catch {
             connectionError = error.localizedDescription
+            guard !isManualDisconnect else { return }
+            scheduleChannelReconnect()
+        }
+    }
+
+    private func scheduleChannelReconnect() {
+        let delay = reconnectDelay
+        reconnectDelay = min(reconnectDelay * 2, 30)
+        connectTask = Task { [weak self] in
+            try? await Task.sleep(for: .seconds(delay))
+            guard !Task.isCancelled, let self else { return }
+            await self.loadHistory()
+            await self.openChannel()
         }
     }
 
