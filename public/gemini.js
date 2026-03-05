@@ -573,11 +573,13 @@ function handleGeminiEvent(event) {
       } else if (/ask.*question|askfollowup|ask_followup/i.test(toolName)) {
         glog(`handle: ask-tool params=${JSON.stringify(params)}`);
         // AskUserQuestion: {questions:[{question,header,options:[{label,description}]}]}
-        // ask_followup_question: {question:string, options:[string]}
+        // Fallback path for bypass mode / Gemini — answers sent via tool_result_response.
+        // In non-bypass mode, AskUserQuestion always goes through permission_request
+        // (requiresUserInteraction=true), which handles answers via updatedInput.answers.
         const questions = params.questions?.length
           ? params.questions
           : [{ question: params.question || params.prompt || "", options: params.options || params.choices || [] }];
-        geminiShowToolQuestions(toolId, questions);
+        geminiShowToolQuestions(toolId, questions, params, false);
       } else {
         geminiAppendToolUse(toolName, toolId, params);
       }
@@ -706,13 +708,15 @@ function handleGeminiEvent(event) {
     case "permission_request":
       geminiRemoveThinking();
       glog("handle: permission_request request_id=" + event.request_id + " tool=" + event.tool_name);
-      // Auto-approve question tools — the questions card handles the interaction.
-      // updatedInput MUST be the original tool input — Claude CLI's Zod schema
-      // requires it as Record<string, unknown>, not undefined/null.
+      // AskUserQuestion: show interactive question card. The user's answers are
+      // sent back as `updatedInput.answers` in the permission_response — NOT as a
+      // separate tool_result. The tool's call() reads answers from its input.
       if (event.tool_name === "AskUserQuestion" || event.tool_name === "ask_followup_question") {
-        if (geminiWs && geminiWs.readyState === WebSocket.OPEN) {
-          geminiWs.send(JSON.stringify({ type: "permission_response", workspace: geminiWorkspace, request_id: event.request_id, behavior: "allow", updatedInput: event.tool_input || {} }));
-        }
+        const toolInput = event.tool_input || {};
+        const questions = toolInput.questions?.length
+          ? toolInput.questions
+          : [{ question: toolInput.question || toolInput.prompt || "", options: toolInput.options || toolInput.choices || [] }];
+        geminiShowToolQuestions(event.request_id, questions, toolInput, true);
         break;
       }
       // Auto-approve EnterPlanMode — it just switches Claude into planning mode
@@ -883,7 +887,11 @@ function geminiShowPlanApproval(id, planText, isPermissionRequest) {
 }
 
 // questions: [{question, header, options:[string|{label,description}], multiSelect?}]
-function geminiShowToolQuestions(toolId, questions) {
+// id: either a tool_id (bypass mode / Gemini) or request_id (permission mode)
+// toolInput: original tool input for AskUserQuestion (used to build updatedInput)
+// isPermissionRequest: true → send answers via permission_response updatedInput.answers
+//                      false → send answers via tool_result_response content string
+function geminiShowToolQuestions(id, questions, toolInput, isPermissionRequest) {
   const container = document.getElementById("gemini-messages");
   const div = document.createElement("div");
   div.className = "gemini-permission-request";
@@ -896,18 +904,39 @@ function geminiShowToolQuestions(toolId, questions) {
   const answers = new Array(questions.length).fill(null);
 
   const sendResult = () => {
-    const content = questions.map((q, i) => {
-      const prefix = q.header || q.question || `Q${i + 1}`;
-      return `${prefix}: ${answers[i]}`;
-    }).join("\n");
-    glog(`tool_questions: sending result tool_id=${toolId}`);
-    if (geminiWs && geminiWs.readyState === WebSocket.OPEN) {
-      geminiWs.send(JSON.stringify({
-        type: "tool_result_response",
-        workspace: geminiWorkspace,
-        tool_id: toolId,
-        content,
-      }));
+    if (isPermissionRequest) {
+      // Claude CLI AskUserQuestion: answers go in updatedInput.answers as {question: answer}
+      const answersMap = {};
+      questions.forEach((q, i) => {
+        const key = q.question || q.header || `Q${i + 1}`;
+        answersMap[key] = answers[i];
+      });
+      const updatedInput = { ...(toolInput || {}), answers: answersMap };
+      glog(`tool_questions: sending permission_response request_id=${id} answers=${JSON.stringify(answersMap)}`);
+      if (geminiWs && geminiWs.readyState === WebSocket.OPEN) {
+        geminiWs.send(JSON.stringify({
+          type: "permission_response",
+          workspace: geminiWorkspace,
+          request_id: id,
+          behavior: "allow",
+          updatedInput,
+        }));
+      }
+    } else {
+      // Gemini / bypass mode: answers as a formatted string via tool_result_response
+      const content = questions.map((q, i) => {
+        const prefix = q.header || q.question || `Q${i + 1}`;
+        return `${prefix}: ${answers[i]}`;
+      }).join("\n");
+      glog(`tool_questions: sending tool_result_response tool_id=${id}`);
+      if (geminiWs && geminiWs.readyState === WebSocket.OPEN) {
+        geminiWs.send(JSON.stringify({
+          type: "tool_result_response",
+          workspace: geminiWorkspace,
+          tool_id: id,
+          content,
+        }));
+      }
     }
   };
 
