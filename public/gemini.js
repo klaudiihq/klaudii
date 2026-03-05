@@ -134,6 +134,10 @@ async function geminiSwitchSession(num) {
   if (!geminiWorkspace || num === geminiSessionNum) return;
   glog(`switchSession: workspace=${geminiWorkspace} from=${geminiSessionNum} to=${num}`);
 
+  // Flush current input draft for the old session before switching
+  const input = document.getElementById("gemini-input");
+  if (input) geminiSaveDraft(input.value);
+
   // Stop any running process
   if (geminiStreaming) geminiStopStreaming();
 
@@ -169,7 +173,7 @@ async function geminiSwitchSession(num) {
   const cur = getChatParams();
   setChatParams({ ...cur, session: num });
 
-  // Reload history for the new session
+  // Reload history for the new session (geminiShowChat calls geminiRestoreDraft)
   geminiShowChat();
 }
 
@@ -213,9 +217,11 @@ async function geminiFetchModels() {
       select.appendChild(opt);
     }
 
-    // Restore previous selection if it still exists
-    if (prev && [...select.options].some((o) => o.value === prev)) {
-      select.value = prev;
+    // Restore previous selection: prefer in-memory, then localStorage
+    const savedModel = geminiWorkspace ? localStorage.getItem(`klaudii-model-${geminiWorkspace}`) : null;
+    const preferred = prev || savedModel;
+    if (preferred && [...select.options].some((o) => o.value === preferred)) {
+      select.value = preferred;
     }
 
     geminiModelsFetched = true;
@@ -381,7 +387,6 @@ let geminiDraftTimer = null;
 function geminiSaveDraft(text) {
   if (!geminiWorkspace) return;
   clearTimeout(geminiDraftTimer);
-  if (!text) return; // don't spam WS with empty drafts
   const workspace = geminiWorkspace;
   const draftMode = geminiActiveCli === "claude" ? "claude-local" : "gemini";
   const draftSession = geminiSessionNum;
@@ -404,7 +409,7 @@ async function geminiRestoreDraft(prefetchedState = null) {
   try {
     const state = prefetchedState || await fetch(`/api/workspace-state/${encodeURIComponent(geminiWorkspace)}`).then(r => r.json());
     const input = document.getElementById("gemini-input");
-    if (input && state.draft) input.value = state.draft;
+    if (input) input.value = state.draft || "";
   } catch { /* non-fatal */ }
 }
 
@@ -561,17 +566,20 @@ function handleGeminiEvent(event) {
       }
       geminiCurrentMsgEl = null;
       geminiCurrentMsgText = "";
-      if (event.awaiting_approval) {
+      if (toolName === "ExitPlanMode") {
+        // Plan approval: render the plan as markdown with approve/reject buttons
+        geminiShowPlanApproval(toolId, params.plan || "");
+      } else if (toolName === "EnterPlanMode") {
+        // Planning mode entry — just show a small indicator, no action needed
+        geminiAppendToolUse(toolName, toolId, params);
+      } else if (event.awaiting_approval) {
         // Interactive approval prompt — show Approve/Deny buttons
         geminiShowApprovalPrompt(event);
       } else if (/ask.*question|askfollowup|ask_followup/i.test(toolName)) {
-        glog(`handle: ask-tool params=${JSON.stringify(params)}`);
-        // AskUserQuestion: {questions:[{question,header,options:[{label,description}]}]}
-        // ask_followup_question: {question:string, options:[string]}
-        const questions = params.questions?.length
-          ? params.questions
-          : [{ question: params.question || params.prompt || "", options: params.options || params.choices || [] }];
-        geminiShowToolQuestions(toolId, questions);
+        // AskUserQuestion always triggers permission_request (requiresUserInteraction=true).
+        // Don't render anything here — the permission_request handler renders the
+        // interactive question card. Rendering a pill would leave an orphan.
+        glog(`handle: ask-tool (skipped, waiting for permission_request) toolId=${toolId}`);
       } else {
         geminiAppendToolUse(toolName, toolId, params);
       }
@@ -580,11 +588,15 @@ function handleGeminiEvent(event) {
 
     case "tool_result": {
       const toolId = event.tool_id || "";
+      const toolName = event.tool_name || "";
       const output = event.output || event.content || "";
       const status = event.status || "success";
       const error = event.error;
-      glog(`handle: tool_result id=${toolId} status=${status} outputLen=${output.length}`);
-      geminiUpdateToolResult(toolId, status, output, error);
+      glog(`handle: tool_result id=${toolId} tool=${toolName} status=${status} outputLen=${output.length}`);
+      // AskUserQuestion results are already shown in the question card — skip rendering.
+      if (!/ask.*question/i.test(toolName)) {
+        geminiUpdateToolResult(toolId, status, output, error);
+      }
       // Model continues processing after the tool — show thinking indicator so the
       // UI doesn't appear frozen between tool completion and the next text chunk.
       if (geminiStreaming) geminiShowThinking("Thinking\u2026");
@@ -700,15 +712,119 @@ function handleGeminiEvent(event) {
     case "permission_request":
       geminiRemoveThinking();
       glog("handle: permission_request request_id=" + event.request_id + " tool=" + event.tool_name);
-      // Auto-approve question tools — the questions card handles the interaction
+      // AskUserQuestion: show interactive question card. The user's answers are
+      // sent back as `updatedInput.answers` in the permission_response — NOT as a
+      // separate tool_result. The tool's call() reads answers from its input.
       if (event.tool_name === "AskUserQuestion" || event.tool_name === "ask_followup_question") {
+        // Remove the pending tool pill that tool_use created for this tool
+        const pendingPill = document.querySelector(`.gemini-tool.running[data-tool-name="AskUserQuestion"], .gemini-tool.running[data-tool-name="ask_followup_question"]`);
+        if (pendingPill) pendingPill.remove();
+        const toolInput = event.tool_input || {};
+        const questions = toolInput.questions?.length
+          ? toolInput.questions
+          : [{ question: toolInput.question || toolInput.prompt || "", options: toolInput.options || toolInput.choices || [] }];
+        geminiShowToolQuestions(event.request_id, questions, toolInput, true);
+        break;
+      }
+      // Auto-approve EnterPlanMode — it just switches Claude into planning mode
+      if (event.tool_name === "EnterPlanMode") {
         if (geminiWs && geminiWs.readyState === WebSocket.OPEN) {
-          geminiWs.send(JSON.stringify({ type: "permission_response", workspace: geminiWorkspace, request_id: event.request_id, behavior: "allow" }));
+          geminiWs.send(JSON.stringify({ type: "permission_response", workspace: geminiWorkspace, request_id: event.request_id, behavior: "allow", updatedInput: event.tool_input || {} }));
         }
         break;
       }
-      geminiShowPermissionRequest(event.request_id, event.tool_name, event.tool_input);
+      // ExitPlanMode: show plan approval card with the plan content from tool_input
+      if (event.tool_name === "ExitPlanMode") {
+        geminiShowPlanApproval(event.request_id, (event.tool_input || {}).plan || "", true);
+        break;
+      }
+      geminiShowPermissionRequest(event.request_id, event.tool_name, event.tool_input, event.description, event.decision_reason);
       break;
+
+    case "permission_resolved":
+      // Another client already responded to this permission_request.
+      // Update the UI to show the resolved state with answers.
+      glog("handle: permission_resolved request_id=" + event.request_id + " behavior=" + event.behavior + " tool=" + event.tool_name);
+      geminiResolvePermissionUI(event.request_id, event.behavior, event.tool_name, event.updatedInput);
+      break;
+
+    case "thinking":
+      geminiRemoveThinking();
+      glog("handle: thinking contentLen=" + (event.content || "").length);
+      geminiAppendThinkingBlock(event.content || "");
+      break;
+
+    case "tool_progress": {
+      const tpId = event.tool_use_id || "";
+      const elapsed = event.elapsed_time_seconds;
+      glog(`handle: tool_progress id=${tpId} elapsed=${elapsed}s`);
+      if (tpId && elapsed != null) {
+        const pill = document.querySelector(`.gemini-tool.running[data-tool-id="${CSS.escape(tpId)}"]`);
+        if (pill) {
+          let timerEl = pill.querySelector(".gemini-tool-timer");
+          if (!timerEl) {
+            timerEl = document.createElement("span");
+            timerEl.className = "gemini-tool-timer";
+            const summary = pill.querySelector(".gemini-tool-summary");
+            if (summary) summary.appendChild(timerEl);
+          }
+          timerEl.textContent = ` ${Math.round(elapsed)}s`;
+        }
+      }
+      break;
+    }
+
+    case "result":
+      glog("handle: result stats=" + JSON.stringify(event.stats || {}).slice(0, 200) + " subtype=" + (event.subtype || "success"));
+      geminiShowResultFooter(event.stats, event.subtype, event.errors);
+      break;
+
+    case "system_status":
+      glog("handle: system_status status=" + event.status + " permMode=" + event.permissionMode);
+      if (event.permissionMode) {
+        geminiAppendSystemNote("Permission mode changed to " + event.permissionMode);
+      }
+      break;
+
+    case "compact_boundary":
+      glog("handle: compact_boundary pre=" + event.pre_tokens + " post=" + event.post_tokens);
+      geminiAppendSystemNote(
+        "Context compacted" + (event.pre_tokens ? ` (was ~${Math.round(event.pre_tokens / 1000)}k tokens)` : "")
+      );
+      break;
+
+    case "task_started":
+      glog("handle: task_started id=" + event.task_id + " desc=" + event.description);
+      geminiAppendTaskCard(event.task_id, event.description, "running");
+      break;
+
+    case "task_progress": {
+      glog("handle: task_progress id=" + event.task_id);
+      const taskCard = document.querySelector(`.gemini-task-card[data-task-id="${CSS.escape(event.task_id)}"]`);
+      if (taskCard) {
+        const detail = taskCard.querySelector(".gemini-task-detail");
+        if (detail && event.tool_name) detail.textContent = `Last tool: ${event.tool_name}`;
+      }
+      break;
+    }
+
+    case "task_notification": {
+      glog("handle: task_notification id=" + event.task_id + " status=" + event.status);
+      const taskEl = document.querySelector(`.gemini-task-card[data-task-id="${CSS.escape(event.task_id)}"]`);
+      if (taskEl) {
+        taskEl.classList.remove("running");
+        taskEl.classList.add(event.status === "completed" ? "success" : "error");
+        const statusEl = taskEl.querySelector(".gemini-task-status");
+        if (statusEl) statusEl.textContent = event.status === "completed" ? "✓ Completed" : "✗ " + event.status;
+        if (event.summary) {
+          const sumEl = document.createElement("div");
+          sumEl.className = "gemini-task-summary";
+          sumEl.textContent = event.summary;
+          taskEl.appendChild(sumEl);
+        }
+      }
+      break;
+    }
 
     default:
       glog("handle: unknown event type=" + event.type + " keys=" + Object.keys(event).join(","));
@@ -716,15 +832,70 @@ function handleGeminiEvent(event) {
   }
 }
 
-function geminiShowPermissionRequest(requestId, toolName, toolInput) {
+/**
+ * Update permission/question UI for a request_id that was resolved by another client.
+ * For AskUserQuestion, highlights the selected answers. For other tools, disables buttons.
+ */
+function geminiResolvePermissionUI(requestId, behavior, toolName, updatedInput) {
+  const container = document.getElementById("gemini-messages");
+  if (!container) return;
+  const sel = CSS.escape(requestId);
+  const cards = container.querySelectorAll(
+    `.gemini-permission-request[data-request-id="${sel}"], .gemini-plan-approval[data-request-id="${sel}"], .gemini-question-card[data-request-id="${sel}"]`
+  );
+
+  for (const card of cards) {
+    // For AskUserQuestion, highlight the selected answers on the option buttons
+    if (/ask.*question/i.test(toolName) && updatedInput?.answers) {
+      const selectedValues = new Set(Object.values(updatedInput.answers));
+      card.querySelectorAll("button").forEach(b => {
+        b.disabled = true;
+        if (selectedValues.has(b.textContent.trim())) {
+          b.classList.add("selected");
+          b.textContent += " \u2713";
+        } else {
+          b.classList.add("greyed");
+        }
+      });
+    } else {
+      card.querySelectorAll("button").forEach(b => { b.disabled = true; });
+    }
+
+    const note = document.createElement("div");
+    note.style.fontSize = "0.75rem";
+    note.style.opacity = "0.7";
+    note.style.marginTop = "0.25rem";
+    note.textContent = behavior === "allow" ? "Answered in another window" : "Denied in another window";
+    card.appendChild(note);
+  }
+}
+
+function geminiShowPermissionRequest(requestId, toolName, toolInput, description, decisionReason) {
   const container = document.getElementById("gemini-messages");
   const div = document.createElement("div");
   div.className = "gemini-permission-request";
+  div.dataset.requestId = requestId;
 
   const header = document.createElement("div");
   header.className = "gemini-permission-header";
   header.textContent = toolName ? `Claude wants to use: ${toolName}` : "Claude is asking for permission";
   div.appendChild(header);
+
+  // Show human-readable description if available
+  if (description) {
+    const descEl = document.createElement("div");
+    descEl.className = "gemini-permission-desc";
+    descEl.textContent = description;
+    div.appendChild(descEl);
+  }
+
+  // Show decision reason if available
+  if (decisionReason) {
+    const reasonEl = document.createElement("div");
+    reasonEl.className = "gemini-permission-reason";
+    reasonEl.textContent = decisionReason;
+    div.appendChild(reasonEl);
+  }
 
   // Show key input fields for context (command, file_path, etc.)
   if (toolInput && Object.keys(toolInput).length) {
@@ -757,7 +928,7 @@ function geminiShowPermissionRequest(requestId, toolName, toolInput) {
         workspace: geminiWorkspace,
         request_id: requestId,
         behavior,
-        updatedInput: behavior === "allow" ? toolInput : undefined,
+        updatedInput: behavior === "allow" ? (toolInput || {}) : undefined,
       }));
     }
     glog("permission_request: sent behavior=" + behavior + " request_id=" + requestId);
@@ -782,11 +953,97 @@ function geminiShowPermissionRequest(requestId, toolName, toolInput) {
   geminiScrollToBottom();
 }
 
+/**
+ * Show a plan approval card. Renders the plan as markdown with Approve/Reject buttons.
+ * @param {string} id - Either a tool_id (bypass mode) or request_id (permission mode)
+ * @param {string} planText - The markdown plan content
+ * @param {boolean} isPermissionRequest - true if this is a permission_request (non-bypass mode)
+ */
+function geminiShowPlanApproval(id, planText, isPermissionRequest) {
+  const container = document.getElementById("gemini-messages");
+
+  // Remove any existing running tool pill for this id (the generic one from tool_use)
+  const existingPill = container.querySelector(`.gemini-tool.running[data-tool-id="${CSS.escape(id)}"]`);
+  if (existingPill) existingPill.remove();
+
+  const div = document.createElement("div");
+  div.className = "gemini-plan-approval";
+  if (isPermissionRequest) div.dataset.requestId = id;
+
+  const header = document.createElement("div");
+  header.className = "gemini-plan-header";
+  header.textContent = "Claude has proposed a plan";
+  div.appendChild(header);
+
+  if (planText) {
+    const content = document.createElement("div");
+    content.className = "gemini-plan-content md-content";
+    content.innerHTML = geminiRenderMarkdown(planText);
+    div.appendChild(content);
+  }
+
+  const btns = document.createElement("div");
+  btns.className = "gemini-permission-buttons";
+
+  const respond = (approved) => {
+    btns.querySelectorAll("button").forEach(b => { b.disabled = true; });
+    div.classList.add(approved ? "approved" : "rejected");
+    header.textContent = approved ? "Plan approved" : "Plan rejected";
+
+    if (isPermissionRequest) {
+      // Non-bypass mode: send permission_response.
+      // updatedInput is REQUIRED by Claude CLI's Zod schema for "allow" responses.
+      if (geminiWs && geminiWs.readyState === WebSocket.OPEN) {
+        const payload = {
+          type: "permission_response",
+          workspace: geminiWorkspace,
+          request_id: id,
+          behavior: approved ? "allow" : "deny",
+        };
+        if (approved) payload.updatedInput = { plan: planText };
+        geminiWs.send(JSON.stringify(payload));
+      }
+    } else {
+      // Bypass mode: plan already executed. Send follow-up message to instruct Claude.
+      if (!approved && geminiWs && geminiWs.readyState === WebSocket.OPEN) {
+        geminiWs.send(JSON.stringify({
+          type: "send",
+          workspace: geminiWorkspace,
+          message: "I reject this plan. Please revise it.",
+          backend: "claude",
+        }));
+      }
+    }
+    glog("plan_approval: " + (approved ? "approved" : "rejected") + " id=" + id);
+  };
+
+  const approveBtn = document.createElement("button");
+  approveBtn.className = "btn primary";
+  approveBtn.textContent = "Approve Plan";
+  approveBtn.onclick = () => respond(true);
+  btns.appendChild(approveBtn);
+
+  const rejectBtn = document.createElement("button");
+  rejectBtn.className = "btn";
+  rejectBtn.textContent = "Reject Plan";
+  rejectBtn.onclick = () => respond(false);
+  btns.appendChild(rejectBtn);
+
+  div.appendChild(btns);
+  container.appendChild(div);
+  geminiScrollToBottom();
+}
+
 // questions: [{question, header, options:[string|{label,description}], multiSelect?}]
-function geminiShowToolQuestions(toolId, questions) {
+// id: either a tool_id (bypass mode / Gemini) or request_id (permission mode)
+// toolInput: original tool input for AskUserQuestion (used to build updatedInput)
+// isPermissionRequest: true → send answers via permission_response updatedInput.answers
+//                      false → send answers via tool_result_response content string
+function geminiShowToolQuestions(id, questions, toolInput, isPermissionRequest) {
   const container = document.getElementById("gemini-messages");
   const div = document.createElement("div");
-  div.className = "gemini-permission-request";
+  div.className = isPermissionRequest ? "gemini-permission-request gemini-question-card" : "gemini-permission-request";
+  if (isPermissionRequest) div.dataset.requestId = id;
 
   const headerEl = document.createElement("div");
   headerEl.className = "gemini-permission-header";
@@ -796,18 +1053,39 @@ function geminiShowToolQuestions(toolId, questions) {
   const answers = new Array(questions.length).fill(null);
 
   const sendResult = () => {
-    const content = questions.map((q, i) => {
-      const prefix = q.header || q.question || `Q${i + 1}`;
-      return `${prefix}: ${answers[i]}`;
-    }).join("\n");
-    glog(`tool_questions: sending result tool_id=${toolId}`);
-    if (geminiWs && geminiWs.readyState === WebSocket.OPEN) {
-      geminiWs.send(JSON.stringify({
-        type: "tool_result_response",
-        workspace: geminiWorkspace,
-        tool_id: toolId,
-        content,
-      }));
+    if (isPermissionRequest) {
+      // Claude CLI AskUserQuestion: answers go in updatedInput.answers as {question: answer}
+      const answersMap = {};
+      questions.forEach((q, i) => {
+        const key = q.question || q.header || `Q${i + 1}`;
+        answersMap[key] = answers[i];
+      });
+      const updatedInput = { ...(toolInput || {}), answers: answersMap };
+      glog(`tool_questions: sending permission_response request_id=${id} answers=${JSON.stringify(answersMap)}`);
+      if (geminiWs && geminiWs.readyState === WebSocket.OPEN) {
+        geminiWs.send(JSON.stringify({
+          type: "permission_response",
+          workspace: geminiWorkspace,
+          request_id: id,
+          behavior: "allow",
+          updatedInput,
+        }));
+      }
+    } else {
+      // Gemini / bypass mode: answers as a formatted string via tool_result_response
+      const content = questions.map((q, i) => {
+        const prefix = q.header || q.question || `Q${i + 1}`;
+        return `${prefix}: ${answers[i]}`;
+      }).join("\n");
+      glog(`tool_questions: sending tool_result_response tool_id=${id}`);
+      if (geminiWs && geminiWs.readyState === WebSocket.OPEN) {
+        geminiWs.send(JSON.stringify({
+          type: "tool_result_response",
+          workspace: geminiWorkspace,
+          tool_id: id,
+          content,
+        }));
+      }
     }
   };
 
@@ -836,9 +1114,17 @@ function geminiShowToolQuestions(toolId, questions) {
       if (typeof opt === "object" && opt.description) btn.title = opt.description;
       btn.onclick = () => {
         if (answers[qi] !== null) return;
-        btns.querySelectorAll("button").forEach(b => { b.disabled = true; });
+        btns.querySelectorAll("button").forEach(b => {
+          b.disabled = true;
+          b.classList.remove("primary");
+          b.classList.add("greyed");
+        });
         const chosen = btns.querySelector(`[data-label="${CSS.escape(label)}"]`);
-        if (chosen) chosen.textContent += " ✓";
+        if (chosen) {
+          chosen.textContent += " \u2713";
+          chosen.classList.remove("greyed");
+          chosen.classList.add("selected", "primary");
+        }
         answers[qi] = label;
         glog(`tool_question[${qi}]: selected=${label}`);
         if (answers.every(a => a !== null)) sendResult();
@@ -950,6 +1236,10 @@ function geminiToolDescription(name, params) {
       return p.query || "";
     case "webfetch":
       return p.url || "";
+    case "enterplanmode":
+      return "Entering planning mode";
+    case "exitplanmode":
+      return "Plan ready for review";
     default: {
       // Try to find a single short string value to display
       const vals = Object.values(p).filter((v) => typeof v === "string" && v.length < 100);
@@ -1001,6 +1291,74 @@ function geminiConfirmTool(callId, outcome) {
  * Render a completed tool pill directly from history data (tool_use + tool_result combined).
  * Creates the pill in its final open state without the two-step running→done dance.
  */
+/**
+ * Render a completed AskUserQuestion in history.
+ * Shows the question text, option buttons (disabled, with selected one marked), and status.
+ */
+function geminiRenderCompletedQuestion(params, output, status) {
+  const container = document.getElementById("gemini-messages");
+  const div = document.createElement("div");
+  div.className = "gemini-permission-request";
+  if (status === "error") div.classList.add("gemini-question-error");
+
+  const headerEl = document.createElement("div");
+  headerEl.className = "gemini-permission-header";
+  headerEl.textContent = status === "error" ? "Question (failed)" : "Question";
+  div.appendChild(headerEl);
+
+  // Parse selected answers from output: "User has answered your questions: "Q"="A", "Q2"="B". You can..."
+  const selectedAnswers = {};
+  const answerMatches = (output || "").matchAll(/"([^"]+)"="([^"]+)"/g);
+  for (const m of answerMatches) selectedAnswers[m[1]] = m[2];
+
+  const questions = params.questions || [{ question: params.question || "", options: params.options || [] }];
+
+  questions.forEach((q) => {
+    const section = document.createElement("div");
+    section.className = "gemini-question-section";
+
+    if (q.question) {
+      const qEl = document.createElement("div");
+      qEl.className = "gemini-permission-question";
+      qEl.textContent = q.question;
+      section.appendChild(qEl);
+    }
+
+    const btns = document.createElement("div");
+    btns.className = "gemini-permission-buttons";
+    const rawOptions = q.options || [];
+
+    if (rawOptions.length) {
+      rawOptions.forEach((opt) => {
+        const btn = document.createElement("button");
+        const label = typeof opt === "object" ? (opt.label || String(opt)) : String(opt);
+        const isSelected = selectedAnswers[q.question] === label || selectedAnswers[q.header] === label;
+        btn.className = "btn" + (isSelected ? " selected" : " greyed");
+        btn.textContent = label + (isSelected ? " \u2713" : "");
+        btn.disabled = true;
+        if (typeof opt === "object" && opt.description) btn.title = opt.description;
+        btns.appendChild(btn);
+      });
+    } else if (Object.keys(selectedAnswers).length) {
+      // No options defined — show the answer as text
+      const key = q.question || q.header || Object.keys(selectedAnswers)[0];
+      const answer = selectedAnswers[key];
+      if (answer) {
+        const ansEl = document.createElement("div");
+        ansEl.className = "gemini-permission-question";
+        ansEl.style.fontStyle = "italic";
+        ansEl.textContent = answer;
+        section.appendChild(ansEl);
+      }
+    }
+
+    if (btns.children.length) section.appendChild(btns);
+    div.appendChild(section);
+  });
+
+  container.appendChild(div);
+}
+
 function geminiRenderCompletedTool(toolName, toolId, params, status, output) {
   const container = document.getElementById("gemini-messages");
   const isError = status === "error";
@@ -1021,19 +1379,25 @@ function geminiRenderCompletedTool(toolName, toolId, params, status, output) {
     (desc ? `<span class="gemini-tool-desc">${geminiEscHtml(desc)}</span>` : "");
   pill.appendChild(summary);
 
-  const paramsStr = typeof params === "object" ? JSON.stringify(params, null, 2) : String(params || "");
-  if (paramsStr && paramsStr !== "{}") {
-    const sec = document.createElement("div");
-    sec.className = "gemini-tool-section";
-    sec.innerHTML = `<div class="gemini-tool-section-label">Parameters</div>`;
-    const pre = document.createElement("pre");
-    pre.textContent = paramsStr;
-    sec.appendChild(pre);
-    pill.appendChild(sec);
+  // Edit tool: show diff instead of raw params
+  if (!isError && /^edit$/i.test(toolName) && params && params.old_string != null) {
+    geminiRenderEditDiffFromParams(pill, params);
+  } else {
+    const paramsStr = typeof params === "object" ? JSON.stringify(params, null, 2) : String(params || "");
+    if (paramsStr && paramsStr !== "{}") {
+      const sec = document.createElement("div");
+      sec.className = "gemini-tool-section";
+      sec.innerHTML = `<div class="gemini-tool-section-label">Parameters</div>`;
+      const pre = document.createElement("pre");
+      pre.textContent = paramsStr;
+      sec.appendChild(pre);
+      pill.appendChild(sec);
+    }
   }
 
   const trimmed = (output || "").trim();
-  if (trimmed) {
+  // Skip output for successful Edit diffs — the diff itself is the output
+  if (trimmed && !(!isError && /^edit$/i.test(toolName) && params?.old_string != null)) {
     const sec = document.createElement("div");
     sec.className = "gemini-tool-section";
     sec.innerHTML = `<div class="gemini-tool-section-label">${isError ? "Error" : "Output"}</div>`;
@@ -1119,9 +1483,16 @@ function geminiUpdateToolResult(toolId, status, output, error) {
       }
     }
 
-    // Append output section directly to pill
+    const toolName = pill.dataset.toolName || "";
+
+    // For Edit tool: replace raw params with a color diff
+    if (!isError && /^edit$/i.test(toolName)) {
+      geminiRenderEditDiff(pill);
+    }
+
+    // Append output section (skip for Edit — the diff is the output)
     const trimmed = (error || output || "").trim();
-    if (trimmed) {
+    if (trimmed && !(!isError && /^edit$/i.test(toolName))) {
       const section = document.createElement("div");
       section.className = "gemini-tool-section";
       section.innerHTML = `<div class="gemini-tool-section-label">${isError ? "Error" : "Output"}</div>`;
@@ -1166,6 +1537,184 @@ function geminiAppendError(message) {
   div.textContent = message;
   container.appendChild(div);
   geminiScrollToBottom();
+}
+
+/**
+ * Render a color diff for an Edit tool pill.
+ * Extracts old_string/new_string from the pill's stored params and replaces
+ * the Parameters section with a unified diff view.
+ */
+function geminiRenderEditDiff(pill) {
+  // Parse params from the pre element in the Parameters section
+  const paramSection = pill.querySelector(".gemini-tool-section");
+  if (!paramSection) return;
+  const paramPre = paramSection.querySelector("pre");
+  if (!paramPre) return;
+  let params;
+  try { params = JSON.parse(paramPre.textContent); } catch { return; }
+
+  const oldStr = params.old_string || "";
+  const newStr = params.new_string || "";
+  const filePath = params.file_path || "";
+
+  // Replace the params section with a diff view
+  paramSection.innerHTML = "";
+  const label = document.createElement("div");
+  label.className = "gemini-tool-section-label";
+  label.textContent = filePath || "Diff";
+  paramSection.appendChild(label);
+
+  const diffEl = document.createElement("pre");
+  diffEl.className = "gemini-diff";
+
+  // Build simple unified diff lines
+  const oldLines = oldStr.split("\n");
+  const newLines = newStr.split("\n");
+
+  oldLines.forEach(line => {
+    const span = document.createElement("span");
+    span.className = "diff-removed";
+    span.textContent = "- " + line + "\n";
+    diffEl.appendChild(span);
+  });
+  newLines.forEach(line => {
+    const span = document.createElement("span");
+    span.className = "diff-added";
+    span.textContent = "+ " + line + "\n";
+    diffEl.appendChild(span);
+  });
+
+  paramSection.appendChild(diffEl);
+}
+
+/**
+ * Render a diff for Edit tool in completed tool history (non-live).
+ * Called from geminiRenderCompletedTool when tool_name is Edit.
+ */
+function geminiRenderEditDiffFromParams(pill, params) {
+  const oldStr = params.old_string || "";
+  const newStr = params.new_string || "";
+  const filePath = params.file_path || "";
+
+  const sec = document.createElement("div");
+  sec.className = "gemini-tool-section";
+  const label = document.createElement("div");
+  label.className = "gemini-tool-section-label";
+  label.textContent = filePath || "Diff";
+  sec.appendChild(label);
+
+  const diffEl = document.createElement("pre");
+  diffEl.className = "gemini-diff";
+  (oldStr.split("\n")).forEach(line => {
+    const span = document.createElement("span");
+    span.className = "diff-removed";
+    span.textContent = "- " + line + "\n";
+    diffEl.appendChild(span);
+  });
+  (newStr.split("\n")).forEach(line => {
+    const span = document.createElement("span");
+    span.className = "diff-added";
+    span.textContent = "+ " + line + "\n";
+    diffEl.appendChild(span);
+  });
+  sec.appendChild(diffEl);
+  pill.appendChild(sec);
+}
+
+/** Render a collapsible thinking block (extended thinking / chain-of-thought). */
+function geminiAppendThinkingBlock(content) {
+  const container = document.getElementById("gemini-messages");
+  // Append to existing thinking block if one is open (streaming)
+  const existing = container.querySelector("details.gemini-thinking-block:last-child");
+  if (existing && existing.open) {
+    const body = existing.querySelector(".gemini-thinking-body");
+    if (body) {
+      body.textContent += content;
+      geminiScrollToBottom();
+      return;
+    }
+  }
+  const details = document.createElement("details");
+  details.className = "gemini-thinking-block";
+  const summary = document.createElement("summary");
+  summary.textContent = "Thinking\u2026";
+  details.appendChild(summary);
+  const body = document.createElement("div");
+  body.className = "gemini-thinking-body";
+  body.textContent = content;
+  details.appendChild(body);
+  container.appendChild(details);
+  geminiScrollToBottom();
+}
+
+/** Show a thin system note (compaction, permission mode change, etc.). */
+function geminiAppendSystemNote(text) {
+  const container = document.getElementById("gemini-messages");
+  const div = document.createElement("div");
+  div.className = "gemini-system-note";
+  div.textContent = text;
+  container.appendChild(div);
+  geminiScrollToBottom();
+}
+
+/** Show a background task card. */
+function geminiAppendTaskCard(taskId, description, status) {
+  const container = document.getElementById("gemini-messages");
+  const div = document.createElement("div");
+  div.className = "gemini-task-card running";
+  div.dataset.taskId = taskId;
+  div.innerHTML =
+    `<span class="gemini-task-status">\u21BB Running</span>` +
+    `<span class="gemini-task-desc">${geminiEscHtml(description)}</span>` +
+    `<div class="gemini-task-detail"></div>`;
+  container.appendChild(div);
+  geminiScrollToBottom();
+}
+
+/** Show cost/token/duration footer after a turn completes. */
+function geminiShowResultFooter(stats, subtype, errors) {
+  if (!stats && !subtype) return;
+  const container = document.getElementById("gemini-messages");
+
+  // Show error banner for non-success results
+  if (subtype && subtype !== "success") {
+    const errorDiv = document.createElement("div");
+    errorDiv.className = "gemini-result-error";
+    if (subtype === "error_max_turns") {
+      errorDiv.textContent = "Claude reached the maximum number of turns" + (stats?.turns ? ` (${stats.turns})` : "");
+    } else if (subtype === "error_max_budget_usd") {
+      errorDiv.textContent = "Claude exceeded the budget limit" + (stats?.cost ? ` ($${stats.cost.toFixed(2)})` : "");
+    } else if (subtype === "error_during_execution") {
+      errorDiv.textContent = "Error during execution";
+      if (errors?.length) errorDiv.textContent += ": " + errors.map(e => e.message || e).join("; ");
+    } else if (subtype === "error_insufficient_context") {
+      errorDiv.textContent = "Claude ran out of context window";
+    } else if (subtype === "error_permission_denied") {
+      errorDiv.textContent = "Permission was denied";
+    } else if (subtype === "error_model_unavailable") {
+      errorDiv.textContent = "Model is currently unavailable";
+    } else if (subtype === "interrupted") {
+      errorDiv.textContent = "Turn was interrupted";
+      errorDiv.className = "gemini-result-error interrupted";
+    } else {
+      errorDiv.textContent = "Turn ended: " + subtype;
+    }
+    container.appendChild(errorDiv);
+  }
+
+  // Show cost/token stats as a subtle footer
+  if (stats && (stats.cost != null || stats.total_tokens || stats.duration_ms)) {
+    const parts = [];
+    if (stats.cost != null) parts.push("$" + stats.cost.toFixed(4));
+    if (stats.total_tokens) parts.push(stats.total_tokens >= 1000 ? (stats.total_tokens / 1000).toFixed(1) + "k tokens" : stats.total_tokens + " tokens");
+    if (stats.duration_ms) parts.push((stats.duration_ms / 1000).toFixed(1) + "s");
+    if (parts.length) {
+      const footer = document.createElement("div");
+      footer.className = "gemini-result-footer";
+      footer.textContent = parts.join(" \u00B7 ");
+      container.appendChild(footer);
+    }
+  }
 }
 
 function geminiScrollToBottom() {
@@ -1420,11 +1969,14 @@ async function geminiRenderRecoveredContent() {
           const d = JSON.parse(msg.content);
           const tu = pendingToolUses.get(d.tool_id);
           if (tu) pendingToolUses.delete(d.tool_id);
-          geminiRenderCompletedTool(tu ? tu.tool_name : d.tool_id, d.tool_id, tu ? tu.parameters : {}, d.status, d.output);
+          const tName = tu ? tu.tool_name : (d.tool_name || "tool");
+          if (/ask.*question/i.test(tName)) {
+            geminiRenderCompletedQuestion(tu ? tu.parameters : {}, d.output || "", d.status);
+          } else {
+            geminiRenderCompletedTool(tName, d.tool_id, tu ? tu.parameters : {}, d.status, d.output);
+          }
         } catch {}
       } else {
-        for (const tu of pendingToolUses.values()) geminiAppendToolUse(tu.tool_name, tu.tool_id, tu.parameters);
-        pendingToolUses.clear();
         geminiAppendMessage(msg.role, msg.content, false, null, msg.ts);
       }
     }
@@ -1495,20 +2047,14 @@ function geminiStartStreamPoll(historyLengthAtOpen) {
               const d = JSON.parse(msg.content);
               const tu = d.tool_id ? pendingToolUses.get(d.tool_id) : null;
               if (tu) pendingToolUses.delete(d.tool_id);
-              geminiRenderCompletedTool(
-                tu ? tu.tool_name : d.tool_id,
-                d.tool_id,
-                tu ? tu.parameters : {},
-                d.status,
-                d.output
-              );
+              const tName = tu ? tu.tool_name : (d.tool_name || "tool");
+              if (/ask.*question/i.test(tName)) {
+                geminiRenderCompletedQuestion(tu ? tu.parameters : {}, d.output || "", d.status);
+              } else {
+                geminiRenderCompletedTool(tName, d.tool_id, tu ? tu.parameters : {}, d.status, d.output);
+              }
             } catch { /* ignore */ }
           } else {
-            // Flush any orphaned tool_use pills before rendering regular message
-            for (const tu of pendingToolUses.values()) {
-              geminiAppendToolUse(tu.tool_name, tu.tool_id, tu.parameters);
-            }
-            pendingToolUses.clear();
             geminiAppendMessage(msg.role, msg.content, false, null, msg.ts);
           }
         }
@@ -1559,25 +2105,51 @@ async function geminiShowChat(wsState = null) {
           const d = JSON.parse(msg.content);
           const tu = d.tool_id ? pendingToolUses.get(d.tool_id) : null;
           if (tu) pendingToolUses.delete(d.tool_id);
-          geminiRenderCompletedTool(
-            tu ? tu.tool_name : d.tool_id,
-            d.tool_id,
-            tu ? tu.parameters : {},
-            d.status,
-            d.output
-          );
+          const name = tu ? tu.tool_name : (d.tool_name || "tool");
+          // ExitPlanMode: render as plan card instead of generic tool pill
+          if (name === "ExitPlanMode") {
+            geminiShowPlanApproval(d.tool_id, (tu ? tu.parameters : {}).plan || d.output || "", false);
+            const card = document.querySelector(".gemini-plan-approval:last-child");
+            if (card) {
+              card.classList.add("approved");
+              card.querySelector(".gemini-plan-header").textContent = "Plan";
+              card.querySelectorAll("button").forEach(b => { b.disabled = true; b.style.display = "none"; });
+            }
+          } else if (/ask.*question/i.test(name)) {
+            // AskUserQuestion: render completed question card with selected answer
+            geminiRenderCompletedQuestion(tu ? tu.parameters : {}, d.output || "", d.status);
+          } else {
+            geminiRenderCompletedTool(name, d.tool_id, tu ? tu.parameters : {}, d.status, d.output);
+          }
         } catch { /* ignore */ }
       } else {
-        // Flush any orphaned tool_use pills before rendering regular message
-        for (const tu of pendingToolUses.values()) {
-          geminiAppendToolUse(tu.tool_name, tu.tool_id, tu.parameters);
-        }
-        pendingToolUses.clear();
+        // Render non-tool messages immediately but keep pendingToolUses alive —
+        // tool_result may arrive after intervening assistant/user messages due to
+        // batch boundaries from synthetic result events.
         geminiAppendMessage(msg.role, msg.content, false, null, msg.ts);
       }
     }
+    // Flush any tool_uses that never got a result.
+    // If we're not currently streaming, these are orphaned/stale — render as completed.
+    // If we ARE streaming, they may still be in-progress — render as running.
+    const isCurrentlyStreaming = wsState?.streaming || geminiStreaming;
     for (const tu of pendingToolUses.values()) {
-      geminiAppendToolUse(tu.tool_name, tu.tool_id, tu.parameters);
+      if (tu.tool_name === "ExitPlanMode") {
+        geminiShowPlanApproval(tu.tool_id, tu.parameters.plan || "");
+      } else if (isCurrentlyStreaming) {
+        geminiAppendToolUse(tu.tool_name, tu.tool_id, tu.parameters);
+      } else {
+        // Orphaned — render as a completed tool with no output
+        geminiRenderCompletedTool(tu.tool_name, tu.tool_id, tu.parameters, "interrupted", "");
+      }
+    }
+
+    // If the server has a pending permission_request (e.g. from relay replay after
+    // restart), show it now so Claude isn't blocked indefinitely.
+    if (wsState && wsState.pendingPermission) {
+      const pp = wsState.pendingPermission;
+      glog("showChat: restoring pending permission_request", pp.tool_name, pp.request_id);
+      handleGeminiEvent({ ...pp, workspace: geminiWorkspace });
     }
 
     // If a stream was in-flight when we opened, poll until the reply lands.
@@ -1611,6 +2183,10 @@ async function openGeminiChat(project, projectPath, cli) {
   glog(`openChat: project=${project} path=${projectPath} cli=${geminiActiveCli}`);
   geminiWorkspace = project || null;
   geminiWorkspacePath = projectPath || null;
+
+  // Clear typing guard so draft restoration isn't blocked
+  geminiLocalDraftActive = false;
+  clearTimeout(geminiLocalDraftTimeout);
 
   const cliLabel = geminiActiveCli === "claude" ? "Claude" : "Gemini";
 
@@ -1734,6 +2310,11 @@ async function openGeminiChat(project, projectPath, cli) {
 
 function closeGeminiChat() {
   glog("closeChat");
+
+  // Flush current input draft immediately so it persists across close/reopen
+  const input = document.getElementById("gemini-input");
+  if (input) geminiSaveDraft(input.value);
+
   geminiStopStreamPoll();
   document.getElementById("gemini-overlay").classList.add("hidden");
   document.body.classList.remove("chat-open");
@@ -1958,6 +2539,11 @@ function geminiStopStreaming() {
   glog("stopStreaming");
   if (!geminiWorkspace) return;
   if (geminiWs && geminiWs.readyState === WebSocket.OPEN) {
+    // For Claude: send soft interrupt first. If Claude doesn't respond within
+    // 5 seconds, the server will escalate to kill.
+    if (geminiActiveCli === "claude") {
+      geminiWs.send(JSON.stringify({ type: "interrupt", workspace: geminiWorkspace }));
+    }
     geminiWs.send(JSON.stringify({ type: "stop", workspace: geminiWorkspace, cli: geminiActiveCli }));
   }
   // Immediate feedback — don't wait for server round-trip
@@ -1972,6 +2558,7 @@ function geminiSetStreaming(active) {
   geminiStreaming = active;
   const input = document.getElementById("gemini-input");
   const sendBtn = document.getElementById("gemini-send");
+  const stopBtn = document.getElementById("gemini-stop");
 
   const modelSelect = document.getElementById("gemini-model");
   if (modelSelect) modelSelect.disabled = active;
@@ -1979,19 +2566,9 @@ function geminiSetStreaming(active) {
   const permSelect = document.getElementById("gemini-permission-mode");
   if (permSelect) permSelect.disabled = active;
 
-  if (sendBtn) {
-    if (active) {
-      sendBtn.textContent = "Stop";
-      sendBtn.onclick = geminiStopStreaming;
-      sendBtn.disabled = false;
-      sendBtn.classList.add("danger");
-    } else {
-      sendBtn.textContent = "Send";
-      sendBtn.onclick = sendGeminiMessage;
-      sendBtn.disabled = false;
-      sendBtn.classList.remove("danger");
-    }
-  }
+  // Send button stays visible always (for steering mid-stream)
+  // Stop button appears next to it only during generation
+  if (stopBtn) stopBtn.style.display = active ? "" : "none";
 
   // Remove streaming class from previous message when done
   if (!active && geminiCurrentMsgEl) {
@@ -2068,9 +2645,24 @@ window.addEventListener("popstate", () => {
   }
 });
 
-// Persist permission mode selection per workspace
+// Persist permission mode + send runtime switch to active relay
 document.getElementById("gemini-permission-mode")?.addEventListener("change", function() {
   geminiSavePermissionMode(this.value);
+  if (this.value && geminiActiveCli === "claude" && geminiWs && geminiWs.readyState === WebSocket.OPEN) {
+    geminiWs.send(JSON.stringify({ type: "set_permission_mode", workspace: geminiWorkspace, mode: this.value }));
+    glog("perm-switch: sent set_permission_mode=" + this.value);
+  }
+});
+
+// Persist model selection per workspace + send runtime model switch to active relay
+document.getElementById("gemini-model")?.addEventListener("change", function() {
+  const newModel = this.value;
+  if (geminiWorkspace) localStorage.setItem(`klaudii-model-${geminiWorkspace}`, newModel);
+  // Send runtime model switch to active Claude relay (takes effect on next API call)
+  if (newModel && geminiActiveCli === "claude" && geminiWs && geminiWs.readyState === WebSocket.OPEN) {
+    geminiWs.send(JSON.stringify({ type: "set_model", workspace: geminiWorkspace, model: newModel }));
+    glog("model-switch: sent set_model=" + newModel);
+  }
 });
 
 // Draft sync — save as user types + set local typing guard

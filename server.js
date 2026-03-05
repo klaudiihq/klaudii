@@ -31,6 +31,18 @@ let config = loadConfig();
 const app = express();
 app.use(express.json());
 
+// Allow Chrome extension to reach the API from any origin
+app.use((req, res, next) => {
+  const origin = req.headers.origin || "";
+  if (origin.startsWith("chrome-extension://") || origin.startsWith("moz-extension://")) {
+    res.setHeader("Access-Control-Allow-Origin", origin);
+    res.setHeader("Access-Control-Allow-Methods", "GET, POST, PATCH, DELETE, OPTIONS");
+    res.setHeader("Access-Control-Allow-Headers", "Content-Type");
+    if (req.method === "OPTIONS") return res.sendStatus(204);
+  }
+  next();
+});
+
 // --- Setup / limp-mode routes (registered before static middleware) ---
 setup.start();
 
@@ -558,7 +570,14 @@ wss.on("connection", (ws) => {
 
         handle.onEvent((event) => {
           eventsSent++;
-          broadcastToWorkspace(workspace, { ...event, workspace });
+          if (event.type === "permission_request") {
+            workspaceState.setPendingPermission(workspace, event);
+          }
+          // Don't broadcast raw result events — we handle them below with
+          // a curated version (stats only) + "done" sentinel.
+          if (event.type !== "result") {
+            broadcastToWorkspace(workspace, { ...event, workspace });
+          }
           // Accumulate assistant message content
           if (event.type === "message" && (event.role === "assistant" || !event.role)) {
             assistantText += event.content || "";
@@ -590,9 +609,14 @@ wss.on("connection", (ws) => {
             assistantText = "";
             toolEvents.length = 0;
             eventsSent = 0;
+            workspaceState.setPendingPermission(workspace, null);
             // _flush = synthetic turn-end from appendMessage — don't broadcast "done"
             // or clear streaming, since a new message is about to start immediately.
             if (!event._flush) {
+              // Forward result event with stats so client can show cost/token footer
+              if (event.stats && Object.keys(event.stats).length > 0) {
+                broadcastToWorkspace(workspace, { type: "result", workspace, stats: event.stats, subtype: event.subtype, errors: event.errors });
+              }
               workspaceState.setStreaming(workspace, false);
               workspaceState.touchChatActivity(workspace);
               broadcastToWorkspace(workspace, { type: "done", workspace, exitCode: 0 });
@@ -604,6 +628,7 @@ wss.on("connection", (ws) => {
           console.log(`[gemini-ws] relay exited workspace=${workspace} cli=${backend} code=${code}`);
           // Relay died — flush any incomplete turn and clean up
           workspaceState.setStreaming(workspace, false);
+          workspaceState.setPendingPermission(workspace, null);
           pendingWorkspaces.delete(workspace);
           workspaceState.touchChatActivity(workspace);
           const batch = [...toolEvents];
@@ -651,11 +676,39 @@ wss.on("connection", (ws) => {
         workspaceState.setState(workspace, { draft: text || "", draftMode, draftSession });
       }
     } else if (type === "permission_response") {
-      // User approved or denied a permission request — send control response back to Claude stdin
+      // User approved or denied a permission request — send control response back to Claude stdin.
+      // Only the FIRST response for a given request_id is forwarded; duplicates from other
+      // WS clients are silently dropped. This prevents race conditions when multiple tabs
+      // are open and one sends a stale/auto response.
       const { request_id, behavior, updatedInput } = msg;
       if (workspace && request_id && behavior) {
-        console.log(`[gemini-ws] permission_response workspace=${workspace} request_id=${request_id} behavior=${behavior}`);
-        claudeChat.sendControlResponse(workspace, request_id, behavior, updatedInput);
+        const pending = workspaceState.getPendingPermission(workspace);
+        if (!pending || pending.request_id !== request_id) {
+          console.log(`[gemini-ws] permission_response IGNORED (already resolved) workspace=${workspace} request_id=${request_id}`);
+        } else if (
+          behavior === "allow" &&
+          /ask.*question/i.test(pending.tool_name) &&
+          (!updatedInput || !updatedInput.answers || !Object.keys(updatedInput.answers).length)
+        ) {
+          // AskUserQuestion requires answers in updatedInput.answers. Reject empty
+          // responses — these come from stale clients that auto-approve without the
+          // AskUserQuestion special-casing.
+          console.log(`[gemini-ws] permission_response REJECTED (AskUserQuestion with no answers) workspace=${workspace} request_id=${request_id} client=#${clientId}`);
+        } else {
+          console.log(`[gemini-ws] permission_response workspace=${workspace} request_id=${request_id} behavior=${behavior} client=#${clientId}`);
+          workspaceState.setPendingPermission(workspace, null);
+          claudeChat.sendControlResponse(workspace, request_id, behavior, updatedInput);
+          // Notify all other clients that this permission was resolved so they can
+          // disable their approval UI (e.g. another tab had the same prompt open).
+          broadcastToWorkspace(workspace, {
+            type: "permission_resolved",
+            workspace,
+            request_id,
+            behavior,
+            tool_name: pending.tool_name,
+            updatedInput: behavior === "allow" ? updatedInput : undefined,
+          }, clientId);
+        }
       }
     } else if (type === "tool_result_response") {
       // User answered a question tool (AskUserQuestion/ask_followup_question)
@@ -663,6 +716,26 @@ wss.on("connection", (ws) => {
       if (workspace && tool_id) {
         console.log(`[gemini-ws] tool_result_response workspace=${workspace} tool_id=${tool_id}`);
         claudeChat.sendToolResult(workspace, tool_id, content);
+      }
+    } else if (type === "set_model") {
+      // Runtime model switch — send control_request to Claude relay
+      const { model: newModel } = msg;
+      if (workspace && newModel) {
+        console.log(`[gemini-ws] set_model workspace=${workspace} model=${newModel}`);
+        claudeChat.sendControlRequest(workspace, "set_model", { model: newModel });
+      }
+    } else if (type === "set_permission_mode") {
+      // Runtime permission mode switch
+      const { mode: newMode } = msg;
+      if (workspace && newMode) {
+        console.log(`[gemini-ws] set_permission_mode workspace=${workspace} mode=${newMode}`);
+        claudeChat.sendControlRequest(workspace, "set_permission_mode", { permissionMode: newMode });
+      }
+    } else if (type === "interrupt") {
+      // Soft interrupt — tell Claude to stop current turn gracefully
+      if (workspace) {
+        console.log(`[gemini-ws] interrupt workspace=${workspace}`);
+        claudeChat.sendControlRequest(workspace, "interrupt");
       }
     }
   });
@@ -691,7 +764,14 @@ claudeChat.reconnectActiveRelays(config, (workspace, handle) => {
       console.log(`[server] replay-seed workspace=${workspace} assistantLen=${assistantText.length}`);
       return; // don't broadcast internal event
     }
-    broadcastToWorkspace(workspace, { ...event, workspace });
+    // Store pending permission requests so late-connecting clients get them
+    if (event.type === "permission_request") {
+      workspaceState.setPendingPermission(workspace, event);
+    }
+    // Don't broadcast raw result events — handled below with curated stats + "done"
+    if (event.type !== "result") {
+      broadcastToWorkspace(workspace, { ...event, workspace });
+    }
     if (event.type === "message" && (event.role === "assistant" || !event.role)) {
       workspaceState.setStreaming(workspace, true);
       assistantText += event.content || "";
@@ -707,7 +787,11 @@ claudeChat.reconnectActiveRelays(config, (workspace, handle) => {
       if (batch.length > 0) claudeChat.pushHistoryBatch(workspace, batch);
       assistantText = "";
       toolEvents.length = 0;
+      workspaceState.setPendingPermission(workspace, null); // turn complete, clear any pending prompt
       if (!event._flush) {
+        if (event.stats && Object.keys(event.stats).length > 0) {
+          broadcastToWorkspace(workspace, { type: "result", workspace, stats: event.stats, subtype: event.subtype, errors: event.errors });
+        }
         workspaceState.setStreaming(workspace, false);
         workspaceState.touchChatActivity(workspace);
         broadcastToWorkspace(workspace, { type: "done", workspace, exitCode: 0 });
@@ -718,6 +802,7 @@ claudeChat.reconnectActiveRelays(config, (workspace, handle) => {
   handle.onDone(({ code }) => {
     console.log(`[server] relay exited workspace=${workspace} code=${code}`);
     workspaceState.setStreaming(workspace, false);
+    workspaceState.setPendingPermission(workspace, null);
     workspaceState.touchChatActivity(workspace);
     const batch = [...toolEvents];
     if (assistantText) batch.push({ role: "assistant", content: assistantText });
