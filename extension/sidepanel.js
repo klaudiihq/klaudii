@@ -1381,7 +1381,7 @@ document.addEventListener("click", async (e) => {
     // CLI mode — open Klaudii dashboard with chat pre-opened
     const serverUrl = card.dataset.serverUrl || klaudiiUrl;
     const tool = chatMode === "gemini" ? "gemini" : "claude";
-    const dashUrl = `${serverUrl.replace(/\/+$/, "")}/?workspace=${encodeURIComponent(project)}&tool=${tool}`;
+    const dashUrl = `${serverUrl.replace(/\/+$/, "")}/?mode=chatonly&workspace=${encodeURIComponent(project)}&tool=${tool}`;
     chrome.runtime.sendMessage({ action: "switchToUrl", url: dashUrl, windowId: undefined });
   }
 });

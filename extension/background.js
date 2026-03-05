@@ -190,7 +190,7 @@ async function switchToUrl(url, windowId) {
   if (windowId) queryOpts.windowId = windowId;
   const candidates = await chrome.tabs.query(queryOpts);
   if (candidates.length) {
-    await chrome.tabs.update(candidates[0].id, { active: true });
+    await chrome.tabs.update(candidates[0].id, { active: true, url });
     return { tabId: candidates[0].id };
   }
   const createOpts = { url };
