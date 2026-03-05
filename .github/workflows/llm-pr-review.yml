@@ -38,7 +38,7 @@ jobs:
         env:
           GCP_PROJECT_ID: ${{ secrets.GCP_PROJECT_ID }}
           GCP_REGION: ${{ secrets.GCP_REGION }}
-          VERTEX_MODEL: claude-sonnet-4-20250514
+          VERTEX_MODEL: claude-sonnet-4-5-20250514
         run: |
           ACCESS_TOKEN=$(gcloud auth print-access-token)
           ENDPOINT="https://${GCP_REGION}-aiplatform.googleapis.com/v1/projects/${GCP_PROJECT_ID}/locations/${GCP_REGION}/publishers/anthropic/models/${VERTEX_MODEL}:rawPredict"
