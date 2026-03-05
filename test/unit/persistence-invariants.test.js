@@ -239,6 +239,34 @@ describe("claude-chat.js invariants", () => {
     ].join("\n")).toBe(true);
   });
 
+  it("connectRelay must capture control_request during replay and re-emit after replay ends", () => {
+    // After a server restart, if Claude was blocked on a control_request (permission
+    // prompt), that request appears in the replay stream. The replayCallback doesn't
+    // handle control_requests — it only processes session IDs and result events.
+    // Without capturing and re-emitting, Claude blocks indefinitely waiting for a
+    // permission_response that was lost during replay.
+    //
+    // The fix: during replay, stash control_request events as pendingControlRequest.
+    // After relay_replay_end, re-emit the pending request to eventCallback.
+    const hasPendingCapture = /pendingControlRequest/.test(claudeChat);
+    expect(hasPendingCapture, [
+      "connectRelay must capture control_request events during replay.",
+      "Without this, Claude blocks indefinitely after server restart when a",
+      "permission prompt (e.g., ExitPlanMode) was pending before the restart.",
+      "The replayCallback doesn't handle control_requests — they must be",
+      "stashed during replay and re-emitted after relay_replay_end.",
+    ].join("\n")).toBe(true);
+
+    // Must re-emit after replay_replay_end (in the relay_replay_end handler)
+    const replayEndBlock = claudeChat.match(
+      /relay_replay_end[\s\S]*?pendingControlRequest[\s\S]*?eventCallback\s*\(\s*pendingControlRequest\s*\)/
+    );
+    expect(replayEndBlock, [
+      "connectRelay must re-emit pendingControlRequest via eventCallback after replay ends.",
+      "Capturing without re-emitting is useless — Claude is still blocked.",
+    ].join("\n")).toBeTruthy();
+  });
+
   it("normalizeEvent must be exported for testing", () => {
     // normalizeEvent is the most critical function in the persistence pipeline.
     // It must be exported (as _normalizeEvent) so unit tests can verify its behavior.

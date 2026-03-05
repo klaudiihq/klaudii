@@ -561,7 +561,13 @@ function handleGeminiEvent(event) {
       }
       geminiCurrentMsgEl = null;
       geminiCurrentMsgText = "";
-      if (event.awaiting_approval) {
+      if (toolName === "ExitPlanMode") {
+        // Plan approval: render the plan as markdown with approve/reject buttons
+        geminiShowPlanApproval(toolId, params.plan || "");
+      } else if (toolName === "EnterPlanMode") {
+        // Planning mode entry — just show a small indicator, no action needed
+        geminiAppendToolUse(toolName, toolId, params);
+      } else if (event.awaiting_approval) {
         // Interactive approval prompt — show Approve/Deny buttons
         geminiShowApprovalPrompt(event);
       } else if (/ask.*question|askfollowup|ask_followup/i.test(toolName)) {
@@ -707,6 +713,18 @@ function handleGeminiEvent(event) {
         }
         break;
       }
+      // Auto-approve EnterPlanMode — it just switches Claude into planning mode
+      if (event.tool_name === "EnterPlanMode") {
+        if (geminiWs && geminiWs.readyState === WebSocket.OPEN) {
+          geminiWs.send(JSON.stringify({ type: "permission_response", workspace: geminiWorkspace, request_id: event.request_id, behavior: "allow" }));
+        }
+        break;
+      }
+      // ExitPlanMode: show plan approval card with the plan content from tool_input
+      if (event.tool_name === "ExitPlanMode") {
+        geminiShowPlanApproval(event.request_id, (event.tool_input || {}).plan || "", true);
+        break;
+      }
       geminiShowPermissionRequest(event.request_id, event.tool_name, event.tool_input);
       break;
 
@@ -776,6 +794,83 @@ function geminiShowPermissionRequest(requestId, toolName, toolInput) {
   denyBtn.dataset.behavior = "deny";
   denyBtn.onclick = () => respond("deny");
   btns.appendChild(denyBtn);
+
+  div.appendChild(btns);
+  container.appendChild(div);
+  geminiScrollToBottom();
+}
+
+/**
+ * Show a plan approval card. Renders the plan as markdown with Approve/Reject buttons.
+ * @param {string} id - Either a tool_id (bypass mode) or request_id (permission mode)
+ * @param {string} planText - The markdown plan content
+ * @param {boolean} isPermissionRequest - true if this is a permission_request (non-bypass mode)
+ */
+function geminiShowPlanApproval(id, planText, isPermissionRequest) {
+  const container = document.getElementById("gemini-messages");
+
+  // Remove any existing running tool pill for this id (the generic one from tool_use)
+  const existingPill = container.querySelector(`.gemini-tool.running[data-tool-id="${CSS.escape(id)}"]`);
+  if (existingPill) existingPill.remove();
+
+  const div = document.createElement("div");
+  div.className = "gemini-plan-approval";
+
+  const header = document.createElement("div");
+  header.className = "gemini-plan-header";
+  header.textContent = "Claude has proposed a plan";
+  div.appendChild(header);
+
+  if (planText) {
+    const content = document.createElement("div");
+    content.className = "gemini-plan-content md-content";
+    content.innerHTML = geminiRenderMarkdown(planText);
+    div.appendChild(content);
+  }
+
+  const btns = document.createElement("div");
+  btns.className = "gemini-permission-buttons";
+
+  const respond = (approved) => {
+    btns.querySelectorAll("button").forEach(b => { b.disabled = true; });
+    div.classList.add(approved ? "approved" : "rejected");
+    header.textContent = approved ? "Plan approved" : "Plan rejected";
+
+    if (isPermissionRequest) {
+      // Non-bypass mode: send permission_response
+      if (geminiWs && geminiWs.readyState === WebSocket.OPEN) {
+        geminiWs.send(JSON.stringify({
+          type: "permission_response",
+          workspace: geminiWorkspace,
+          request_id: id,
+          behavior: approved ? "allow" : "deny",
+        }));
+      }
+    } else {
+      // Bypass mode: plan already executed. Send follow-up message to instruct Claude.
+      if (!approved && geminiWs && geminiWs.readyState === WebSocket.OPEN) {
+        geminiWs.send(JSON.stringify({
+          type: "message",
+          workspace: geminiWorkspace,
+          message: "I reject this plan. Please revise it.",
+          backend: "claude",
+        }));
+      }
+    }
+    glog("plan_approval: " + (approved ? "approved" : "rejected") + " id=" + id);
+  };
+
+  const approveBtn = document.createElement("button");
+  approveBtn.className = "btn primary";
+  approveBtn.textContent = "Approve Plan";
+  approveBtn.onclick = () => respond(true);
+  btns.appendChild(approveBtn);
+
+  const rejectBtn = document.createElement("button");
+  rejectBtn.className = "btn";
+  rejectBtn.textContent = "Reject Plan";
+  rejectBtn.onclick = () => respond(false);
+  btns.appendChild(rejectBtn);
 
   div.appendChild(btns);
   container.appendChild(div);
@@ -950,6 +1045,10 @@ function geminiToolDescription(name, params) {
       return p.query || "";
     case "webfetch":
       return p.url || "";
+    case "enterplanmode":
+      return "Entering planning mode";
+    case "exitplanmode":
+      return "Plan ready for review";
     default: {
       // Try to find a single short string value to display
       const vals = Object.values(p).filter((v) => typeof v === "string" && v.length < 100);
@@ -1420,11 +1519,9 @@ async function geminiRenderRecoveredContent() {
           const d = JSON.parse(msg.content);
           const tu = pendingToolUses.get(d.tool_id);
           if (tu) pendingToolUses.delete(d.tool_id);
-          geminiRenderCompletedTool(tu ? tu.tool_name : d.tool_id, d.tool_id, tu ? tu.parameters : {}, d.status, d.output);
+          geminiRenderCompletedTool(tu ? tu.tool_name : (d.tool_name || "tool"), d.tool_id, tu ? tu.parameters : {}, d.status, d.output);
         } catch {}
       } else {
-        for (const tu of pendingToolUses.values()) geminiAppendToolUse(tu.tool_name, tu.tool_id, tu.parameters);
-        pendingToolUses.clear();
         geminiAppendMessage(msg.role, msg.content, false, null, msg.ts);
       }
     }
@@ -1496,7 +1593,7 @@ function geminiStartStreamPoll(historyLengthAtOpen) {
               const tu = d.tool_id ? pendingToolUses.get(d.tool_id) : null;
               if (tu) pendingToolUses.delete(d.tool_id);
               geminiRenderCompletedTool(
-                tu ? tu.tool_name : d.tool_id,
+                tu ? tu.tool_name : (d.tool_name || "tool"),
                 d.tool_id,
                 tu ? tu.parameters : {},
                 d.status,
@@ -1504,11 +1601,6 @@ function geminiStartStreamPoll(historyLengthAtOpen) {
               );
             } catch { /* ignore */ }
           } else {
-            // Flush any orphaned tool_use pills before rendering regular message
-            for (const tu of pendingToolUses.values()) {
-              geminiAppendToolUse(tu.tool_name, tu.tool_id, tu.parameters);
-            }
-            pendingToolUses.clear();
             geminiAppendMessage(msg.role, msg.content, false, null, msg.ts);
           }
         }
@@ -1559,25 +1651,35 @@ async function geminiShowChat(wsState = null) {
           const d = JSON.parse(msg.content);
           const tu = d.tool_id ? pendingToolUses.get(d.tool_id) : null;
           if (tu) pendingToolUses.delete(d.tool_id);
-          geminiRenderCompletedTool(
-            tu ? tu.tool_name : d.tool_id,
-            d.tool_id,
-            tu ? tu.parameters : {},
-            d.status,
-            d.output
-          );
+          const name = tu ? tu.tool_name : (d.tool_name || "tool");
+          // ExitPlanMode: render as plan card instead of generic tool pill
+          if (name === "ExitPlanMode") {
+            geminiShowPlanApproval(d.tool_id, (tu ? tu.parameters : {}).plan || d.output || "", false);
+            // Mark as already responded so buttons are disabled
+            const card = document.querySelector(".gemini-plan-approval:last-child");
+            if (card) {
+              card.classList.add("approved");
+              card.querySelector(".gemini-plan-header").textContent = "Plan";
+              card.querySelectorAll("button").forEach(b => { b.disabled = true; b.style.display = "none"; });
+            }
+          } else {
+            geminiRenderCompletedTool(name, d.tool_id, tu ? tu.parameters : {}, d.status, d.output);
+          }
         } catch { /* ignore */ }
       } else {
-        // Flush any orphaned tool_use pills before rendering regular message
-        for (const tu of pendingToolUses.values()) {
-          geminiAppendToolUse(tu.tool_name, tu.tool_id, tu.parameters);
-        }
-        pendingToolUses.clear();
+        // Render non-tool messages immediately but keep pendingToolUses alive —
+        // tool_result may arrive after intervening assistant/user messages due to
+        // batch boundaries from synthetic result events.
         geminiAppendMessage(msg.role, msg.content, false, null, msg.ts);
       }
     }
+    // Flush any tool_uses that never got a result (still in-progress or orphaned)
     for (const tu of pendingToolUses.values()) {
-      geminiAppendToolUse(tu.tool_name, tu.tool_id, tu.parameters);
+      if (tu.tool_name === "ExitPlanMode") {
+        geminiShowPlanApproval(tu.tool_id, tu.parameters.plan || "");
+      } else {
+        geminiAppendToolUse(tu.tool_name, tu.tool_id, tu.parameters);
+      }
     }
 
     // If a stream was in-flight when we opened, poll until the reply lands.
