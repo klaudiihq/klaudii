@@ -4,76 +4,43 @@ Based on test-results.md from the iosapp testing session.
 
 ## Critical Bugs (affecting multiple tests)
 
-### Bug A: Tool pills never finalize in originating window
-**Tests affected:** 3, 7 (and indirectly 4)
-**Symptom:** Tool calls show as "running" with spinner forever in the window that sent the message. Other windows see them finalize correctly.
-**Root cause hypothesis:** The originating window processes `tool_use` events and creates pills, but when `tool_result` arrives, `geminiUpdateToolResult` can't find the pill. This could be because:
-1. The `tool_id` on the `tool_result` event doesn't match what was set on the pill
-2. The `tool_result` is being skipped by some filtering logic
-3. The `tool_result` event never reaches the originating window
+### Bug A: Tool pills never finalize in originating window — ✅ FIXED (8292d64)
+**Root cause:** `isAskTool` check in `tool_result` handler used `document.querySelector('.gemini-question-card')` which matched ANY existing question card, blocking ALL tool_results.
+**Fix:** Removed DOM query fallback, only check toolName regex.
 
-**Debug approach:**
-- Add console logging in `handleGeminiEvent` for `tool_result` events to see if they arrive
-- Log what `tool_id` is on the event vs what's on the pill's `data-tool-id`
-- Check if the AskUserQuestion filter (`isAskTool` check) is too broad and catching non-ask tools
-
-**LIKELY FIX:** In the `tool_result` handler, the `isAskTool` check uses:
-```js
-const isAskTool = /ask.*question/i.test(toolName) ||
-  document.querySelector(`.gemini-question-card`) !== null;
-```
-The second condition (`document.querySelector('.gemini-question-card')`) is TRUE whenever ANY question card exists in the DOM — even from a previous turn. This means ALL subsequent tool_results get skipped. Fix: remove the DOM query fallback, only check tool_name.
-
-### Bug B: Model switching doesn't take effect
+### Bug B: Model switching doesn't take effect — LIKELY STALE JS
 **Test affected:** 2
-**Symptom:** User switched dropdown to Opus, but Claude still reported running as Sonnet.
-**Root cause hypothesis:** The `set_model` WS message is sent, but the `sendControlRequest` may not be formatting the message correctly for the Claude CLI. The CLI expects the model to be in `request.model`, but we might be putting it elsewhere.
-**Debug approach:**
-- Check server logs for `set_model` message receipt
-- Check `sendControlRequest` output format
-- Verify the Claude CLI actually processes `set_model` control_requests in stream-json mode
+**Implementation verified correct:** `sendControlRequest` sends `{"type":"control_request","request_id":"...","request":{"subtype":"set_model","model":"opus"}}` to relay → Claude stdin. Relay forwards verbatim. Test notes mention stale JS as likely cause for several failures. Needs re-test with fresh JS (cache busted to v=28).
 
-### Bug C: Cost/token footer not showing
-**Test affected:** 4
-**Symptom:** No footer visible after messages.
-**Root cause hypothesis:** The `result` event handler calls `geminiShowResultFooter(event.stats, ...)` but the stats may be empty `{}` (from the synthetic result event emitted by the `user` case in normalizeEvent). The real `result` event with stats comes separately but may be handled differently.
-**Debug approach:**
-- Check what stats the `result` event actually contains when it arrives
-- The synthetic `{ type: "result", stats: {} }` from `user` events will produce empty stats
-- The real `result` event from `case "result"` should have cost/tokens/duration
-- May need to only show footer for real results (non-empty stats)
+### Bug C: Cost/token footer not showing — ✅ FIXED (8292d64)
+**Root cause:** Server consumed `result` event for history persistence and only broadcast `done`. The `result` event with stats never reached the frontend.
+**Fix:** Server now broadcasts `result` event (with stats) before `done` in both onEvent and reconnect paths.
 
 ## Medium Bugs
 
-### Bug D: First option stays blue after selection (AskUserQuestion)
-**Test affected:** 1
-**Symptom:** First unselected option appears blue instead of grey.
-**Root cause:** The first option button gets `class="btn primary"` (line ~1011 in geminiShowToolQuestions). When another option is selected, `greyed` class is added but `.primary` overrides the opacity. Fix: remove `primary` class when greying out.
+### Bug D: First option stays blue after selection (AskUserQuestion) — ✅ FIXED (8292d64)
+**Root cause:** `.primary` class on first button overrides `.greyed` opacity.
+**Fix:** Remove `.primary` from all buttons when greying, add only to selected.
 
-### Bug E: Stop button stuck visible when idle
-**Test affected:** 10
-**Symptom:** Stop button remains visible even when no generation is in flight.
-**Root cause:** `geminiSetStreaming(false)` should hide the stop button but may not be toggling correctly.
+### Bug E: Stop button stuck visible when idle — ✅ FIXED (92e14c4)
+**Root cause:** Single button swapping between Send/Stop states — if streaming flag gets stuck, button stays as Stop.
+**Fix:** Separate Send and Stop buttons. Stop button visibility is directly tied to `geminiStreaming` via `display:none` toggle. Send always stays visible (enables steering).
 
-## Feature Requests (from test results, implement after bug fixes)
+## Feature Requests
 
-### FR1: Cumulative cost counter in input area
+### FR1: Cumulative cost counter in input area — TODO
 Instead of per-message footers, show cumulative session cost between model selector and send button.
 
-### FR2: Send + Stop button layout
-- Send button always visible
-- Stop button appears NEXT TO send (not replacing it) during generation
-- Stop icon: small red square-in-circle
+### FR2: Send + Stop button layout — ✅ DONE (92e14c4)
+- Send button always visible (for steering mid-stream)
+- Stop button: separate small red square icon, appears next to Send during generation
+- Hides automatically via `geminiSetStreaming(false)`
 
-### FR3: Extended thinking toggle
+### FR3: Extended thinking toggle — TODO
 User wants explicit control over extended thinking, not auto-enable.
 
-## Implementation Order
-
-1. Fix Bug A (tool pills never finalize) — CRITICAL, blocks most testing
-2. Fix Bug D (first option stays blue) — quick CSS fix
-3. Fix Bug C (cost footer) — check stats content
-4. Fix Bug B (model switching) — verify control_request format
-5. Fix Bug E (stop button) — check streaming state management
-6. Implement FR2 (send/stop layout) — UX improvement
-7. Implement FR1 (cumulative cost) — nice to have
+## Summary
+- 4/5 bugs fixed
+- 1/3 feature requests implemented
+- Bug B needs re-test (implementation looks correct, likely stale JS)
+- FR1 and FR3 remaining
