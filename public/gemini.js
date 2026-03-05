@@ -1887,13 +1887,6 @@ function geminiShowThinking() {
   geminiScrollToBottom();
 
   const ctx = canvas.getContext("2d");
-  // Pull particle colors from CSS theme variables — no hardcoded values
-  const cs = getComputedStyle(document.documentElement);
-  const COLORS = [
-    cs.getPropertyValue("--s-green").trim(),
-    cs.getPropertyValue("--s-blue-text").trim(),
-    cs.getPropertyValue("--text-strong").trim(),
-  ];
   const COUNT = 20;
   const cx = SIZE / 2, cy = SIZE / 2;
 
@@ -1901,7 +1894,7 @@ function geminiShowThinking() {
     angle: (i / COUNT) * Math.PI * 2,
     radius: 4 + Math.random() * 10,
     speed: (i % 2 === 0 ? 1 : -1) * (0.018 + Math.random() * 0.022),
-    color: COLORS[i % COLORS.length],
+    colorIdx: i % 3,
     wobble: Math.random() * Math.PI * 2,
   }));
 
@@ -1920,13 +1913,21 @@ function geminiShowThinking() {
     }
     speedMult += (speedTarget - speedMult) * 0.04;
 
+    // Re-read theme colors each frame so theme switches take effect live
+    const cs = getComputedStyle(document.documentElement);
+    const colors = [
+      cs.getPropertyValue("--s-green").trim(),
+      cs.getPropertyValue("--s-blue-text").trim(),
+      cs.getPropertyValue("--text-strong").trim(),
+    ];
+
     ctx.clearRect(0, 0, SIZE, SIZE); // transparent — no background box
     for (const p of particles) {
       p.angle += p.speed * speedMult;
       const r = p.radius + Math.sin(t * 0.003 + p.wobble) * 2.5;
       const x = cx + Math.cos(p.angle) * r;
       const y = cy + Math.sin(p.angle) * r;
-      ctx.fillStyle = p.color;
+      ctx.fillStyle = colors[p.colorIdx];
       ctx.beginPath();
       ctx.arc(x, y, 1, 0, Math.PI * 2);
       ctx.fill();
