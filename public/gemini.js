@@ -2558,6 +2558,7 @@ function geminiSetStreaming(active) {
   geminiStreaming = active;
   const input = document.getElementById("gemini-input");
   const sendBtn = document.getElementById("gemini-send");
+  const stopBtn = document.getElementById("gemini-stop");
 
   const modelSelect = document.getElementById("gemini-model");
   if (modelSelect) modelSelect.disabled = active;
@@ -2565,19 +2566,9 @@ function geminiSetStreaming(active) {
   const permSelect = document.getElementById("gemini-permission-mode");
   if (permSelect) permSelect.disabled = active;
 
-  if (sendBtn) {
-    if (active) {
-      sendBtn.textContent = "Stop";
-      sendBtn.onclick = geminiStopStreaming;
-      sendBtn.disabled = false;
-      sendBtn.classList.add("danger");
-    } else {
-      sendBtn.textContent = "Send";
-      sendBtn.onclick = sendGeminiMessage;
-      sendBtn.disabled = false;
-      sendBtn.classList.remove("danger");
-    }
-  }
+  // Send button stays visible always (for steering mid-stream)
+  // Stop button appears next to it only during generation
+  if (stopBtn) stopBtn.style.display = active ? "" : "none";
 
   // Remove streaming class from previous message when done
   if (!active && geminiCurrentMsgEl) {
