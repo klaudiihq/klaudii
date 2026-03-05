@@ -1689,6 +1689,15 @@ function geminiShowResultFooter(stats, subtype, errors) {
     } else if (subtype === "error_during_execution") {
       errorDiv.textContent = "Error during execution";
       if (errors?.length) errorDiv.textContent += ": " + errors.map(e => e.message || e).join("; ");
+    } else if (subtype === "error_insufficient_context") {
+      errorDiv.textContent = "Claude ran out of context window";
+    } else if (subtype === "error_permission_denied") {
+      errorDiv.textContent = "Permission was denied";
+    } else if (subtype === "error_model_unavailable") {
+      errorDiv.textContent = "Model is currently unavailable";
+    } else if (subtype === "interrupted") {
+      errorDiv.textContent = "Turn was interrupted";
+      errorDiv.className = "gemini-result-error interrupted";
     } else {
       errorDiv.textContent = "Turn ended: " + subtype;
     }
