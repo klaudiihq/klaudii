@@ -610,20 +610,35 @@ summary.gemini-tool-summary::marker { display: none; }
   box-shadow: none;
 }
 
-.gemini-send-btn:not(.danger)::after {
+.gemini-send-btn::after {
   content: "↑";
   font-size: 0.85em;
   opacity: 0.85;
   font-weight: 400;
 }
 
-.gemini-send-btn.danger {
-  background: #b91c1c;
+/* Stop button — small red square icon, appears next to Send during generation */
+.gemini-stop-btn {
+  background: transparent;
+  color: #ef4444;
+  border: 1.5px solid #ef4444;
+  border-radius: 6px;
+  width: 30px;
+  height: 30px;
+  padding: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: background 0.15s, transform 0.1s;
+  flex-shrink: 0;
 }
-
-.gemini-send-btn.danger:hover {
-  background: #991b1b;
-  box-shadow: 0 3px 10px color-mix(in srgb, #ef4444 35%, transparent);
+.gemini-stop-btn:hover {
+  background: color-mix(in srgb, #ef4444 15%, transparent);
+  transform: translateY(-1px);
+}
+.gemini-stop-btn:active {
+  transform: translateY(0);
 }
 
 /* --- Auth panel --- */
