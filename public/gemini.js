@@ -145,6 +145,9 @@ function geminiInitialPillOpen() {
   return geminiToolDisplayMode === "full";
 }
 
+// Track tool_ids for AskUserQuestion tools so we can suppress their tool_result pills
+const geminiAskToolIds = new Set();
+
 // --- URL query parameter support ---
 
 function getChatParams() {
@@ -278,9 +281,9 @@ async function geminiSwitchSession(num) {
 
   geminiSessionNum = num;
 
-  // Persist session number server-side
+  // Persist session number server-side (must complete before showChat fetches the draft)
   if (geminiWorkspace) {
-    fetch(`/api/workspace-state/${encodeURIComponent(geminiWorkspace)}`, {
+    await fetch(`/api/workspace-state/${encodeURIComponent(geminiWorkspace)}`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
@@ -821,11 +824,13 @@ function handleGeminiEvent(event) {
       const error = event.error;
       glog(`handle: tool_result id=${toolId} tool=${toolName} status=${status} outputLen=${output.length}`);
       // AskUserQuestion results are already shown in the question card — skip rendering.
-      // Check both tool_name (when present) and tracked tool_ids (when tool_name is missing).
-      if (!/ask.*question/i.test(toolName) && !geminiAskToolIds.has(toolId)) {
+      // Check both tool_name (if present) and our tracked set (CLI often omits tool_name on results).
+      const isAskResult = /ask.*question/i.test(toolName) || geminiAskToolIds.has(toolId);
+      if (isAskResult) {
+        geminiAskToolIds.delete(toolId);
+      } else {
         geminiUpdateToolResult(toolId, status, output, error);
       }
-      geminiAskToolIds.delete(toolId);
       // Model continues processing after the tool — show thinking indicator so the
       // UI doesn't appear frozen between tool completion and the next text chunk.
       if (geminiStreaming) geminiShowThinking("Thinking\u2026");

@@ -616,19 +616,7 @@ summary.gemini-tool-summary::marker { display: none; }
   100% { opacity: 0; }
 }
 
-/* --- Streaming indicator --- */
-
-.gemini-streaming::after {
-  content: "\25CF";
-  animation: gemini-blink 1s infinite;
-  color: var(--s-blue-text);
-  margin-left: 2px;
-}
-
-@keyframes gemini-blink {
-  0%, 100% { opacity: 1; }
-  50% { opacity: 0.2; }
-}
+/* --- Streaming indicator (removed — was a blue blinking dot with no clear meaning) --- */
 
 /* --- Input area --- */
 
