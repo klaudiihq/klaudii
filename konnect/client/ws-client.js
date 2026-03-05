@@ -7,13 +7,15 @@ let reconnectDelay = 1000;
 const MAX_RECONNECT_DELAY = 60000;
 let heartbeatTimer = null;
 let onMessage = null;
+let onConnect = null;
 
-function connect(config, messageHandler) {
+function connect(config, messageHandler, connectHandler) {
   if (!config.cloud || !config.cloud.relayUrl || !config.cloud.serverId) {
     return;
   }
 
   onMessage = messageHandler;
+  if (connectHandler) onConnect = connectHandler;
   const { relayUrl, serverId, signingKey } = config.cloud;
   // Ensure the /ws path is present (stored URLs may omit it)
   const base = new URL(relayUrl);
@@ -55,6 +57,7 @@ function connect(config, messageHandler) {
       if (msg.ok) {
         console.log("[cloud] Authenticated with relay");
         startHeartbeat();
+        if (onConnect) onConnect();
       } else {
         console.error("[cloud] Authentication failed");
         ws.close();

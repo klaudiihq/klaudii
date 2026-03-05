@@ -15,5 +15,9 @@
 			</array>
 		</dict>
 	</array>
+	<key>BGTaskSchedulerPermittedIdentifiers</key>
+	<array>
+		<string>com.klaudii.refresh</string>
+	</array>
 </dict>
 </plist>

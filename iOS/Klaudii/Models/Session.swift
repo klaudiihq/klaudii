@@ -1,6 +1,6 @@
 import Foundation
 
-struct Session: Codable, Identifiable {
+struct Session: Codable, Identifiable, Hashable {
     var id: String { project }
 
     let project: String
@@ -46,19 +46,19 @@ struct Session: Codable, Identifiable {
     }
 }
 
-struct GitStatus: Codable {
+struct GitStatus: Codable, Hashable {
     let branch: String?
     let dirtyFiles: Int?
     let unpushed: Int?
     let files: [GitFile]?
 }
 
-struct GitFile: Codable {
+struct GitFile: Codable, Hashable {
     let status: String
     let path: String
 }
 
-struct TtydInfo: Codable {
+struct TtydInfo: Codable, Hashable {
     let project: String?
     let port: Int?
     let pid: Int?

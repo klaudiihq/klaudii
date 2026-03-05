@@ -134,6 +134,27 @@ struct SessionCardView: View {
                     )
                 }
 
+                // Action row: chat button (always visible)
+                HStack(spacing: 0) {
+                    NavigationLink(value: session) {
+                        HStack(spacing: 4) {
+                            Image(systemName: "bubble.left.and.bubble.right")
+                                .font(.system(size: 11))
+                            Text("Chat")
+                                .font(.system(size: KTheme.captionSize, weight: .medium))
+                        }
+                        .foregroundColor(KTheme.accent)
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 4)
+                        .background(KTheme.successBg)
+                        .clipShape(Capsule())
+                    }
+                    .buttonStyle(.plain)
+
+                    Spacer()
+                }
+                .padding(.top, 2)
+
                 // History section (expandable)
                 if showHistory {
                     HistoryListView(

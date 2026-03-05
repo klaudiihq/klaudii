@@ -15,7 +15,7 @@ class SessionsViewModel: ObservableObject {
     @Published var errorMessage: String?
     @Published var expandedHistory: [String: [HistoryEntry]] = [:]
 
-    private let relay: KloudRelay
+    let relay: KloudRelay
     var demoMode: Bool
     private var refreshTask: Task<Void, Never>?
     private var serverOnlineSub: AnyCancellable?
@@ -44,6 +44,14 @@ class SessionsViewModel: ObservableObject {
     init(relay: KloudRelay, demoMode: Bool = false) {
         self.relay = relay
         self.demoMode = demoMode
+
+        // Load cached data immediately so UI isn't empty while connecting
+        if !demoMode, let serverId = relay.serverId ?? KeychainService.getLastServerId() {
+            let cached = LocalCache.loadSessions(serverId: serverId)
+            let cachedProcs = LocalCache.loadProcesses(serverId: serverId)
+            if !cached.isEmpty { sessions = cached }
+            if !cachedProcs.isEmpty { processes = cachedProcs }
+        }
 
         // Immediately refresh when server comes online
         serverOnlineSub = relay.$serverOnline
@@ -89,6 +97,10 @@ class SessionsViewModel: ObservableObject {
             sessions = s
             processes = p
             errorMessage = nil
+            if let serverId = relay.serverId {
+                LocalCache.saveSessions(s, serverId: serverId)
+                LocalCache.saveProcesses(p, serverId: serverId)
+            }
         } catch {
             // Don't overwrite sessions on transient errors
             if sessions.isEmpty {

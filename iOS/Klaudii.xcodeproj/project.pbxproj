@@ -34,6 +34,11 @@
 		A000000000000019 /* AVFoundation.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = A000000000000203 /* AVFoundation.framework */; };
 		A00000000000001A /* Security.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = A000000000000204 /* Security.framework */; };
 		A00000000000001B /* AddWorkspaceView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A000000000000118 /* AddWorkspaceView.swift */; };
+		A00000000000001C /* ChatMessage.swift in Sources */ = {isa = PBXBuildFile; fileRef = A000000000000119 /* ChatMessage.swift */; };
+		A00000000000001D /* ChatViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000011A /* ChatViewModel.swift */; };
+		A00000000000001E /* ChatView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000011B /* ChatView.swift */; };
+		A00000000000001F /* LocalCache.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000011C /* LocalCache.swift */; };
+		A000000000000020 /* BackgroundSyncManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000011D /* BackgroundSyncManager.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -61,6 +66,11 @@
 		A000000000000116 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		A000000000000117 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
 		A000000000000118 /* AddWorkspaceView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AddWorkspaceView.swift; sourceTree = "<group>"; };
+		A000000000000119 /* ChatMessage.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatMessage.swift; sourceTree = "<group>"; };
+		A00000000000011A /* ChatViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatViewModel.swift; sourceTree = "<group>"; };
+		A00000000000011B /* ChatView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatView.swift; sourceTree = "<group>"; };
+		A00000000000011C /* LocalCache.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LocalCache.swift; sourceTree = "<group>"; };
+		A00000000000011D /* BackgroundSyncManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BackgroundSyncManager.swift; sourceTree = "<group>"; };
 		A000000000000201 /* CryptoKit.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = CryptoKit.framework; path = System/Library/Frameworks/CryptoKit.framework; sourceTree = SDKROOT; };
 		A000000000000202 /* AuthenticationServices.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = AuthenticationServices.framework; path = System/Library/Frameworks/AuthenticationServices.framework; sourceTree = SDKROOT; };
 		A000000000000203 /* AVFoundation.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = AVFoundation.framework; path = System/Library/Frameworks/AVFoundation.framework; sourceTree = SDKROOT; };
@@ -113,6 +123,7 @@
 				A000000000000102 /* Session.swift */,
 				A000000000000103 /* Server.swift */,
 				A000000000000104 /* HistoryEntry.swift */,
+				A000000000000119 /* ChatMessage.swift */,
 			);
 			path = Models;
 			sourceTree = "<group>";
@@ -124,6 +135,8 @@
 				A000000000000106 /* KeychainService.swift */,
 				A000000000000107 /* AuthService.swift */,
 				A000000000000108 /* KloudRelay.swift */,
+				A00000000000011C /* LocalCache.swift */,
+				A00000000000011D /* BackgroundSyncManager.swift */,
 			);
 			path = Services;
 			sourceTree = "<group>";
@@ -134,6 +147,7 @@
 				A000000000000109 /* AppViewModel.swift */,
 				A00000000000010A /* SessionsViewModel.swift */,
 				A00000000000010B /* PairingViewModel.swift */,
+				A00000000000011A /* ChatViewModel.swift */,
 			);
 			path = ViewModels;
 			sourceTree = "<group>";
@@ -151,6 +165,7 @@
 				A000000000000113 /* ProcessesView.swift */,
 				A000000000000114 /* SettingsView.swift */,
 				A000000000000118 /* AddWorkspaceView.swift */,
+				A00000000000011B /* ChatView.swift */,
 			);
 			path = Views;
 			sourceTree = "<group>";
@@ -274,6 +289,11 @@
 				A000000000000014 /* SettingsView.swift in Sources */,
 				A000000000000015 /* Theme.swift in Sources */,
 				A00000000000001B /* AddWorkspaceView.swift in Sources */,
+				A00000000000001C /* ChatMessage.swift in Sources */,
+				A00000000000001D /* ChatViewModel.swift in Sources */,
+				A00000000000001E /* ChatView.swift in Sources */,
+				A00000000000001F /* LocalCache.swift in Sources */,
+				A000000000000020 /* BackgroundSyncManager.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

@@ -101,6 +101,9 @@ struct DashboardView: View {
         .sheet(isPresented: $showingAddWorkspace) {
             AddWorkspaceView(sessionsVM: sessionsVM)
         }
+        .navigationDestination(for: Session.self) { session in
+            ChatView(session: session, relay: appVM.relay)
+        }
     }
 
     /// Platform from live WebSocket or cached server model

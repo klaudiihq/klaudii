@@ -13,11 +13,13 @@ class KloudRelay: ObservableObject {
 
     private var webSocket: URLSessionWebSocketTask?
     private var connectionKey: Data?
-    private var serverId: String?
+    private(set) var serverId: String?
     private var userId: String?
     private var sessionCookie: String?
     private var pendingRequests: [String: CheckedContinuation<[String: Any], Error>] = [:]
     private var pendingTimeouts: [String: Task<Void, Never>] = [:]
+    private var pendingChannelOpens: [String: CheckedContinuation<RelayChannel, Error>] = [:]
+    private var openChannels: [String: RelayChannel] = [:]
     private var reconnectTask: Task<Void, Never>?
     private var heartbeatTask: Task<Void, Never>?
     private var receiveTask: Task<Void, Never>?
@@ -59,6 +61,7 @@ class KloudRelay: ObservableObject {
         isConnected = false
         serverOnline = false
         failAllPending(error: RelayError.disconnected)
+        closeAllChannels()
     }
 
     /// Send an encrypted API request and wait for the response.
@@ -133,6 +136,81 @@ class KloudRelay: ObservableObject {
             return body
         }
         return result
+    }
+
+    /// Open a proxied WebSocket channel to a local path on the Klaudii server.
+    /// The returned RelayChannel can send/receive raw string frames (JSON).
+    func openChannel(path: String) async throws -> RelayChannel {
+        guard isConnected, let connectionKey = connectionKey else {
+            throw RelayError.notConnected
+        }
+
+        let channelId = UUID().uuidString
+        let payload = try JSONSerialization.data(withJSONObject: ["path": path])
+        let payloadString = String(data: payload, encoding: .utf8)!
+        let encrypted = try CryptoService.encrypt(payloadString, connectionKey: connectionKey)
+
+        let message: [String: Any] = [
+            "type": "ws_connect",
+            "channelId": channelId,
+            "encrypted": ["salt": encrypted.salt, "data": encrypted.data],
+        ]
+
+        return try await withCheckedThrowingContinuation { continuation in
+            pendingChannelOpens[channelId] = continuation
+
+            // 10-second timeout for the channel to open
+            Task {
+                try? await Task.sleep(for: .seconds(10))
+                await MainActor.run {
+                    if let cont = self.pendingChannelOpens.removeValue(forKey: channelId) {
+                        cont.resume(throwing: RelayError.timeout)
+                    }
+                }
+            }
+
+            do {
+                let msgData = try JSONSerialization.data(withJSONObject: message)
+                let msgString = String(data: msgData, encoding: .utf8)!
+                webSocket?.send(.string(msgString)) { error in
+                    if let error = error {
+                        Task { @MainActor in
+                            if let cont = self.pendingChannelOpens.removeValue(forKey: channelId) {
+                                cont.resume(throwing: error)
+                            }
+                        }
+                    }
+                }
+            } catch {
+                pendingChannelOpens.removeValue(forKey: channelId)
+                continuation.resume(throwing: error)
+            }
+        }
+    }
+
+    func sendChannelMessage(channelId: String, text: String) {
+        guard let connectionKey = connectionKey,
+              let wrapperData = try? JSONSerialization.data(withJSONObject: ["data": text]),
+              let wrapperString = String(data: wrapperData, encoding: .utf8),
+              let encrypted = try? CryptoService.encrypt(wrapperString, connectionKey: connectionKey)
+        else { return }
+
+        let message: [String: Any] = [
+            "type": "ws_message",
+            "channelId": channelId,
+            "encrypted": ["salt": encrypted.salt, "data": encrypted.data],
+        ]
+        guard let msgData = try? JSONSerialization.data(withJSONObject: message),
+              let msgString = String(data: msgData, encoding: .utf8) else { return }
+        webSocket?.send(.string(msgString)) { _ in }
+    }
+
+    func closeChannel(channelId: String) {
+        openChannels.removeValue(forKey: channelId)
+        let message: [String: Any] = ["type": "ws_close", "channelId": channelId]
+        guard let msgData = try? JSONSerialization.data(withJSONObject: message),
+              let msgString = String(data: msgData, encoding: .utf8) else { return }
+        webSocket?.send(.string(msgString)) { _ in }
     }
 
     /// Convenience: GET request returning decoded type.
@@ -328,6 +406,35 @@ class KloudRelay: ObservableObject {
                 }
             }
 
+        case "ws_connected":
+            guard let channelId = json["channelId"] as? String else { return }
+            if let cont = pendingChannelOpens.removeValue(forKey: channelId) {
+                let channel = RelayChannel(channelId: channelId, relay: self)
+                openChannels[channelId] = channel
+                cont.resume(returning: channel)
+            }
+
+        case "ws_message":
+            guard let channelId = json["channelId"] as? String,
+                  let encrypted = json["encrypted"] as? [String: String],
+                  let salt = encrypted["salt"],
+                  let encData = encrypted["data"],
+                  let connectionKey = connectionKey else { return }
+            let envelope = CryptoService.EncryptedEnvelope(salt: salt, data: encData)
+            guard let decrypted = try? CryptoService.decrypt(envelope, connectionKey: connectionKey),
+                  let parsed = try? JSONSerialization.jsonObject(with: Data(decrypted.utf8)) as? [String: Any],
+                  let data = parsed["data"] as? String else { return }
+            openChannels[channelId]?.deliver(data)
+
+        case "ws_close":
+            guard let channelId = json["channelId"] as? String else { return }
+            if let cont = pendingChannelOpens.removeValue(forKey: channelId) {
+                cont.resume(throwing: RelayError.disconnected)
+            }
+            if let channel = openChannels.removeValue(forKey: channelId) {
+                channel.notifyClosed()
+            }
+
         default:
             break
         }
@@ -339,6 +446,7 @@ class KloudRelay: ObservableObject {
         serverPlatform = nil
         heartbeatTask?.cancel()
         failAllPending(error: RelayError.disconnected)
+        closeAllChannels()
 
         guard !intentionalDisconnect else { return }
         scheduleReconnect()
@@ -383,6 +491,54 @@ class KloudRelay: ObservableObject {
         }
         arrayPendingRequests.removeAll()
         pendingTimeouts.removeAll()
+        for (_, cont) in pendingChannelOpens {
+            cont.resume(throwing: error)
+        }
+        pendingChannelOpens.removeAll()
+    }
+
+    private func closeAllChannels() {
+        for (_, channel) in openChannels {
+            channel.notifyClosed()
+        }
+        openChannels.removeAll()
+    }
+
+    /// A proxied WebSocket channel through the Konnect relay to a local path on the Klaudii server.
+    @MainActor
+    class RelayChannel {
+        let channelId: String
+        private weak var relay: KloudRelay?
+
+        /// Called with each raw string frame received from the local WebSocket.
+        var onMessage: ((String) -> Void)?
+        /// Called when the channel is closed (by either side or on disconnect).
+        var onClose: (() -> Void)?
+
+        init(channelId: String, relay: KloudRelay) {
+            self.channelId = channelId
+            self.relay = relay
+        }
+
+        /// Send a raw string frame to the local WebSocket.
+        func send(_ text: String) {
+            relay?.sendChannelMessage(channelId: channelId, text: text)
+        }
+
+        /// Close the channel.
+        func close() {
+            relay?.closeChannel(channelId: channelId)
+            onClose = nil
+            onMessage = nil
+        }
+
+        // Called by KloudRelay only
+        func deliver(_ text: String) { onMessage?(text) }
+        func notifyClosed() {
+            onClose?()
+            onMessage = nil
+            onClose = nil
+        }
     }
 
     enum RelayError: Error, LocalizedError {

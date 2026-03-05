@@ -6,11 +6,14 @@ const db = require("./db");
 // Connected Klaudii servers: serverId → { ws, authenticated, lastHeartbeat }
 const servers = new Map();
 
-// Connected browsers: browserId → { ws, userId, serverId }
+// Connected browsers: browserId → { ws, userId, serverId, pendingRequests, channels }
 const browsers = new Map();
 
 // Pending challenges: serverId → nonce
 const challenges = new Map();
+
+// WebSocket channel routing: channelId → browserId
+const channelToBrowser = new Map();
 
 const HEARTBEAT_INTERVAL = 30000;
 const HEARTBEAT_TIMEOUT = 65000;
@@ -123,6 +126,22 @@ function handleServerConnection(ws, url) {
       }
       return;
     }
+
+    // WebSocket channel messages: server → browser
+    if (msg.type === "ws_connected" || msg.type === "ws_message" || msg.type === "ws_close") {
+      const browserId = channelToBrowser.get(msg.channelId);
+      if (browserId) {
+        const browser = browsers.get(browserId);
+        if (browser && browser.ws.readyState === WebSocket.OPEN) {
+          browser.ws.send(JSON.stringify(msg));
+        }
+        if (msg.type === "ws_close") {
+          channelToBrowser.delete(msg.channelId);
+          browser?.channels.delete(msg.channelId);
+        }
+      }
+      return;
+    }
   });
 
   ws.on("close", () => {
@@ -157,7 +176,7 @@ function handleBrowserConnection(ws, url, req) {
     return;
   }
 
-  browsers.set(browserId, { ws, userId, serverId, pendingRequests: new Map() });
+  browsers.set(browserId, { ws, userId, serverId, pendingRequests: new Map(), channels: new Set() });
 
   ws.on("message", (raw) => {
     let msg;
@@ -192,9 +211,53 @@ function handleBrowserConnection(ws, url, req) {
       }));
       return;
     }
+
+    // WebSocket channel open: browser → server
+    if (msg.type === "ws_connect") {
+      const serverConn = servers.get(serverId);
+      if (!serverConn || !serverConn.authenticated) {
+        ws.send(JSON.stringify({ type: "ws_close", channelId: msg.channelId }));
+        return;
+      }
+      const browser = browsers.get(browserId);
+      if (browser) {
+        browser.channels.add(msg.channelId);
+        channelToBrowser.set(msg.channelId, browserId);
+      }
+      serverConn.ws.send(JSON.stringify({
+        type: "ws_connect",
+        channelId: msg.channelId,
+        encrypted: msg.encrypted,
+      }));
+      return;
+    }
+
+    // WebSocket frames and close: browser → server
+    if (msg.type === "ws_message" || msg.type === "ws_close") {
+      const serverConn = servers.get(serverId);
+      if (serverConn && serverConn.authenticated) {
+        serverConn.ws.send(JSON.stringify(msg));
+      }
+      if (msg.type === "ws_close") {
+        channelToBrowser.delete(msg.channelId);
+        browsers.get(browserId)?.channels.delete(msg.channelId);
+      }
+      return;
+    }
   });
 
   ws.on("close", () => {
+    const browser = browsers.get(browserId);
+    if (browser) {
+      // Tell the server to close any open WebSocket channels
+      const serverConn = servers.get(serverId);
+      for (const channelId of browser.channels) {
+        channelToBrowser.delete(channelId);
+        if (serverConn && serverConn.authenticated) {
+          serverConn.ws.send(JSON.stringify({ type: "ws_close", channelId }));
+        }
+      }
+    }
     browsers.delete(browserId);
   });
 
