@@ -1,0 +1,143 @@
+name: Sync to Public (LLM Reviewed)
+
+on:
+  # Manual trigger with optional branch override
+  workflow_dispatch:
+    inputs:
+      source_branch:
+        description: 'Branch to sync from (default: main)'
+        required: false
+        default: 'main'
+      dry_run:
+        description: 'Dry run — review only, do not push'
+        required: false
+        type: boolean
+        default: false
+
+  # Auto-trigger when main is updated
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  review-and-sync:
+    runs-on: ubuntu-latest
+    env:
+      PUBLIC_REPO: klaudiihq/klaudii
+      SOURCE_BRANCH: ${{ github.event.inputs.source_branch || 'main' }}
+
+    steps:
+      - name: Checkout dev repo
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Fetch public repo state
+        env:
+          SYNC_TOKEN: ${{ secrets.PUBLIC_REPO_TOKEN }}
+        run: |
+          git remote add public https://x-access-token:${SYNC_TOKEN}@github.com/${PUBLIC_REPO}.git
+          git fetch public main --depth=100
+
+      - name: Generate diff
+        id: diff
+        run: |
+          DIFF=$(git diff public/main..${SOURCE_BRANCH} -- . \
+            ':!.github/workflows/sync-to-public.yml' \
+            ':!.github/workflows/llm-pr-review.yml')
+
+          if [ -z "$DIFF" ]; then
+            echo "No changes to sync."
+            echo "has_changes=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          echo "has_changes=true" >> "$GITHUB_OUTPUT"
+
+          # Save diff (truncate to ~100k chars for LLM context)
+          echo "$DIFF" | head -c 100000 > /tmp/sync-diff.patch
+
+          # Stats for the summary
+          echo "### Diff stats" >> "$GITHUB_STEP_SUMMARY"
+          git diff --stat public/main..${SOURCE_BRANCH} -- . \
+            ':!.github/workflows/sync-to-public.yml' \
+            ':!.github/workflows/llm-pr-review.yml' >> "$GITHUB_STEP_SUMMARY"
+
+      - name: LLM review for leaks
+        if: steps.diff.outputs.has_changes == 'true'
+        id: review
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+        run: |
+          DIFF_CONTENT=$(cat /tmp/sync-diff.patch)
+
+          # Build the API request
+          cat > /tmp/review-request.json << 'ENDJSON'
+          {
+            "model": "claude-sonnet-4-20250514",
+            "max_tokens": 4096,
+            "messages": [
+              {
+                "role": "user",
+                "content": "DIFF_PLACEHOLDER"
+              }
+            ],
+            "system": "You are a security reviewer for a public GitHub repo. Review the following git diff that is about to be pushed to a PUBLIC repository.\n\nFlag ANY of the following as BLOCKED:\n- API keys, tokens, secrets, passwords, or credentials\n- Conversation history, chat logs, user messages, or drafts\n- Session state, workspace state, or runtime data files\n- Planning documents, scratch notes, or internal assessments that reference private discussions\n- Personal information (emails, names in non-attribution contexts, private URLs)\n- References to private infrastructure (internal IPs, private hostnames, database URLs)\n\nRespond with EXACTLY one of:\n- APPROVED — if the diff is clean for public release\n- BLOCKED — followed by a list of specific issues found\n\nBe strict. When in doubt, block."
+          }
+          ENDJSON
+
+          # Escape the diff for JSON and inject it
+          ESCAPED_DIFF=$(echo "$DIFF_CONTENT" | python3 -c 'import sys,json; print(json.dumps(sys.stdin.read()))')
+          python3 -c "
+          import json
+          with open('/tmp/review-request.json') as f:
+              data = json.load(f)
+          diff = $ESCAPED_DIFF
+          data['messages'][0]['content'] = 'Review this diff for a public repo sync:\n\n' + diff
+          with open('/tmp/review-request.json', 'w') as f:
+              json.dump(data, f)
+          "
+
+          # Call Claude API
+          RESPONSE=$(curl -s -X POST https://api.anthropic.com/v1/messages \
+            -H "x-api-key: ${ANTHROPIC_API_KEY}" \
+            -H "anthropic-version: 2023-06-01" \
+            -H "content-type: application/json" \
+            -d @/tmp/review-request.json)
+
+          REVIEW=$(echo "$RESPONSE" | python3 -c "import sys,json; r=json.load(sys.stdin); print(r['content'][0]['text'])" 2>/dev/null || echo "ERROR: Failed to parse API response")
+
+          echo "### LLM Review Result" >> "$GITHUB_STEP_SUMMARY"
+          echo '```' >> "$GITHUB_STEP_SUMMARY"
+          echo "$REVIEW" >> "$GITHUB_STEP_SUMMARY"
+          echo '```' >> "$GITHUB_STEP_SUMMARY"
+
+          if echo "$REVIEW" | head -1 | grep -q "^APPROVED"; then
+            echo "verdict=approved" >> "$GITHUB_OUTPUT"
+          else
+            echo "verdict=blocked" >> "$GITHUB_OUTPUT"
+            echo "::error::LLM review BLOCKED this sync. See job summary for details."
+          fi
+
+      - name: Push to public repo
+        if: >
+          steps.diff.outputs.has_changes == 'true' &&
+          steps.review.outputs.verdict == 'approved' &&
+          github.event.inputs.dry_run != 'true'
+        env:
+          SYNC_TOKEN: ${{ secrets.PUBLIC_REPO_TOKEN }}
+        run: |
+          git remote set-url public https://x-access-token:${SYNC_TOKEN}@github.com/${PUBLIC_REPO}.git
+          git push public ${SOURCE_BRANCH}:main
+          echo "### Sync complete" >> "$GITHUB_STEP_SUMMARY"
+          echo "Pushed \`${SOURCE_BRANCH}\` → \`${PUBLIC_REPO}:main\`" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Blocked — do not push
+        if: >
+          steps.diff.outputs.has_changes == 'true' &&
+          steps.review.outputs.verdict == 'blocked'
+        run: |
+          echo "::error::Sync blocked by LLM review. Fix the flagged issues and re-run."
+          exit 1
