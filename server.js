@@ -133,6 +133,16 @@ app.post("/api/gemini/sessions/:project/switch", (req, res) => {
   res.json({ ok: true, current: Number(session) });
 });
 
+// Partial stream content — accumulated text for the current in-progress turn.
+// Gemini uses the crash-recovery stream log (disk); Claude uses an in-memory buffer.
+// Used by clients switching back to a workspace mid-stream so they can show what
+// was generated before they left.
+app.get("/api/gemini/stream-partial/:project", (req, res) => {
+  const text = gemini.getStreamPartial(req.params.project) ?? claudeChat.getStreamPartial(req.params.project);
+  if (text === null) return res.status(404).json({ error: "no active stream" });
+  res.json({ text });
+});
+
 // Chat history (server-side, synced across devices)
 app.get("/api/gemini/history/:project", (req, res) => {
   const sessionNum = req.query.session ? Number(req.query.session) : undefined;
@@ -573,16 +583,20 @@ wss.on("connection", (ws) => {
             });
           } else if (event.type === "result") {
             // Turn completed — persist history, reset streaming, reset accumulators for next turn
-            console.log(`[gemini-ws] turn done workspace=${workspace} cli=${backend} eventsSent=${eventsSent} assistantLen=${assistantText.length} toolEvents=${toolEvents.length}`);
-            workspaceState.setStreaming(workspace, false);
-            workspaceState.touchChatActivity(workspace);
+            console.log(`[gemini-ws] turn done workspace=${workspace} cli=${backend} eventsSent=${eventsSent} assistantLen=${assistantText.length} toolEvents=${toolEvents.length} flush=${!!event._flush}`);
             const batch = [...toolEvents];
             if (assistantText) batch.push({ role: "assistant", content: assistantText });
             if (batch.length > 0) backendModule.pushHistoryBatch(workspace, batch);
-            broadcastToWorkspace(workspace, { type: "done", workspace, exitCode: 0 });
             assistantText = "";
             toolEvents.length = 0;
             eventsSent = 0;
+            // _flush = synthetic turn-end from appendMessage — don't broadcast "done"
+            // or clear streaming, since a new message is about to start immediately.
+            if (!event._flush) {
+              workspaceState.setStreaming(workspace, false);
+              workspaceState.touchChatActivity(workspace);
+              broadcastToWorkspace(workspace, { type: "done", workspace, exitCode: 0 });
+            }
           }
         });
 
@@ -670,6 +684,13 @@ claudeChat.reconnectActiveRelays(config, (workspace, handle) => {
   const toolEvents = [];
 
   handle.onEvent((event) => {
+    // Seed accumulators with content from replay (turn was in-progress when server restarted)
+    if (event.type === "_replay_seed") {
+      assistantText = event._assistantText || "";
+      if (assistantText) workspaceState.setStreaming(workspace, true);
+      console.log(`[server] replay-seed workspace=${workspace} assistantLen=${assistantText.length}`);
+      return; // don't broadcast internal event
+    }
     broadcastToWorkspace(workspace, { ...event, workspace });
     if (event.type === "message" && (event.role === "assistant" || !event.role)) {
       workspaceState.setStreaming(workspace, true);
@@ -681,14 +702,16 @@ claudeChat.reconnectActiveRelays(config, (workspace, handle) => {
       const out = event.output || "";
       toolEvents.push({ role: "tool_result", content: JSON.stringify({ tool_id: event.tool_id, status: event.status || "success", output: out.length > 3000 ? out.slice(0, 3000) + "\n...(truncated)" : out }) });
     } else if (event.type === "result") {
-      workspaceState.setStreaming(workspace, false);
-      workspaceState.touchChatActivity(workspace);
       const batch = [...toolEvents];
       if (assistantText) batch.push({ role: "assistant", content: assistantText });
       if (batch.length > 0) claudeChat.pushHistoryBatch(workspace, batch);
-      broadcastToWorkspace(workspace, { type: "done", workspace, exitCode: 0 });
       assistantText = "";
       toolEvents.length = 0;
+      if (!event._flush) {
+        workspaceState.setStreaming(workspace, false);
+        workspaceState.touchChatActivity(workspace);
+        broadcastToWorkspace(workspace, { type: "done", workspace, exitCode: 0 });
+      }
     }
   });
 
