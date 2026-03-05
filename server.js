@@ -680,6 +680,13 @@ claudeChat.reconnectActiveRelays(config, (workspace, handle) => {
   const toolEvents = [];
 
   handle.onEvent((event) => {
+    // Seed accumulators with content from replay (turn was in-progress when server restarted)
+    if (event.type === "_replay_seed") {
+      assistantText = event._assistantText || "";
+      if (assistantText) workspaceState.setStreaming(workspace, true);
+      console.log(`[server] replay-seed workspace=${workspace} assistantLen=${assistantText.length}`);
+      return; // don't broadcast internal event
+    }
     broadcastToWorkspace(workspace, { ...event, workspace });
     if (event.type === "message" && (event.role === "assistant" || !event.role)) {
       workspaceState.setStreaming(workspace, true);
