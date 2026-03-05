@@ -17,6 +17,11 @@ jobs:
         with:
           fetch-depth: 0
 
+      - name: Authenticate with Google Cloud
+        uses: google-github-actions/auth@v2
+        with:
+          credentials_json: ${{ secrets.GCP_SERVICE_ACCOUNT_KEY }}
+
       - name: Get PR diff
         id: diff
         env:
@@ -31,8 +36,13 @@ jobs:
         if: steps.diff.outputs.diff_lines > 0
         id: review
         env:
-          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          GCP_PROJECT_ID: ${{ secrets.GCP_PROJECT_ID }}
+          GCP_REGION: ${{ secrets.GCP_REGION }}
+          VERTEX_MODEL: claude-sonnet-4-20250514
         run: |
+          ACCESS_TOKEN=$(gcloud auth print-access-token)
+          ENDPOINT="https://${GCP_REGION}-aiplatform.googleapis.com/v1/projects/${GCP_PROJECT_ID}/locations/${GCP_REGION}/publishers/anthropic/models/${VERTEX_MODEL}:rawPredict"
+
           # Truncate large diffs
           head -c 100000 /tmp/pr-diff.patch > /tmp/pr-diff-truncated.patch
 
@@ -42,7 +52,7 @@ jobs:
           python3 -c "
           import json
           data = {
-              'model': 'claude-sonnet-4-20250514',
+              'anthropic_version': 'vertex-2023-10-16',
               'max_tokens': 4096,
               'system': '''You are a code reviewer for the Klaudii project (a web-based manager for Claude Code CLI sessions). Review this PR diff for:
 
@@ -63,13 +73,12 @@ jobs:
               json.dump(data, f)
           "
 
-          RESPONSE=$(curl -s -X POST https://api.anthropic.com/v1/messages \
-            -H "x-api-key: ${ANTHROPIC_API_KEY}" \
-            -H "anthropic-version: 2023-06-01" \
-            -H "content-type: application/json" \
+          RESPONSE=$(curl -s -X POST "$ENDPOINT" \
+            -H "Authorization: Bearer ${ACCESS_TOKEN}" \
+            -H "Content-Type: application/json" \
             -d @/tmp/review-request.json)
 
-          REVIEW=$(echo "$RESPONSE" | python3 -c "import sys,json; r=json.load(sys.stdin); print(r['content'][0]['text'])" 2>/dev/null || echo "ERROR: Failed to parse API response")
+          REVIEW=$(echo "$RESPONSE" | python3 -c "import sys,json; r=json.load(sys.stdin); print(r['content'][0]['text'])" 2>/dev/null || echo "ERROR: Failed to parse API response: $RESPONSE")
 
           echo "$REVIEW" > /tmp/review-result.txt
 
@@ -99,7 +108,7 @@ jobs:
           ${REVIEW}
 
           ---
-          *Automated review by Claude Sonnet · [sync-to-public](../../actions/workflows/sync-to-public.yml) will run LLM review again before pushing to the public repo.*
+          *Automated review by Claude Sonnet on Vertex AI · [sync-to-public](../../actions/workflows/sync-to-public.yml) will run LLM review again before pushing to the public repo.*
           EOF
           )
 
