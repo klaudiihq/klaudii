@@ -570,6 +570,9 @@ wss.on("connection", (ws) => {
 
         handle.onEvent((event) => {
           eventsSent++;
+          if (event.type === "permission_request") {
+            workspaceState.setPendingPermission(workspace, event);
+          }
           broadcastToWorkspace(workspace, { ...event, workspace });
           // Accumulate assistant message content
           if (event.type === "message" && (event.role === "assistant" || !event.role)) {
@@ -602,6 +605,7 @@ wss.on("connection", (ws) => {
             assistantText = "";
             toolEvents.length = 0;
             eventsSent = 0;
+            workspaceState.setPendingPermission(workspace, null);
             // _flush = synthetic turn-end from appendMessage — don't broadcast "done"
             // or clear streaming, since a new message is about to start immediately.
             if (!event._flush) {
@@ -616,6 +620,7 @@ wss.on("connection", (ws) => {
           console.log(`[gemini-ws] relay exited workspace=${workspace} cli=${backend} code=${code}`);
           // Relay died — flush any incomplete turn and clean up
           workspaceState.setStreaming(workspace, false);
+          workspaceState.setPendingPermission(workspace, null);
           pendingWorkspaces.delete(workspace);
           workspaceState.touchChatActivity(workspace);
           const batch = [...toolEvents];
@@ -667,6 +672,7 @@ wss.on("connection", (ws) => {
       const { request_id, behavior, updatedInput } = msg;
       if (workspace && request_id && behavior) {
         console.log(`[gemini-ws] permission_response workspace=${workspace} request_id=${request_id} behavior=${behavior}`);
+        workspaceState.setPendingPermission(workspace, null);
         claudeChat.sendControlResponse(workspace, request_id, behavior, updatedInput);
       }
     } else if (type === "tool_result_response") {
@@ -703,6 +709,10 @@ claudeChat.reconnectActiveRelays(config, (workspace, handle) => {
       console.log(`[server] replay-seed workspace=${workspace} assistantLen=${assistantText.length}`);
       return; // don't broadcast internal event
     }
+    // Store pending permission requests so late-connecting clients get them
+    if (event.type === "permission_request") {
+      workspaceState.setPendingPermission(workspace, event);
+    }
     broadcastToWorkspace(workspace, { ...event, workspace });
     if (event.type === "message" && (event.role === "assistant" || !event.role)) {
       workspaceState.setStreaming(workspace, true);
@@ -719,6 +729,7 @@ claudeChat.reconnectActiveRelays(config, (workspace, handle) => {
       if (batch.length > 0) claudeChat.pushHistoryBatch(workspace, batch);
       assistantText = "";
       toolEvents.length = 0;
+      workspaceState.setPendingPermission(workspace, null); // turn complete, clear any pending prompt
       if (!event._flush) {
         workspaceState.setStreaming(workspace, false);
         workspaceState.touchChatActivity(workspace);
@@ -730,6 +741,7 @@ claudeChat.reconnectActiveRelays(config, (workspace, handle) => {
   handle.onDone(({ code }) => {
     console.log(`[server] relay exited workspace=${workspace} code=${code}`);
     workspaceState.setStreaming(workspace, false);
+    workspaceState.setPendingPermission(workspace, null);
     workspaceState.touchChatActivity(workspace);
     const batch = [...toolEvents];
     if (assistantText) batch.push({ role: "assistant", content: assistantText });

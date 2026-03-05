@@ -1682,6 +1682,14 @@ async function geminiShowChat(wsState = null) {
       }
     }
 
+    // If the server has a pending permission_request (e.g. from relay replay after
+    // restart), show it now so Claude isn't blocked indefinitely.
+    if (wsState && wsState.pendingPermission) {
+      const pp = wsState.pendingPermission;
+      glog("showChat: restoring pending permission_request", pp.tool_name, pp.request_id);
+      handleGeminiEvent({ ...pp, workspace: geminiWorkspace });
+    }
+
     // If a stream was in-flight when we opened, poll until the reply lands.
     // Leave streaming=true so the input stays disabled while we wait.
     if (geminiOpenedWhileStreaming) {
