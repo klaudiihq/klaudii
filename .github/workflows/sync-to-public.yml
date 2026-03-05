@@ -70,41 +70,38 @@ jobs:
             ':!.github/workflows/sync-to-public.yml' \
             ':!.github/workflows/llm-pr-review.yml' >> "$GITHUB_STEP_SUMMARY"
 
-      - name: Discover latest Claude Sonnet model
-        if: steps.diff.outputs.has_changes == 'true'
-        id: model
-        env:
-          GCP_PROJECT_ID: ${{ secrets.GCP_PROJECT_ID }}
-          GCP_REGION: ${{ secrets.GCP_REGION }}
-        run: |
-          ACCESS_TOKEN=$(gcloud auth print-access-token)
-          MODELS=$(curl -s \
-            "https://${GCP_REGION}-aiplatform.googleapis.com/v1/publishers/anthropic/models" \
-            -H "Authorization: Bearer ${ACCESS_TOKEN}" \
-            -H "x-goog-user-project: ${GCP_PROJECT_ID}")
-
-          # Pick the latest Sonnet model (sort by name descending, prefer sonnet-4 > sonnet-3)
-          VERTEX_MODEL=$(echo "$MODELS" | python3 -c "
-          import sys, json
-          data = json.load(sys.stdin)
-          models = [m['name'].split('/')[-1] for m in data.get('models', [])]
-          sonnets = sorted([m for m in models if 'sonnet' in m], reverse=True)
-          print(sonnets[0] if sonnets else 'claude-sonnet-4-5-20250514')
-          ")
-
-          echo "model=$VERTEX_MODEL" >> "$GITHUB_OUTPUT"
-          echo "Selected model: $VERTEX_MODEL" >> "$GITHUB_STEP_SUMMARY"
-
       - name: LLM review for leaks
         if: steps.diff.outputs.has_changes == 'true'
         id: review
         env:
           GCP_PROJECT_ID: ${{ secrets.GCP_PROJECT_ID }}
           GCP_REGION: ${{ secrets.GCP_REGION }}
-          VERTEX_MODEL: ${{ steps.model.outputs.model }}
         run: |
           ACCESS_TOKEN=$(gcloud auth print-access-token)
-          ENDPOINT="https://${GCP_REGION}-aiplatform.googleapis.com/v1/projects/${GCP_PROJECT_ID}/locations/${GCP_REGION}/publishers/anthropic/models/${VERTEX_MODEL}:rawPredict"
+          BASE="https://${GCP_REGION}-aiplatform.googleapis.com/v1/projects/${GCP_PROJECT_ID}/locations/${GCP_REGION}/publishers/anthropic/models"
+
+          # Try models newest-first until one responds
+          for MODEL in claude-sonnet-4-5-20250514 claude-sonnet-4-20250514 claude-3-5-sonnet-v2@20241022; do
+            ENDPOINT="${BASE}/${MODEL}:rawPredict"
+            STATUS=$(curl -s -o /dev/null -w "%{http_code}" \
+              -X POST "$ENDPOINT" \
+              -H "Authorization: Bearer ${ACCESS_TOKEN}" \
+              -H "Content-Type: application/json" \
+              -d '{"anthropic_version":"vertex-2023-10-16","max_tokens":1,"messages":[{"role":"user","content":"hi"}]}')
+            if [ "$STATUS" = "200" ]; then
+              echo "Using model: $MODEL"
+              echo "Selected model: $MODEL" >> "$GITHUB_STEP_SUMMARY"
+              break
+            fi
+            echo "Model $MODEL returned $STATUS, trying next..."
+          done
+
+          if [ "$STATUS" != "200" ]; then
+            echo "::error::No Claude Sonnet model available in ${GCP_REGION}"
+            exit 1
+          fi
+
+          ENDPOINT="${BASE}/${MODEL}:rawPredict"
 
           DIFF_CONTENT=$(cat /tmp/sync-diff.patch)
           ESCAPED_DIFF=$(echo "$DIFF_CONTENT" | python3 -c 'import sys,json; print(json.dumps(sys.stdin.read()))')
