@@ -284,6 +284,8 @@ async function geminiFetchQuota() {
 // Current streaming assistant message element
 let geminiCurrentMsgEl = null;
 let geminiCurrentMsgText = "";
+// Partial assistant bubble shown while polling mid-stream (opened while away)
+let geminiPartialMsgEl = null;
 
 // --- Image attachments ---
 
@@ -425,9 +427,22 @@ function geminiConnect() {
       glog("ws-open: retrying history fetch after server restart");
       geminiShowChat();
     } else if (geminiWasStreamingAtDisconnect && geminiWorkspace) {
-      // If we disconnected mid-stream, check whether the server recovered content
+      // Disconnected mid-stream — check whether it's still running or completed
       geminiWasStreamingAtDisconnect = false;
-      geminiRenderRecoveredContent();
+      fetch(`/api/workspace-state/${encodeURIComponent(geminiWorkspace)}`)
+        .then(r => r.json())
+        .then(wsState => {
+          if (wsState.streaming) {
+            // Stream survived the reconnect (transient blip) — re-enter poll mode
+            // with partial content so the user catches up immediately
+            geminiOpenedWhileStreaming = true;
+            geminiShowChat();
+          } else {
+            // Stream completed while disconnected — render recovered content
+            geminiRenderRecoveredContent();
+          }
+        })
+        .catch(() => geminiRenderRecoveredContent());
     }
   };
 
@@ -585,6 +600,7 @@ function handleGeminiEvent(event) {
 
     case "done":
       geminiRemoveThinking();
+      geminiStopStreamPoll(); // cancel any open-while-streaming poll — live WS beat it
       glog(`handle: done exitCode=${event.exitCode} stopped=${event.stopped || false} assistantTextLen=${geminiCurrentMsgText.length} stderr=${(event.stderr || "").slice(0, 200)}`);
       if (geminiCurrentMsgText) {
         history.push({ role: "assistant", content: geminiCurrentMsgText });
@@ -596,6 +612,27 @@ function handleGeminiEvent(event) {
       if (geminiStreaming) geminiSetStreaming(false);
       geminiCurrentMsgEl = null;
       geminiCurrentMsgText = "";
+
+      // If a partial bubble was showing (opened mid-stream), replace it with the full response
+      if (geminiPartialMsgEl) {
+        const partialEl = geminiPartialMsgEl;
+        geminiPartialMsgEl = null;
+        const doneWs = event.workspace;
+        const doneSn = geminiSessionNum;
+        geminiFetchHistory(doneWs, doneSn)
+          .then(hist => {
+            const lastMsg = hist && [...hist].reverse().find(m => m.role === "assistant");
+            if (lastMsg) {
+              const mdEl = partialEl.querySelector(".md-content");
+              if (mdEl) mdEl.innerHTML = geminiRenderMarkdown(lastMsg.content);
+              geminiStampMessageTime(partialEl, lastMsg.ts || Date.now());
+              geminiHistory[doneWs] = hist;
+            }
+            partialEl.classList.remove("gemini-streaming");
+            geminiScrollToBottom();
+          })
+          .catch(() => { partialEl.classList.remove("gemini-streaming"); });
+      }
 
       // Exit code 41 = auth failure (Gemini), 1 with auth error (Claude) — show auth panel
       if (event.exitCode === 41) {
@@ -1359,6 +1396,10 @@ async function geminiRenderRecoveredContent() {
   const ws = geminiWorkspace;
   const sn = geminiSessionNum;
   const knownLen = (geminiHistory[ws] || []).length;
+  // Always remove the "Connection lost" banner — we're reconnected regardless of content
+  const container = document.getElementById("gemini-messages");
+  const lastEl = container?.lastElementChild;
+  if (lastEl?.classList.contains("gemini-error")) lastEl.remove();
   // Give the server a moment to finish recovery before fetching
   await new Promise(r => setTimeout(r, 600));
   try {
@@ -1369,10 +1410,6 @@ async function geminiRenderRecoveredContent() {
       return;
     }
     glog(`recovery-check: rendering ${newMsgs.length} recovered message(s)`);
-    // Remove the "Connection lost" error so recovered content reads cleanly
-    const container = document.getElementById("gemini-messages");
-    const lastEl = container?.lastElementChild;
-    if (lastEl?.classList.contains("gemini-error")) lastEl.remove();
 
     const pendingToolUses = new Map();
     for (const msg of newMsgs) {
@@ -1406,12 +1443,46 @@ function geminiStartStreamPoll(historyLengthAtOpen) {
   const ws = geminiWorkspace;
   const sn = geminiSessionNum;
 
+  // Immediately show partial content so the user sees what was generated before they left
+  fetch(`/api/gemini/stream-partial/${encodeURIComponent(ws)}`)
+    .then(r => r.ok ? r.json() : null)
+    .then(data => {
+      if (!data || !data.text || geminiWorkspace !== ws) return;
+      geminiRemoveThinking();
+      geminiPartialMsgEl = geminiAppendMessage("assistant", data.text, true, null, null);
+      geminiShowThinking();
+    })
+    .catch(() => {});
+
   geminiStreamPollTimer = setInterval(async () => {
     try {
-      const history = await geminiFetchHistory(ws, sn);
+      // Fetch history and latest partial content in parallel
+      const [history, partialData] = await Promise.all([
+        geminiFetchHistory(ws, sn),
+        fetch(`/api/gemini/stream-partial/${encodeURIComponent(ws)}`).then(r => r.ok ? r.json() : null).catch(() => null),
+      ]);
+
+      // Keep partial bubble in sync with what's been generated so far
+      if (partialData && partialData.text) {
+        if (geminiPartialMsgEl) {
+          const mdEl = geminiPartialMsgEl.querySelector(".md-content");
+          if (mdEl) {
+            mdEl.innerHTML = geminiRenderMarkdown(partialData.text);
+            geminiScrollToBottom();
+          }
+        } else if (geminiWorkspace === ws) {
+          geminiRemoveThinking();
+          geminiPartialMsgEl = geminiAppendMessage("assistant", partialData.text, true, null, null);
+          geminiShowThinking();
+        }
+      }
+
       if (history.length > historyLengthAtOpen) {
         geminiStopStreamPoll();
+        // Remove the partial bubble — render fresh from server history
+        if (geminiPartialMsgEl) { geminiPartialMsgEl.remove(); geminiPartialMsgEl = null; }
         const newMsgs = history.slice(historyLengthAtOpen);
+        const container = document.getElementById("gemini-messages");
         const pendingToolUses = new Map();
         for (const msg of newMsgs) {
           if (msg.role === "tool_use") {
@@ -1444,14 +1515,21 @@ function geminiStartStreamPoll(historyLengthAtOpen) {
         for (const tu of pendingToolUses.values()) {
           geminiAppendToolUse(tu.tool_name, tu.tool_id, tu.parameters);
         }
+        geminiSetStreaming(false);
         container.scrollTop = container.scrollHeight;
         return;
       }
-      // Also bail if the server says streaming stopped (e.g. error)
+      // Also bail if the server says streaming stopped (e.g. error or done)
       const wsRes = await fetch(`/api/workspace-state/${encodeURIComponent(ws)}`);
       const wsState = await wsRes.json();
       if (!wsState.streaming) {
         geminiStopStreamPoll();
+        // Leave partial content visible if no new history — something ended without persisting
+        if (geminiPartialMsgEl) {
+          geminiPartialMsgEl.classList.remove("gemini-streaming");
+          geminiPartialMsgEl = null;
+        }
+        geminiSetStreaming(false);
       }
     } catch { /* ignore transient poll errors */ }
   }, 2000);
@@ -1502,12 +1580,17 @@ async function geminiShowChat(wsState = null) {
       geminiAppendToolUse(tu.tool_name, tu.tool_id, tu.parameters);
     }
 
-    // If a stream was in-flight when we opened, poll until the reply lands
+    // If a stream was in-flight when we opened, poll until the reply lands.
+    // Leave streaming=true so the input stays disabled while we wait.
     if (geminiOpenedWhileStreaming) {
       geminiOpenedWhileStreaming = false;
       const lastMsg = history[history.length - 1];
       if (lastMsg && lastMsg.role === "user") {
         geminiStartStreamPoll(history.length);
+        // Skip the geminiSetStreaming(false) below — poll completion handles it
+        const input = document.getElementById("gemini-input");
+        if (input) await geminiRestoreDraft(wsState);
+        return;
       }
     }
   }
@@ -1549,6 +1632,7 @@ async function openGeminiChat(project, projectPath, cli) {
   // Reset streaming state and image attachments
   geminiCurrentMsgEl = null;
   geminiCurrentMsgText = "";
+  geminiPartialMsgEl = null;
   geminiSetStreaming(false);
   geminiClearImages();
   geminiUpdateAttachVisibility();
@@ -1803,13 +1887,6 @@ function geminiShowThinking() {
   geminiScrollToBottom();
 
   const ctx = canvas.getContext("2d");
-  // Pull particle colors from CSS theme variables — no hardcoded values
-  const cs = getComputedStyle(document.documentElement);
-  const COLORS = [
-    cs.getPropertyValue("--s-green").trim(),
-    cs.getPropertyValue("--s-blue-text").trim(),
-    cs.getPropertyValue("--text-strong").trim(),
-  ];
   const COUNT = 20;
   const cx = SIZE / 2, cy = SIZE / 2;
 
@@ -1817,18 +1894,40 @@ function geminiShowThinking() {
     angle: (i / COUNT) * Math.PI * 2,
     radius: 4 + Math.random() * 10,
     speed: (i % 2 === 0 ? 1 : -1) * (0.018 + Math.random() * 0.022),
-    color: COLORS[i % COLORS.length],
+    colorIdx: i % 3,
     wobble: Math.random() * Math.PI * 2,
   }));
 
+  let speedMult = 1;
+  let speedTarget = 1;
+  let targetCooldown = 0;
+
   function frame(t) {
+    // Drift toward a new speed target every 60-150 frames
+    if (--targetCooldown <= 0) {
+      targetCooldown = 60 + Math.random() * 90;
+      const r = Math.random();
+      speedTarget = r < 0.15 ? 0.15 + Math.random() * 0.35  // slow drift
+                 : r < 0.65 ? 0.7  + Math.random() * 0.8    // normal
+                 :             2.5  + Math.random() * 2.5;   // energetic burst
+    }
+    speedMult += (speedTarget - speedMult) * 0.04;
+
+    // Re-read theme colors each frame so theme switches take effect live
+    const cs = getComputedStyle(document.documentElement);
+    const colors = [
+      cs.getPropertyValue("--s-green").trim(),
+      cs.getPropertyValue("--s-blue-text").trim(),
+      cs.getPropertyValue("--text-strong").trim(),
+    ];
+
     ctx.clearRect(0, 0, SIZE, SIZE); // transparent — no background box
     for (const p of particles) {
-      p.angle += p.speed;
+      p.angle += p.speed * speedMult;
       const r = p.radius + Math.sin(t * 0.003 + p.wobble) * 2.5;
       const x = cx + Math.cos(p.angle) * r;
       const y = cy + Math.sin(p.angle) * r;
-      ctx.fillStyle = p.color;
+      ctx.fillStyle = colors[p.colorIdx];
       ctx.beginPath();
       ctx.arc(x, y, 1, 0, Math.PI * 2);
       ctx.fill();

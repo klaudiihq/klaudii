@@ -205,6 +205,7 @@ module.exports = function createV1Router(deps) {
         lastActivity,
         chatMode,
         chatActive,
+        relayActive: claudeChat ? claudeChat.isActive(project.name) : false,
       };
     });
 
