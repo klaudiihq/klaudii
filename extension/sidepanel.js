@@ -1565,7 +1565,7 @@ function openSettings() {
 
   if (settingsOpen) {
     // Populate current values
-    chrome.storage.sync.get(["klaudiiUrl", "klaudiiUrls", "openMode", "attentionFlash", "branchFirst"], (config) => {
+    chrome.storage.sync.get(["klaudiiUrl", "klaudiiUrls", "openMode", "reuseLocalTab", "attentionFlash", "branchFirst"], (config) => {
       let urls = config.klaudiiUrls;
       if (!urls || !urls.length) urls = [config.klaudiiUrl || DEFAULT_KLAUDII_URL];
       document.getElementById("settings-urls").value = urls.join("\n");
@@ -1577,6 +1577,14 @@ function openSettings() {
       document.getElementById("settings-reuse-local-tab").checked = config.reuseLocalTab === true;
       document.getElementById("settings-branch-first").checked = config.branchFirst === true;
       document.getElementById("settings-attention-flash").checked = config.attentionFlash === true;
+
+      const bi = window.BUILD_INFO;
+      const buildEl = document.getElementById("settings-build-info");
+      if (bi && bi.hash) {
+        buildEl.textContent = `built ${bi.date} · ${bi.hash}`;
+      } else {
+        buildEl.textContent = "dev build";
+      }
     });
 
     panel.classList.remove("hidden");
