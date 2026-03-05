@@ -517,6 +517,12 @@ h1 {
 }
 .settings-status.ok  { color: var(--ok-fg); }
 .settings-status.err { color: var(--err-fg); }
+.settings-build-info {
+  font-size: 10px;
+  color: var(--text-dimmer);
+  margin-top: 8px;
+  font-family: monospace;
+}
 
 /* Add workspace form */
 .add-form {
