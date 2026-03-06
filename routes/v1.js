@@ -208,6 +208,9 @@ module.exports = function createV1Router(deps) {
         relayActive: claudeChat ? claudeChat.isActive(project.name) : false,
         workspaceType: workspaceState ? workspaceState.getWorkspaceType(project.name) : "user",
       };
+      // Relay details: array of active relays for this workspace
+      const relayInfo = claudeChat ? claudeChat.getRelayInfo(project.name) : null;
+      result.relays = relayInfo ? [{ id: "relay-0", ...relayInfo }] : [];
       if (wsState.beadId) result.beadId = wsState.beadId;
       return result;
     });
@@ -680,6 +683,15 @@ module.exports = function createV1Router(deps) {
       lastActivity: workspaceState ? workspaceState.getLastChatActivity(workspace) : 0,
       pendingPermission: pending || null,
     });
+  });
+
+  // --- Stop individual relay ---
+
+  router.post("/chat/:workspace/stop", (req, res) => {
+    if (!claudeChat) return res.status(501).json({ error: "claude-chat not available" });
+    const workspace = decodeURIComponent(req.params.workspace);
+    claudeChat.stopProcess(workspace);
+    res.json({ ok: true, workspace });
   });
 
   // --- User settings ---

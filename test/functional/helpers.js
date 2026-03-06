@@ -152,6 +152,7 @@ function createClaudeChatMock() {
     getAuthStatus: () => ({ loggedIn: true }),
     startAuthCheck: () => {},
     isActive: (ws) => active.has(ws),
+    getRelayInfo: (ws) => active.has(ws) ? { pid: 99999, startedAt: Date.now(), sessionNum: 1 } : null,
     getSessions: (ws) => {
       const s = ensureSession(ws);
       return { current: s.current, total: s.total, sessions: Array.from({ length: s.total }, (_, i) => i + 1) };

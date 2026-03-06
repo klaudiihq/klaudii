@@ -169,9 +169,14 @@ function renderSessions(sessions, procs) {
 
   // Build a lookup of managed process stats by project name
   const procByProject = {};
+  const freerangeByProject = {};
   if (procs) {
     for (const p of procs) {
       if (p.managed && p.project) procByProject[p.project] = p;
+      if (!p.managed && p.project) {
+        if (!freerangeByProject[p.project]) freerangeByProject[p.project] = [];
+        freerangeByProject[p.project].push(p);
+      }
     }
   }
 
@@ -261,6 +266,38 @@ function renderSessions(sessions, procs) {
         <button class="btn btn-sm danger" onclick="removeWorkspace(this, '${esc(s.project)}', ${!!(g && (g.dirtyFiles || g.unpushed))})">Remove</button>`;
     }
 
+    // Build running instances list (tmux + relay + freerange)
+    const instances = [];
+    if (status === "running" || status === "exited") {
+      instances.push({ type: "terminal", label: "Terminal" });
+    }
+    if (s.relayActive && s.relays) {
+      for (const r of s.relays) {
+        instances.push({ type: "relay", label: `Chat${r.sessionNum ? " #" + r.sessionNum : ""}`, pid: r.pid });
+      }
+    }
+    const freerange = freerangeByProject[s.project] || [];
+    for (const fr of freerange) {
+      instances.push({ type: "freerange", label: `PID ${fr.pid}`, pid: fr.pid, launchedBy: fr.launchedBy });
+    }
+
+    let instancesHtml = "";
+    if (instances.length > 0) {
+      instancesHtml = `<div class="instance-list">${instances.map(inst => {
+        let stopBtn = "";
+        if (inst.type === "terminal") {
+          stopBtn = `<button class="btn btn-xs danger" onclick="event.stopPropagation(); stopSession('${esc(s.project)}')">Stop</button>`;
+        } else if (inst.type === "relay") {
+          stopBtn = `<button class="btn btn-xs danger" onclick="event.stopPropagation(); stopRelay('${esc(s.project)}')">Stop</button>`;
+        } else if (inst.type === "freerange") {
+          stopBtn = `<button class="btn btn-xs danger" onclick="event.stopPropagation(); confirmKill(this, ${inst.pid})">Kill</button>`;
+        }
+        const typeCls = inst.type;
+        const fromLabel = inst.launchedBy ? ` <span class="instance-from">via ${esc(inst.launchedBy)}</span>` : "";
+        return `<div class="instance-row"><span class="instance-type ${typeCls}">${esc(inst.label)}${fromLabel}</span>${stopBtn}</div>`;
+      }).join("")}</div>`;
+    }
+
     const isPanelOpen = openPanelProject === s.project;
 
     // Chat mode pill
@@ -293,6 +330,7 @@ function renderSessions(sessions, procs) {
         ${activityRow}
         ${gitBar}
         ${statsRow}
+        ${instancesHtml}
         <div class="card-actions-panel${isPanelOpen ? "" : " hidden"}" id="panel-${esc(s.project)}">
           ${panelItems}
         </div>
@@ -346,6 +384,11 @@ async function startSession(project, opts = {}) {
 async function stopSession(project) {
   await api("/api/sessions/stop", { method: "POST", body: { project } });
   closeTerminal();
+  refresh();
+}
+
+async function stopRelay(project) {
+  await api(`/api/chat/${encodeURIComponent(project)}/stop`, { method: "POST" });
   refresh();
 }
 

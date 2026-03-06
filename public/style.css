@@ -644,6 +644,44 @@ h2 {
 .git-file.other    .git-file-status { color: var(--text-muted); }
 
 /* =========================================================
+   Running instances list (on workspace cards)
+   ========================================================= */
+
+.instance-list {
+  margin-bottom: 4px;
+  border: 1px solid var(--border-subtle);
+  border-radius: 6px;
+  overflow: hidden;
+}
+
+.instance-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 3px 8px;
+  font-size: 11px;
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.instance-row:last-child { border-bottom: none; }
+
+.instance-type {
+  font-weight: 500;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.instance-type.terminal { color: var(--s-green); }
+.instance-type.relay    { color: var(--s-yellow); }
+.instance-type.freerange { color: var(--s-blue-text); }
+
+.instance-from {
+  font-weight: 400;
+  color: var(--text-faint);
+}
+
+/* =========================================================
    Free range claude cards
    ========================================================= */
 
