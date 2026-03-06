@@ -15,6 +15,7 @@ const gemini = require("./lib/gemini");
 const claudeChat = require("./lib/claude-chat");
 const workspaceState = require("./lib/workspace-state");
 const setup = require("./lib/setup");
+const { mountMcp } = require("./lib/mcp");
 
 process.on('uncaughtException', (err) => {
   console.error('[fatal] Uncaught exception:', err);
@@ -78,6 +79,20 @@ app.use(
     workspaceState,
   })
 );
+
+// --- MCP SSE ---
+
+mountMcp(app, {
+  tmux,
+  ttyd,
+  git,
+  github,
+  sessionTracker,
+  projects: { getProjects, getProject, addProject, removeProject, setPermissionMode },
+  config,
+  claudeChat,
+  workspaceState,
+});
 
 // --- Gemini ---
 

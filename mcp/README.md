@@ -1,17 +1,39 @@
 # Klaudii MCP Server
 
-MCP server that wraps the Klaudii REST API, allowing Claude Code CLI instances to manage workspaces and beads via native tool calls.
+MCP server that exposes Klaudii workspace and bead management as native tool calls for Claude Code CLI instances.
 
-## Setup
+## SSE Transport (Recommended)
+
+The MCP server runs as part of the Klaudii Express server on port 9876. No separate setup is needed — just start the Klaudii server normally:
+
+```bash
+npm install
+npm start
+```
+
+### Claude Code MCP Configuration
+
+Add to your Claude Code MCP config (`~/.claude/mcp.json` or project `.claude/mcp.json`):
+
+```json
+{
+  "mcpServers": {
+    "klaudii": {
+      "type": "sse",
+      "url": "http://localhost:9876/mcp"
+    }
+  }
+}
+```
+
+## Stdio Transport (Fallback)
+
+The standalone stdio server in `mcp/klaudii-mcp-server.js` is still available as a fallback. It proxies through the REST API instead of calling internal functions directly.
 
 ```bash
 cd mcp
 npm install
 ```
-
-## Claude Code MCP Configuration
-
-Add to your Claude Code MCP config (`~/.claude/mcp.json` or project `.claude/mcp.json`):
 
 ```json
 {
@@ -24,7 +46,7 @@ Add to your Claude Code MCP config (`~/.claude/mcp.json` or project `.claude/mcp
 }
 ```
 
-## Environment Variables
+### Environment Variables (stdio only)
 
 | Variable | Default | Description |
 |----------|---------|-------------|
