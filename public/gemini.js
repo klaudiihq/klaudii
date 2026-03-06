@@ -95,6 +95,20 @@ async function geminiFetchHistory(workspace, sessionNum) {
 }
 
 /**
+ * Fetch cumulative cost/token stats for a workspace and update the display.
+ */
+async function geminiFetchCumulativeStats(workspace) {
+  try {
+    const base = geminiActiveCli === "claude" ? "/api/claude-chat" : "/api/gemini";
+    const res = await fetch(`${base}/stats/${encodeURIComponent(workspace)}`);
+    const data = await res.json();
+    geminiUpdateCumulativeStats(data);
+  } catch {
+    geminiUpdateCumulativeStats({ cost: 0, total_tokens: 0 });
+  }
+}
+
+/**
  * Fetch session list for a workspace and populate the session selector.
  * Returns { current, sessions: [1,2,3], active }.
  */
@@ -687,10 +701,6 @@ function handleGeminiEvent(event) {
       break;
     }
 
-    case "result":
-      glog("handle: result stats=" + JSON.stringify(event.stats || {}).slice(0, 200));
-      break;
-
     case "draft": {
       // Another window updated the draft — apply unless user is actively typing here
       if (!geminiLocalDraftActive) {
@@ -795,6 +805,7 @@ function handleGeminiEvent(event) {
     case "result":
       glog("handle: result stats=" + JSON.stringify(event.stats || {}).slice(0, 200) + " subtype=" + (event.subtype || "success"));
       geminiShowResultFooter(event.stats, event.subtype, event.errors);
+      if (event.cumulative) geminiUpdateCumulativeStats(event.cumulative);
       break;
 
     case "system_status":
@@ -2009,6 +2020,20 @@ function geminiShowResultFooter(stats, subtype, errors) {
   }
 }
 
+/** Update the cumulative cost/token counter in the input footer. */
+function geminiUpdateCumulativeStats(cumulative) {
+  const el = document.getElementById("gemini-cumulative-stats");
+  if (!el) return;
+  const parts = [];
+  if (cumulative.cost) parts.push("$" + cumulative.cost.toFixed(4));
+  if (cumulative.total_tokens) {
+    parts.push(cumulative.total_tokens >= 1000
+      ? (cumulative.total_tokens / 1000).toFixed(1) + "k tok"
+      : cumulative.total_tokens + " tok");
+  }
+  el.textContent = parts.length ? parts.join(" \u00B7 ") : "";
+}
+
 function geminiScrollToBottom() {
   const container = document.getElementById("gemini-messages");
   if (container) {
@@ -2379,12 +2404,13 @@ async function geminiShowChat(wsState = null) {
   const container = document.getElementById("gemini-messages");
   container.innerHTML = "";
 
-  // Fetch sessions list and conversation history in parallel
+  // Fetch sessions list, conversation history, and cumulative stats in parallel
   if (geminiWorkspace) {
     const sessionNumAtCall = geminiSessionNum;
     const [, history] = await Promise.all([
       geminiFetchSessions(geminiWorkspace),
       geminiFetchHistory(geminiWorkspace, sessionNumAtCall),
+      geminiFetchCumulativeStats(geminiWorkspace),
     ]);
     // Bail out if workspace changed during async fetch (user switched workspaces)
     if (geminiWorkspace !== workspaceAtCall) {

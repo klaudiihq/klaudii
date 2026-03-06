@@ -619,6 +619,15 @@ summary.gemini-tool-summary::marker { display: none; }
 
 .gemini-footer-spacer { flex: 1; }
 
+.gemini-cumulative-stats {
+  font-size: 11px;
+  color: var(--text-muted, #888);
+  white-space: nowrap;
+  user-select: none;
+  opacity: 0.8;
+}
+.gemini-cumulative-stats:empty { display: none; }
+
 /* Paperclip attach button */
 .gemini-attach-btn {
   width: 28px;

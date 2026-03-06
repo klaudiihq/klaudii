@@ -227,6 +227,10 @@ app.post("/api/gemini/history/:project", (req, res) => {
   res.json({ ok: true });
 });
 
+app.get("/api/gemini/stats/:project", (req, res) => {
+  res.json(workspaceState.getCumulativeStats(req.params.project));
+});
+
 // Save Gemini API key (global or per-workspace)
 app.post("/api/gemini/apikey", (req, res) => {
   const { apiKey, workspace } = req.body;
@@ -398,6 +402,7 @@ app.get("/api/claude-chat/sessions/:project", (req, res) => {
 app.post("/api/claude-chat/clear/:project", (req, res) => {
   const { project } = req.params;
   const session = claudeChat.newSession(project);
+  workspaceState.resetCumulativeStats(project);
   res.json({ ok: true, session });
 });
 
@@ -408,6 +413,7 @@ app.post("/api/claude-chat/sessions/:project/switch", (req, res) => {
   if (!session) return res.status(400).json({ error: "session number required" });
   const ok = claudeChat.setCurrentSession(project, Number(session));
   if (!ok) return res.status(404).json({ error: `session ${session} not found` });
+  workspaceState.resetCumulativeStats(project);
   res.json({ ok: true, current: Number(session) });
 });
 
@@ -421,6 +427,10 @@ app.post("/api/claude-chat/history/:project", (req, res) => {
   if (!role || !content) return res.status(400).json({ error: "role and content required" });
   claudeChat.pushHistory(req.params.project, role, content);
   res.json({ ok: true });
+});
+
+app.get("/api/claude-chat/stats/:project", (req, res) => {
+  res.json(workspaceState.getCumulativeStats(req.params.project));
 });
 
 // Save Claude API key (global or per-workspace)
@@ -679,7 +689,9 @@ wss.on("connection", (ws) => {
             if (!event._flush) {
               // Forward result event with stats so client can show cost/token footer
               if (event.stats && Object.keys(event.stats).length > 0) {
-                broadcastToWorkspace(workspace, { type: "result", workspace, stats: event.stats, subtype: event.subtype, errors: event.errors });
+                workspaceState.addTurnStats(workspace, event.stats);
+                const cumulative = workspaceState.getCumulativeStats(workspace);
+                broadcastToWorkspace(workspace, { type: "result", workspace, stats: event.stats, cumulative, subtype: event.subtype, errors: event.errors });
               }
               workspaceState.setStreaming(workspace, false);
               workspaceState.touchChatActivity(workspace);
@@ -859,7 +871,9 @@ claudeChat.reconnectActiveRelays(config, (workspace, handle) => {
       workspaceState.setPendingPermission(workspace, null); // turn complete, clear any pending prompt
       if (!event._flush) {
         if (event.stats && Object.keys(event.stats).length > 0) {
-          broadcastToWorkspace(workspace, { type: "result", workspace, stats: event.stats, subtype: event.subtype, errors: event.errors });
+          workspaceState.addTurnStats(workspace, event.stats);
+          const cumulative = workspaceState.getCumulativeStats(workspace);
+          broadcastToWorkspace(workspace, { type: "result", workspace, stats: event.stats, cumulative, subtype: event.subtype, errors: event.errors });
         }
         workspaceState.setStreaming(workspace, false);
         workspaceState.touchChatActivity(workspace);
