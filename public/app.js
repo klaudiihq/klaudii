@@ -1482,20 +1482,12 @@ function renderBeads() {
 
   container.innerHTML = filtered.map(b => {
     const statusLabel = (b.status || "open").replace(/_/g, " ");
-    const updated = b.updated_at ? relativeTime(new Date(b.updated_at).getTime()) : "";
-    const assignee = b.assignee || "";
     const priority = PRIORITY_LABELS[b.priority] || `P${b.priority}`;
+    const shortId = b.id.includes("-") ? b.id.split("-").pop() : b.id;
     const isExpanded = expandedBeadId === b.id;
     const descHtml = isExpanded && b.description
       ? `<div class="bead-desc-expanded">${esc(b.description)}</div>`
       : "";
-
-    const closedOrBlocked = b.status === "closed" || b.status === "blocked";
-    const actionBtns = closedOrBlocked ? "" : `
-      <div class="bead-actions">
-        <button class="btn btn-sm" onclick="beadSetStatus('${esc(b.id)}','blocked')" title="Block">Block</button>
-        <button class="btn btn-sm success" onclick="beadSetStatus('${esc(b.id)}','closed')" title="Close">Close</button>
-      </div>`;
 
     // Worker sessions section (shown when expanded)
     let sessionsHtml = "";
@@ -1521,13 +1513,10 @@ function renderBeads() {
 
     return `<div class="bead-row">
       <div class="bead-row-top">
-        <span class="bead-id">${esc(b.id)}</span>
+        <span class="bead-short-id" title="${esc(b.id)}">${esc(shortId)}</span>
         <span class="bead-title" onclick="openBeadDetail('${esc(b.id)}')">${esc(b.title)}</span>
         <span class="bead-status ${esc(b.status || "open")}">${esc(statusLabel)}</span>
         <span class="bead-priority">${esc(priority)}</span>
-        <span class="bead-assignee" title="${esc(assignee)}">${esc(assignee)}</span>
-        <span class="bead-updated">${esc(updated)}</span>
-        ${actionBtns}
       </div>
       ${descHtml}
       ${sessionsHtml}
