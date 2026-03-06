@@ -97,7 +97,18 @@ mountMcp(app, {
 
 // --- Scheduler ---
 
-scheduler.register("shepherd", 5 * 60 * 1000, () => require("./lib/shepherd").run());
+const shepherdCtx = {
+  projects: { getProjects, getProject, addProject },
+  tmux,
+  ttyd,
+  git,
+  claude,
+  sessionTracker,
+  workspaceState,
+  claudeChat,
+  config,
+};
+scheduler.register("shepherd", 5 * 60 * 1000, () => require("./lib/shepherd").run(shepherdCtx));
 
 app.get("/api/scheduler", (_req, res) => {
   res.json(scheduler.list());
