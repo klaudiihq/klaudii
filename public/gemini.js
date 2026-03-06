@@ -40,6 +40,7 @@ let geminiThinkingEnabled = false;           // extended thinking toggle state
 // Per-workspace message history (in-memory cache, server is source of truth)
 // workspace → [ { role, content } ]  (for current session)
 const geminiHistory = {};
+const geminiAskToolIds = new Set(); // tool_ids for AskUserQuestion — suppress their tool_result pills
 
 // --- URL query parameter support ---
 
@@ -606,6 +607,7 @@ function handleGeminiEvent(event) {
         // AskUserQuestion always triggers permission_request (requiresUserInteraction=true).
         // Don't render anything here — the permission_request handler renders the
         // interactive question card. Rendering a pill would leave an orphan.
+        geminiAskToolIds.add(toolId);
         glog(`handle: ask-tool (skipped, waiting for permission_request) toolId=${toolId}`);
       } else {
         geminiAppendToolUse(toolName, toolId, params);
@@ -621,9 +623,11 @@ function handleGeminiEvent(event) {
       const error = event.error;
       glog(`handle: tool_result id=${toolId} tool=${toolName} status=${status} outputLen=${output.length}`);
       // AskUserQuestion results are already shown in the question card — skip rendering.
-      if (!/ask.*question/i.test(toolName)) {
+      // Check both tool_name (when present) and tracked tool_ids (when tool_name is missing).
+      if (!/ask.*question/i.test(toolName) && !geminiAskToolIds.has(toolId)) {
         geminiUpdateToolResult(toolId, status, output, error);
       }
+      geminiAskToolIds.delete(toolId);
       // Model continues processing after the tool — show thinking indicator so the
       // UI doesn't appear frozen between tool completion and the next text chunk.
       if (geminiStreaming) geminiShowThinking("Thinking\u2026");
