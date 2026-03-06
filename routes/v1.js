@@ -24,6 +24,7 @@ module.exports = function createV1Router(deps) {
     gemini,         // optional — Gemini CLI chat backend
     claudeChat,     // optional — Claude CLI chat backend
     workspaceState, // optional — per-workspace chat mode/session/draft persistence
+    memory,         // optional — persistent memory for architect/shepherd
   } = deps;
 
   const router = express.Router();
@@ -800,6 +801,61 @@ module.exports = function createV1Router(deps) {
       res.json(JSON.parse(out));
     } catch (err) {
       res.status(500).json({ error: `bd update failed: ${err.message}` });
+    }
+  });
+
+  // --- Agent Memory ---
+
+  router.get("/memory/:agent", (req, res) => {
+    if (!memory) return res.status(501).json({ error: "memory not available" });
+    const { agent } = req.params;
+    if (agent !== "architect" && agent !== "shepherd") {
+      return res.status(400).json({ error: "agent must be 'architect' or 'shepherd'" });
+    }
+    const limit = req.query.limit ? Number(req.query.limit) : 50;
+    const workspace = req.query.workspace || undefined;
+    res.json(memory.list(agent, { limit, workspace }));
+  });
+
+  router.post("/memory/:agent", (req, res) => {
+    if (!memory) return res.status(501).json({ error: "memory not available" });
+    const { agent } = req.params;
+    if (agent !== "architect" && agent !== "shepherd") {
+      return res.status(400).json({ error: "agent must be 'architect' or 'shepherd'" });
+    }
+    const { content, category, workspace, session_id } = req.body;
+    if (!content) return res.status(400).json({ error: "content required" });
+    try {
+      const entry = memory.store(agent, { content, category, workspace, session_id });
+      res.json(entry);
+    } catch (err) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  router.get("/memory/:agent/search", (req, res) => {
+    if (!memory) return res.status(501).json({ error: "memory not available" });
+    const { agent } = req.params;
+    if (agent !== "architect" && agent !== "shepherd") {
+      return res.status(400).json({ error: "agent must be 'architect' or 'shepherd'" });
+    }
+    const { q, limit } = req.query;
+    if (!q) return res.status(400).json({ error: "q query param required" });
+    res.json(memory.search(agent, q, { limit: limit ? Number(limit) : 50 }));
+  });
+
+  router.delete("/memory/:agent/:id", (req, res) => {
+    if (!memory) return res.status(501).json({ error: "memory not available" });
+    const { agent, id } = req.params;
+    if (agent !== "architect" && agent !== "shepherd") {
+      return res.status(400).json({ error: "agent must be 'architect' or 'shepherd'" });
+    }
+    try {
+      const deleted = memory.remove(agent, Number(id));
+      if (!deleted) return res.status(404).json({ error: "memory not found" });
+      res.json({ ok: true });
+    } catch (err) {
+      res.status(500).json({ error: err.message });
     }
   });
 

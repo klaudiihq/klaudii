@@ -17,6 +17,7 @@ const workspaceState = require("./lib/workspace-state");
 const setup = require("./lib/setup");
 const { mountMcp } = require("./lib/mcp");
 const scheduler = require("./lib/scheduler");
+const memory = require("./lib/memory");
 
 process.on('uncaughtException', (err) => {
   console.error('[fatal] Uncaught exception:', err);
@@ -78,6 +79,7 @@ app.use(
     gemini,
     claudeChat,
     workspaceState,
+    memory,
   })
 );
 
@@ -879,6 +881,7 @@ claudeChat.reconnectActiveRelays(config, (workspace, handle) => {
 function gracefulShutdown(signal) {
   console.log(`[server] ${signal} received, shutting down...`);
   scheduler.stop();
+  memory.close();
   gemini.stopAllProcesses();
   // Do NOT kill Claude relay daemons — they are detached and designed to survive server
   // restarts so reconnectActiveRelays() can pick them up on the next boot.
