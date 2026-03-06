@@ -306,8 +306,7 @@ function renderSessions(sessions, procs) {
 
     // Chat mode pill
     const chatMode = s.chatMode || "claude-local";
-    const chatActive = !!s.chatActive;
-    const modePill = `<button class="chat-mode-pill mode-${esc(chatMode)}${chatActive ? " streaming" : ""}" data-mode="${esc(chatMode)}" onclick="cycleChatMode(event, '${esc(s.project)}')" title="Chat mode — click to change">${chatActive ? '<span class="mode-pulse"></span>' : '<span class="mode-dot"></span>'}${esc(CHAT_MODE_LABELS[chatMode] || chatMode)}</button>`;
+    const modePill = `<button class="chat-mode-pill mode-${esc(chatMode)}" data-mode="${esc(chatMode)}" onclick="cycleChatMode(event, '${esc(s.project)}')" title="Chat mode — click to change"><span class="mode-dot"></span>${esc(CHAT_MODE_LABELS[chatMode] || chatMode)}</button>`;
 
     // Activity timestamp row
     const lastAct = s.lastActivity ? absoluteTime(s.lastActivity) : null;

@@ -430,16 +430,6 @@ h2 {
   pointer-events: none;
 }
 
-.mode-pulse {
-  width: 5px;
-  height: 5px;
-  border-radius: 50%;
-  background: currentColor;
-  flex-shrink: 0;
-  pointer-events: none;
-  animation: mode-pulse 1.2s ease-in-out infinite;
-}
-
 @keyframes mode-pulse {
   0%, 100% { opacity: 1; transform: scale(1); }
   50% { opacity: 0.4; transform: scale(1.4); }
@@ -451,11 +441,6 @@ h2 {
 .chat-mode-pill.mode-gemini:hover        { filter: brightness(1.1); }
 .chat-mode-pill.mode-claude-local:hover  { filter: brightness(1.1); }
 .chat-mode-pill.mode-claude-remote:hover { filter: brightness(1.1); }
-
-/* Streaming/active state — darker backgrounds for readability */
-.chat-mode-pill.streaming.mode-gemini        { background: var(--s-blue-deep); }
-.chat-mode-pill.streaming.mode-claude-local  { background: color-mix(in srgb, var(--s-yellow) 25%, var(--bg)); }
-.chat-mode-pill.streaming.mode-claude-remote { background: color-mix(in srgb, var(--s-green) 25%, var(--bg)); }
 
 /* Remote timing row */
 .remote-timing {
