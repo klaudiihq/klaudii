@@ -1,5 +1,14 @@
 # Agent Instructions
 
+## Repository: klaudii-dev (PRIVATE)
+
+All development happens in **klaudiihq/klaudii-dev**. The public repo (klaudiihq/klaudii) is for releases only. If your `origin` remote points to `klaudii.git` instead of `klaudii-dev.git`, STOP and fix it before doing any work.
+
+```bash
+# Verify you're on the right repo
+git remote get-url origin  # Must show klaudii-dev.git
+```
+
 This project uses **bd** (beads) for issue tracking. Run `bd onboard` to get started.
 
 ## Quick Reference
