@@ -9,6 +9,7 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "test:contracts": "vitest run test/contracts/",
+    "test:functional": "vitest run test/functional/",
     "test:e2e": "npx playwright test"
   },
   "dependencies": {
