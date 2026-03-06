@@ -409,6 +409,7 @@ function geminiSaveDraft(text) {
 
 async function geminiRestoreDraft(prefetchedState = null) {
   if (!geminiWorkspace) return;
+  const workspaceAtCall = geminiWorkspace;
   const input = document.getElementById("gemini-input");
   if (!input) return;
   // Only restore drafts saved during this page session to avoid stale state on load
@@ -418,6 +419,8 @@ async function geminiRestoreDraft(prefetchedState = null) {
   }
   try {
     const state = prefetchedState || await fetch(`/api/workspace-state/${encodeURIComponent(geminiWorkspace)}`).then(r => r.json());
+    // Don't apply if workspace changed during async fetch
+    if (geminiWorkspace !== workspaceAtCall) return;
     input.value = state.draft || "";
   } catch { /* non-fatal */ }
 }
@@ -2342,6 +2345,7 @@ function geminiStartStreamPoll(historyLengthAtOpen) {
 
 async function geminiShowChat(wsState = null) {
   glog("showChat: workspace=" + geminiWorkspace + " session#" + geminiSessionNum);
+  const workspaceAtCall = geminiWorkspace;
   const container = document.getElementById("gemini-messages");
   container.innerHTML = "";
 
@@ -2352,6 +2356,11 @@ async function geminiShowChat(wsState = null) {
       geminiFetchSessions(geminiWorkspace),
       geminiFetchHistory(geminiWorkspace, sessionNumAtCall),
     ]);
+    // Bail out if workspace changed during async fetch (user switched workspaces)
+    if (geminiWorkspace !== workspaceAtCall) {
+      glog("showChat: workspace changed during fetch, aborting stale render");
+      return;
+    }
     const pendingToolUses = new Map();
     for (const msg of history) {
       if (msg.role === "tool_use") {
@@ -2440,6 +2449,27 @@ async function geminiShowChat(wsState = null) {
 async function openGeminiChat(project, projectPath, cli) {
   geminiActiveCli = cli || "gemini";
   glog(`openChat: project=${project} path=${projectPath} cli=${geminiActiveCli}`);
+
+  // Flush draft for the previous workspace before switching (handles direct
+  // workspace-to-workspace clicks that skip closeGeminiChat).
+  const prevWorkspace = geminiWorkspace;
+  if (prevWorkspace && prevWorkspace !== project) {
+    // Cancel any pending debounced draft save for the old workspace
+    clearTimeout(geminiDraftTimer);
+    const input = document.getElementById("gemini-input");
+    if (input && input.value) {
+      // Save immediately via HTTP (bypass debounce) so the draft isn't lost
+      const draftMode = geminiActiveCli === "claude" ? "claude-local" : "gemini";
+      fetch(`/api/workspace-state/${encodeURIComponent(prevWorkspace)}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ draft: input.value, draftMode, draftSession: geminiSessionNum }),
+      }).catch(() => {});
+    }
+    // Clear input immediately so the old draft doesn't flash in the new workspace
+    if (input) input.value = "";
+  }
+
   geminiWorkspace = project || null;
   geminiWorkspacePath = projectPath || null;
 
