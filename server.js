@@ -134,53 +134,7 @@ app.post("/api/scheduler/:name/trigger", async (req, res) => {
 
 // --- Beads ---
 
-const { execSync } = require("child_process");
-
-app.get("/api/beads", (_req, res) => {
-  try {
-    const out = execSync("bd list --json --allow-stale", { encoding: "utf-8", timeout: 10000 });
-    res.json(JSON.parse(out));
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
-});
-
-app.post("/api/beads", (req, res) => {
-  try {
-    const { title, description, priority, type } = req.body;
-    if (!title) return res.status(400).json({ error: "title is required" });
-    let cmd = `bd create ${JSON.stringify(title)}`;
-    if (description) cmd += ` --description=${JSON.stringify(description)}`;
-    if (priority !== undefined) cmd += ` -p ${Number(priority)}`;
-    if (type) cmd += ` -t ${type}`;
-    cmd += " --json --allow-stale";
-    const out = execSync(cmd, { encoding: "utf-8", timeout: 10000 });
-    res.json(JSON.parse(out));
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
-});
-
-app.patch("/api/beads/:id", (req, res) => {
-  try {
-    const id = req.params.id;
-    const { status, reason } = req.body;
-    let cmd;
-    if (status === "closed") {
-      cmd = `bd close ${id} --reason ${JSON.stringify(reason || "Closed from dashboard")} --allow-stale`;
-    } else if (status === "blocked") {
-      cmd = `bd update ${id} --status blocked --allow-stale`;
-    } else if (status) {
-      cmd = `bd update ${id} --status ${status} --allow-stale`;
-    } else {
-      return res.status(400).json({ error: "status is required" });
-    }
-    execSync(cmd, { encoding: "utf-8", timeout: 10000 });
-    res.json({ ok: true });
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
-});
+// Beads CRUD endpoints are in routes/v1.js
 
 // --- Gemini ---
 

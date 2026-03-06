@@ -679,11 +679,14 @@ module.exports = function createV1Router(deps) {
   });
 
   // --- Beads CRUD ---
+  // bd commands run in the main repo directory (where .beads/ lives)
+
+  const bdCwd = path.resolve(__dirname, "..");
 
   router.get("/beads", (_req, res) => {
     try {
       const { execSync } = require("child_process");
-      const out = execSync("bd list --json", { encoding: "utf-8", cwd: config.reposDir || process.cwd() });
+      const out = execSync("bd list --json --allow-stale --all", { encoding: "utf-8", cwd: bdCwd, timeout: 10000 });
       res.json(JSON.parse(out));
     } catch (err) {
       res.status(500).json({ error: `bd list failed: ${err.message}` });
@@ -696,7 +699,7 @@ module.exports = function createV1Router(deps) {
 
     try {
       const { execSync } = require("child_process");
-      const out = execSync(`bd show ${id} --json`, { encoding: "utf-8", cwd: config.reposDir || process.cwd() });
+      const out = execSync(`bd show ${id} --json --allow-stale`, { encoding: "utf-8", cwd: bdCwd, timeout: 10000 });
       const parsed = JSON.parse(out);
       res.json(Array.isArray(parsed) ? parsed[0] : parsed);
     } catch (err) {
@@ -715,9 +718,9 @@ module.exports = function createV1Router(deps) {
       if (priority !== undefined) cmd += ` -p ${Number(priority)}`;
       if (type) cmd += ` -t ${type}`;
       if (deps) cmd += ` --deps ${deps}`;
-      cmd += " --json";
+      cmd += " --json --allow-stale";
 
-      const out = execSync(cmd, { encoding: "utf-8", cwd: config.reposDir || process.cwd() });
+      const out = execSync(cmd, { encoding: "utf-8", cwd: bdCwd, timeout: 10000 });
       res.status(201).json(JSON.parse(out));
     } catch (err) {
       res.status(500).json({ error: `bd create failed: ${err.message}` });
@@ -732,25 +735,21 @@ module.exports = function createV1Router(deps) {
 
     try {
       const { execSync } = require("child_process");
-      const cwd = config.reposDir || process.cwd();
 
-      // Update fields if any provided
       if (status || assignee !== undefined || priority !== undefined) {
         let cmd = `bd update ${id}`;
         if (status) cmd += ` --status ${status}`;
         if (assignee !== undefined) cmd += ` --assignee ${JSON.stringify(assignee)}`;
         if (priority !== undefined) cmd += ` -p ${Number(priority)}`;
-        cmd += " --json";
-        execSync(cmd, { encoding: "utf-8", cwd });
+        cmd += " --json --allow-stale";
+        execSync(cmd, { encoding: "utf-8", cwd: bdCwd, timeout: 10000 });
       }
 
-      // Add comment if provided
       if (comment) {
-        execSync(`bd comment ${id} ${JSON.stringify(comment)}`, { encoding: "utf-8", cwd });
+        execSync(`bd comment ${id} ${JSON.stringify(comment)} --allow-stale`, { encoding: "utf-8", cwd: bdCwd, timeout: 10000 });
       }
 
-      // Return updated bead
-      const out = execSync(`bd show ${id} --json`, { encoding: "utf-8", cwd });
+      const out = execSync(`bd show ${id} --json --allow-stale`, { encoding: "utf-8", cwd: bdCwd, timeout: 10000 });
       res.json(JSON.parse(out));
     } catch (err) {
       res.status(500).json({ error: `bd update failed: ${err.message}` });
