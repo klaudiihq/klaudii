@@ -144,15 +144,14 @@ module.exports = function createV1Router(deps) {
 
   function buildClaudeArgs(permissionMode, opts = {}) {
     const parts = [];
-    if (permissionMode === "yolo") {
-      parts.push("--dangerously-skip-permissions");
-    } else if (permissionMode === "strict") {
-      parts.push("--dangerously-skip-permissions");
-      parts.push("--allowedTools", "Read,Glob,Grep,WebSearch,WebFetch");
-    }
     if (opts.resumeSessionId) parts.push("--resume", opts.resumeSessionId);
     else if (opts.continueSession) parts.push("--continue");
     parts.push("remote-control");
+    if (permissionMode === "yolo") {
+      parts.push("--permission-mode", "bypassPermissions");
+    } else if (permissionMode === "strict") {
+      parts.push("--permission-mode", "plan");
+    }
     return parts.join(" ");
   }
 
