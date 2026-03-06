@@ -6,8 +6,7 @@ let sortMode = localStorage.getItem("klaudii-sort") || "activity";
 let sortDir = localStorage.getItem("klaudii-sort-dir") || "desc";
 let openPanelProject = null;
 let panelAutoCloseTimer = null;
-let showWorkerWorkspaces = localStorage.getItem("klaudii-show-workers") === "true";
-let workerDisplayMode = localStorage.getItem("klaudii-worker-mode") || "hide"; // "hide" | "show" | "auto-clean"
+let showWorkerWorkspaces = false; // driven by server settings (workerVisibility)
 
 // --- SVG icon constants (matching extension) ---
 const STAT_CPU_SVG = `<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="4" width="16" height="16" rx="2"/><rect x="9" y="9" width="6" height="6"/><line x1="9" y1="1" x2="9" y2="4"/><line x1="15" y1="1" x2="15" y2="4"/><line x1="9" y1="20" x2="9" y2="23"/><line x1="15" y1="20" x2="15" y2="23"/><line x1="20" y1="9" x2="23" y2="9"/><line x1="20" y1="14" x2="23" y2="14"/><line x1="1" y1="9" x2="4" y2="9"/><line x1="1" y1="14" x2="4" y2="14"/></svg>`;
@@ -129,9 +128,12 @@ function sortSessions(sessions) {
 
 // --- Rendering ---
 
-function toggleWorkerWorkspaces() {
-  showWorkerWorkspaces = !showWorkerWorkspaces;
-  localStorage.setItem("klaudii-show-workers", showWorkerWorkspaces);
+async function toggleWorkerWorkspaces() {
+  const newMode = showWorkerWorkspaces ? "hide" : "show";
+  try {
+    await api("/api/settings", { method: "PATCH", body: { workerVisibility: newMode } });
+  } catch { /* best-effort */ }
+  showWorkerWorkspaces = newMode === "show";
   updateWorkerToggle();
   refresh();
 }
@@ -695,11 +697,18 @@ function confirmKill(btn, pid) {
 
 async function refresh() {
   try {
-    const [health, sessions, procs] = await Promise.all([
+    const [health, sessions, procs, settings] = await Promise.all([
       api("/api/health"),
       api("/api/sessions"),
       api("/api/processes"),
+      api("/api/settings").catch(() => null),
     ]);
+
+    // Sync worker visibility from server settings
+    if (settings && settings.workerVisibility) {
+      showWorkerWorkspaces = settings.workerVisibility === "show";
+      currentSettings = settings;
+    }
 
     lastHealthData = health;
     const badge = document.getElementById("status-badge");
