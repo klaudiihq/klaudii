@@ -1,0 +1,145 @@
+name: Sync to Public (LLM Reviewed)
+
+on:
+  # Manual trigger with optional branch override
+  workflow_dispatch:
+    inputs:
+      source_branch:
+        description: 'Branch to sync from (default: main)'
+        required: false
+        default: 'main'
+      dry_run:
+        description: 'Dry run — review only, do not push'
+        required: false
+        type: boolean
+        default: false
+
+  # Auto-trigger when main is updated
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  review-and-sync:
+    runs-on: ubuntu-latest
+    env:
+      PUBLIC_REPO: klaudiihq/klaudii
+      SOURCE_BRANCH: ${{ github.event.inputs.source_branch || 'main' }}
+
+    steps:
+      - name: Checkout dev repo
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Authenticate with Google Cloud
+        uses: google-github-actions/auth@v2
+        with:
+          credentials_json: ${{ secrets.GCP_SERVICE_ACCOUNT_KEY }}
+
+      - name: Fetch public repo state
+        env:
+          SYNC_TOKEN: ${{ secrets.PUBLIC_REPO_TOKEN }}
+        run: |
+          git remote add public https://x-access-token:${SYNC_TOKEN}@github.com/${PUBLIC_REPO}.git
+          git fetch public main --depth=100
+
+      - name: Generate diff
+        id: diff
+        run: |
+          DIFF=$(git diff public/main..${SOURCE_BRANCH} -- . \
+            ':!.github/workflows/sync-to-public.yml' \
+            ':!.github/workflows/llm-pr-review.yml')
+
+          if [ -z "$DIFF" ]; then
+            echo "No changes to sync."
+            echo "has_changes=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          echo "has_changes=true" >> "$GITHUB_OUTPUT"
+
+          # Save diff (truncate to ~100k chars for LLM context)
+          echo "$DIFF" | head -c 100000 > /tmp/sync-diff.patch
+
+          # Stats for the summary
+          echo "### Diff stats" >> "$GITHUB_STEP_SUMMARY"
+          git diff --stat public/main..${SOURCE_BRANCH} -- . \
+            ':!.github/workflows/sync-to-public.yml' \
+            ':!.github/workflows/llm-pr-review.yml' >> "$GITHUB_STEP_SUMMARY"
+
+      - name: LLM review for leaks
+        if: steps.diff.outputs.has_changes == 'true'
+        id: review
+        env:
+          GCP_PROJECT_ID: ${{ secrets.GCP_PROJECT_ID }}
+          GCP_REGION: ${{ secrets.GCP_REGION }}
+        run: |
+          ACCESS_TOKEN=$(gcloud auth print-access-token)
+          MODEL="gemini-2.5-flash"
+          ENDPOINT="https://${GCP_REGION}-aiplatform.googleapis.com/v1/projects/${GCP_PROJECT_ID}/locations/${GCP_REGION}/publishers/google/models/${MODEL}:generateContent"
+
+          DIFF_CONTENT=$(cat /tmp/sync-diff.patch)
+          ESCAPED_DIFF=$(echo "$DIFF_CONTENT" | python3 -c 'import sys,json; print(json.dumps(sys.stdin.read()))')
+
+          python3 -c "
+          import json
+          data = {
+              'systemInstruction': {
+                  'parts': [{'text': 'You are a security reviewer for a public GitHub repo. Review the following git diff that is about to be pushed to a PUBLIC repository.\n\nFlag ANY of the following as BLOCKED:\n- API keys, tokens, secrets, passwords, or credentials\n- Conversation history, chat logs, user messages, or drafts\n- Session state, workspace state, or runtime data files\n- Planning documents, scratch notes, or internal assessments that reference private discussions\n- Personal information (emails, names in non-attribution contexts, private URLs)\n- References to private infrastructure (internal IPs, private hostnames, database URLs)\n\nRespond with EXACTLY one of:\n- APPROVED — if the diff is clean for public release\n- BLOCKED — followed by a list of specific issues found\n\nBe strict. When in doubt, block.'}]
+              },
+              'contents': [{'role': 'user', 'parts': [{'text': 'Review this diff for a public repo sync:\n\n' + $ESCAPED_DIFF}]}],
+              'generationConfig': {'maxOutputTokens': 4096}
+          }
+          with open('/tmp/review-request.json', 'w') as f:
+              json.dump(data, f)
+          "
+
+          echo "Using model: $MODEL" >> "$GITHUB_STEP_SUMMARY"
+
+          RESPONSE=$(curl -s -X POST "$ENDPOINT" \
+            -H "Authorization: Bearer ${ACCESS_TOKEN}" \
+            -H "Content-Type: application/json" \
+            -d @/tmp/review-request.json)
+
+          REVIEW=$(echo "$RESPONSE" | python3 -c "
+          import sys, json
+          r = json.load(sys.stdin)
+          parts = r.get('candidates', [{}])[0].get('content', {}).get('parts', [])
+          print(parts[0]['text'] if parts else 'ERROR: No response')
+          " 2>/dev/null || echo "ERROR: Failed to parse API response: $RESPONSE")
+
+          echo "### LLM Review Result" >> "$GITHUB_STEP_SUMMARY"
+          echo '```' >> "$GITHUB_STEP_SUMMARY"
+          echo "$REVIEW" >> "$GITHUB_STEP_SUMMARY"
+          echo '```' >> "$GITHUB_STEP_SUMMARY"
+
+          if echo "$REVIEW" | head -1 | grep -q "^APPROVED"; then
+            echo "verdict=approved" >> "$GITHUB_OUTPUT"
+          else
+            echo "verdict=blocked" >> "$GITHUB_OUTPUT"
+            echo "::error::LLM review BLOCKED this sync. See job summary for details."
+          fi
+
+      - name: Push to public repo
+        if: >
+          steps.diff.outputs.has_changes == 'true' &&
+          steps.review.outputs.verdict == 'approved' &&
+          github.event.inputs.dry_run != 'true'
+        env:
+          SYNC_TOKEN: ${{ secrets.PUBLIC_REPO_TOKEN }}
+        run: |
+          git remote set-url public https://x-access-token:${SYNC_TOKEN}@github.com/${PUBLIC_REPO}.git
+          git push public ${SOURCE_BRANCH}:main
+          echo "### Sync complete" >> "$GITHUB_STEP_SUMMARY"
+          echo "Pushed \`${SOURCE_BRANCH}\` → \`${PUBLIC_REPO}:main\`" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Blocked — do not push
+        if: >
+          steps.diff.outputs.has_changes == 'true' &&
+          steps.review.outputs.verdict == 'blocked'
+        run: |
+          echo "::error::Sync blocked by LLM review. Fix the flagged issues and re-run."
+          exit 1

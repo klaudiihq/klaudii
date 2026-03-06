@@ -1,0 +1,127 @@
+name: LLM PR Review
+
+on:
+  pull_request:
+    types: [opened, synchronize]
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  review:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Authenticate with Google Cloud
+        uses: google-github-actions/auth@v2
+        with:
+          credentials_json: ${{ secrets.GCP_SERVICE_ACCOUNT_KEY }}
+
+      - name: Get PR diff
+        id: diff
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh pr diff ${{ github.event.pull_request.number }} > /tmp/pr-diff.patch
+          LINES=$(wc -l < /tmp/pr-diff.patch)
+          echo "diff_lines=$LINES" >> "$GITHUB_OUTPUT"
+          echo "PR diff: $LINES lines"
+
+      - name: LLM review
+        if: steps.diff.outputs.diff_lines > 0
+        id: review
+        env:
+          GCP_PROJECT_ID: ${{ secrets.GCP_PROJECT_ID }}
+          GCP_REGION: ${{ secrets.GCP_REGION }}
+        run: |
+          ACCESS_TOKEN=$(gcloud auth print-access-token)
+          MODEL="gemini-2.5-flash"
+          ENDPOINT="https://${GCP_REGION}-aiplatform.googleapis.com/v1/projects/${GCP_PROJECT_ID}/locations/${GCP_REGION}/publishers/google/models/${MODEL}:generateContent"
+
+          # Truncate large diffs
+          head -c 100000 /tmp/pr-diff.patch > /tmp/pr-diff-truncated.patch
+
+          DIFF_CONTENT=$(cat /tmp/pr-diff-truncated.patch)
+          ESCAPED_DIFF=$(echo "$DIFF_CONTENT" | python3 -c 'import sys,json; print(json.dumps(sys.stdin.read()))')
+
+          python3 -c "
+          import json
+          data = {
+              'systemInstruction': {
+                  'parts': [{'text': '''You are a code reviewer for the Klaudii project (a web-based manager for Claude Code CLI sessions). Review this PR diff for:
+
+          1. SECURITY: API keys, tokens, secrets, credentials, private URLs
+          2. PRIVACY: Conversation history, chat logs, user messages, drafts, session state
+          3. RUNTIME DATA: workspace-state.json, session files, planning/scratch docs
+          4. CODE QUALITY: Obvious bugs, missing error handling at boundaries
+
+          Respond in this format:
+
+          **Security & Privacy**: PASS or FAIL with specifics
+          **Code Review**: Brief notes on anything notable (keep it short)
+
+          Be strict on security/privacy. Be helpful but concise on code quality.'''}]
+              },
+              'contents': [{'role': 'user', 'parts': [{'text': 'Review this PR diff:\n\n' + $ESCAPED_DIFF}]}],
+              'generationConfig': {'maxOutputTokens': 4096}
+          }
+          with open('/tmp/review-request.json', 'w') as f:
+              json.dump(data, f)
+          "
+
+          RESPONSE=$(curl -s -X POST "$ENDPOINT" \
+            -H "Authorization: Bearer ${ACCESS_TOKEN}" \
+            -H "Content-Type: application/json" \
+            -d @/tmp/review-request.json)
+
+          REVIEW=$(echo "$RESPONSE" | python3 -c "
+          import sys, json
+          r = json.load(sys.stdin)
+          parts = r.get('candidates', [{}])[0].get('content', {}).get('parts', [])
+          print(parts[0]['text'] if parts else 'ERROR: No response')
+          " 2>/dev/null || echo "ERROR: Failed to parse API response: $RESPONSE")
+
+          echo "$REVIEW" > /tmp/review-result.txt
+
+          if echo "$REVIEW" | grep -qi "FAIL"; then
+            echo "verdict=fail" >> "$GITHUB_OUTPUT"
+          else
+            echo "verdict=pass" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Post review comment
+        if: steps.diff.outputs.diff_lines > 0
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          REVIEW=$(cat /tmp/review-result.txt)
+          VERDICT="${{ steps.review.outputs.verdict }}"
+
+          if [ "$VERDICT" = "fail" ]; then
+            HEADER="## LLM Review — Issues Found"
+          else
+            HEADER="## LLM Review — Clean"
+          fi
+
+          BODY=$(cat <<EOF
+          ${HEADER}
+
+          ${REVIEW}
+
+          ---
+          *Automated review by Gemini Flash on Vertex AI · [sync-to-public](../../actions/workflows/sync-to-public.yml) will run LLM review again before pushing to the public repo.*
+          EOF
+          )
+
+          gh pr comment ${{ github.event.pull_request.number }} --body "$BODY"
+
+      - name: Fail if issues found
+        if: steps.review.outputs.verdict == 'fail'
+        run: |
+          echo "::error::LLM review found security/privacy issues. See PR comment."
+          exit 1

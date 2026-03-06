@@ -146,6 +146,7 @@ function createMockDeps(overrides = {}) {
       cloneRepo: () => {},
       addWorktree: () => {},
       removeWorktree: () => {},
+      cleanWorktree: () => {},
     },
 
     github: {

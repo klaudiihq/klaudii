@@ -1,0 +1,12 @@
+{
+  "name": "klaudii-mcp-server",
+  "version": "1.0.0",
+  "description": "MCP server for Klaudii — manage workspaces and beads via Claude Code tool calls",
+  "main": "klaudii-mcp-server.js",
+  "scripts": {
+    "start": "node klaudii-mcp-server.js"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.27.1"
+  }
+}

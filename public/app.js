@@ -30,7 +30,7 @@ const PERM_BADGE_LABELS = { yolo: "bypass", ask: "ask", strict: "plan" };
 const PERM_MODE_LABELS = { yolo: "Bypass Permissions", ask: "Ask Permissions", strict: "Plan Mode" };
 
 const CHAT_MODES = ["gemini", "claude-local", "claude-remote"];
-const CHAT_MODE_LABELS = { "gemini": "Gemini", "claude-local": "Claude Local", "claude-remote": "Claude Remote" };
+const CHAT_MODE_LABELS = { "gemini": "Gemini", "claude-local": "Claude", "claude-remote": "Claude RC" };
 
 function relativeTime(ts) {
   if (!ts) return null;
@@ -1224,6 +1224,242 @@ async function confirmUnpair() {
   renderCloudModal();
 }
 
+// --- Scheduler ---
+
+let schedulerCollapsed = localStorage.getItem("klaudii-scheduler-collapsed") === "1";
+
+function formatInterval(ms) {
+  if (ms >= 3600000) {
+    const h = ms / 3600000;
+    return h === 1 ? "every 1 hour" : `every ${h} hours`;
+  }
+  if (ms >= 60000) {
+    const m = ms / 60000;
+    return m === 1 ? "every 1 min" : `every ${m} min`;
+  }
+  return `every ${ms / 1000}s`;
+}
+
+async function refreshScheduler() {
+  try {
+    const tasks = await api("/api/scheduler");
+    renderScheduler(tasks);
+  } catch {
+    // Scheduler endpoint not available
+  }
+}
+
+function renderScheduler(tasks) {
+  const section = document.getElementById("scheduler-section");
+  const container = document.getElementById("scheduler-list");
+  if (!section || !container) return;
+
+  if (!tasks || !tasks.length) {
+    section.classList.add("hidden");
+    return;
+  }
+
+  section.classList.remove("hidden");
+  const toggle = document.getElementById("scheduler-toggle");
+  if (toggle) toggle.textContent = schedulerCollapsed ? "Show" : "Hide";
+  container.style.display = schedulerCollapsed ? "none" : "";
+
+  container.innerHTML = tasks.map(t => {
+    const statusBadge = t.running
+      ? '<span class="scheduler-badge task-running">running</span>'
+      : t.enabled
+        ? '<span class="scheduler-badge enabled">enabled</span>'
+        : '<span class="scheduler-badge disabled">disabled</span>';
+
+    const lastRun = t.lastRunAt ? relativeTime(new Date(t.lastRunAt).getTime()) : "never";
+    const lastResult = t.lastResult || "—";
+
+    const errorRow = t.lastError
+      ? `<div class="scheduler-card-error">Error: ${esc(t.lastError)}</div>`
+      : "";
+
+    const toggleBtn = t.enabled
+      ? `<button class="btn btn-sm warning" onclick="schedulerPause('${esc(t.name)}')">Pause</button>`
+      : `<button class="btn btn-sm success" onclick="schedulerResume('${esc(t.name)}')">Resume</button>`;
+
+    return `
+    <div class="card scheduler-card">
+      <div class="scheduler-card-top">
+        <span class="scheduler-card-name">${esc(t.name)}</span>
+        <div class="scheduler-card-badges">${statusBadge}</div>
+      </div>
+      <div class="scheduler-card-info">
+        <span>${esc(formatInterval(t.intervalMs))}</span>
+        <span>last run: ${esc(lastRun)}</span>
+        <span>result: ${esc(lastResult)}</span>
+      </div>
+      ${errorRow}
+      <div class="scheduler-card-actions">
+        ${toggleBtn}
+        <button class="btn btn-sm primary" onclick="schedulerTrigger('${esc(t.name)}')"${t.running ? " disabled" : ""}>Trigger Now</button>
+      </div>
+    </div>`;
+  }).join("");
+}
+
+function toggleSchedulerSection() {
+  schedulerCollapsed = !schedulerCollapsed;
+  localStorage.setItem("klaudii-scheduler-collapsed", schedulerCollapsed ? "1" : "0");
+  const container = document.getElementById("scheduler-list");
+  const toggle = document.getElementById("scheduler-toggle");
+  if (container) container.style.display = schedulerCollapsed ? "none" : "";
+  if (toggle) toggle.textContent = schedulerCollapsed ? "Show" : "Hide";
+}
+
+async function schedulerPause(name) {
+  await api(`/api/scheduler/${encodeURIComponent(name)}/pause`, { method: "POST" });
+  refreshScheduler();
+}
+
+async function schedulerResume(name) {
+  await api(`/api/scheduler/${encodeURIComponent(name)}/resume`, { method: "POST" });
+  refreshScheduler();
+}
+
+async function schedulerTrigger(name) {
+  await api(`/api/scheduler/${encodeURIComponent(name)}/trigger`, { method: "POST" });
+  setTimeout(refreshScheduler, 1000);
+}
+
+// --- Beads ---
+
+let beadsCollapsed = localStorage.getItem("klaudii-beads-collapsed") === "1";
+let beadFilter = "all";
+let beadsData = [];
+let expandedBeadId = null;
+
+const PRIORITY_LABELS = ["P0", "P1", "P2", "P3", "P4"];
+
+async function refreshBeads() {
+  try {
+    beadsData = await api("/api/beads");
+    if (!Array.isArray(beadsData)) beadsData = [];
+    renderBeads();
+  } catch {
+    // Beads endpoint not available
+  }
+}
+
+function renderBeads() {
+  const section = document.getElementById("beads-section");
+  const container = document.getElementById("beads-list");
+  if (!section || !container) return;
+
+  if (!beadsData.length) {
+    section.classList.add("hidden");
+    return;
+  }
+
+  section.classList.remove("hidden");
+  const toggle = document.getElementById("beads-toggle");
+  if (toggle) toggle.textContent = beadsCollapsed ? "Show" : "Hide";
+  document.getElementById("beads-toolbar").style.display = beadsCollapsed ? "none" : "";
+  document.getElementById("beads-list").style.display = beadsCollapsed ? "none" : "";
+  const form = document.getElementById("bead-form");
+  if (beadsCollapsed && form) form.classList.add("hidden");
+
+  const filtered = beadFilter === "all"
+    ? beadsData
+    : beadsData.filter(b => b.status === beadFilter);
+
+  if (!filtered.length) {
+    container.innerHTML = `<div style="padding:12px;color:var(--text-faint);font-size:12px;text-align:center">No beads matching "${beadFilter}"</div>`;
+    return;
+  }
+
+  container.innerHTML = filtered.map(b => {
+    const statusLabel = (b.status || "open").replace(/_/g, " ");
+    const updated = b.updated_at ? relativeTime(new Date(b.updated_at).getTime()) : "";
+    const assignee = b.assignee || "";
+    const priority = PRIORITY_LABELS[b.priority] || `P${b.priority}`;
+    const isExpanded = expandedBeadId === b.id;
+    const descHtml = isExpanded && b.description
+      ? `<div class="bead-desc-expanded">${esc(b.description)}</div>`
+      : "";
+
+    const closedOrBlocked = b.status === "closed" || b.status === "blocked";
+    const actionBtns = closedOrBlocked ? "" : `
+      <div class="bead-actions">
+        <button class="btn btn-sm" onclick="beadSetStatus('${esc(b.id)}','blocked')" title="Block">Block</button>
+        <button class="btn btn-sm success" onclick="beadSetStatus('${esc(b.id)}','closed')" title="Close">Close</button>
+      </div>`;
+
+    return `<div class="bead-row">
+      <div class="bead-row-top">
+        <span class="bead-id">${esc(b.id)}</span>
+        <span class="bead-title" onclick="toggleBeadDesc('${esc(b.id)}')">${esc(b.title)}</span>
+        <span class="bead-status ${esc(b.status || "open")}">${esc(statusLabel)}</span>
+        <span class="bead-priority">${esc(priority)}</span>
+        <span class="bead-assignee" title="${esc(assignee)}">${esc(assignee)}</span>
+        <span class="bead-updated">${esc(updated)}</span>
+        ${actionBtns}
+      </div>
+      ${descHtml}
+    </div>`;
+  }).join("");
+}
+
+function setBeadFilter(f) {
+  beadFilter = f;
+  document.querySelectorAll(".beads-filter").forEach(btn => {
+    btn.classList.toggle("active", btn.dataset.filter === f);
+  });
+  renderBeads();
+}
+
+function toggleBeadsSection() {
+  beadsCollapsed = !beadsCollapsed;
+  localStorage.setItem("klaudii-beads-collapsed", beadsCollapsed ? "1" : "0");
+  renderBeads();
+}
+
+function toggleBeadDesc(id) {
+  expandedBeadId = expandedBeadId === id ? null : id;
+  renderBeads();
+}
+
+function openBeadForm() {
+  document.getElementById("bead-form").classList.remove("hidden");
+  document.getElementById("bead-title").focus();
+}
+
+function closeBeadForm() {
+  document.getElementById("bead-form").classList.add("hidden");
+  document.getElementById("bead-title").value = "";
+  document.getElementById("bead-desc").value = "";
+  document.getElementById("bead-priority").value = "2";
+  document.getElementById("bead-type").value = "task";
+}
+
+async function submitBead() {
+  const title = document.getElementById("bead-title").value.trim();
+  if (!title) { document.getElementById("bead-title").focus(); return; }
+  const description = document.getElementById("bead-desc").value.trim();
+  const priority = Number(document.getElementById("bead-priority").value);
+  const type = document.getElementById("bead-type").value;
+  try {
+    await api("/api/beads", { method: "POST", body: { title, description, priority, type } });
+    closeBeadForm();
+    refreshBeads();
+  } catch (err) {
+    alert("Failed to create bead: " + err.message);
+  }
+}
+
+async function beadSetStatus(id, status) {
+  try {
+    await api(`/api/beads/${encodeURIComponent(id)}`, { method: "PATCH", body: { status } });
+    refreshBeads();
+  } catch (err) {
+    alert("Failed to update bead: " + err.message);
+  }
+}
+
 // --- Theme ---
 
 function toggleTheme() {
@@ -1277,10 +1513,13 @@ if (new URLSearchParams(window.location.search).get("mode") === "chatonly") {
 } else {
   refresh();
   refreshCloudStatus();
+  refreshScheduler();
+  refreshBeads();
   refreshTimer = setInterval(() => {
     refresh();
     refreshCloudStatus();
   }, 10000);
   refreshUsage();
   setInterval(refreshUsage, 60000);
+  setInterval(() => { refreshScheduler(); refreshBeads(); }, 30000);
 }

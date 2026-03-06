@@ -144,15 +144,14 @@ module.exports = function createV1Router(deps) {
 
   function buildClaudeArgs(permissionMode, opts = {}) {
     const parts = [];
-    if (permissionMode === "yolo") {
-      parts.push("--dangerously-skip-permissions");
-    } else if (permissionMode === "strict") {
-      parts.push("--dangerously-skip-permissions");
-      parts.push("--allowedTools", "Read,Glob,Grep,WebSearch,WebFetch");
-    }
     if (opts.resumeSessionId) parts.push("--resume", opts.resumeSessionId);
     else if (opts.continueSession) parts.push("--continue");
     parts.push("remote-control");
+    if (permissionMode === "yolo") {
+      parts.push("--permission-mode", "bypassPermissions");
+    } else if (permissionMode === "strict") {
+      parts.push("--permission-mode", "plan");
+    }
     return parts.join(" ");
   }
 
@@ -218,7 +217,8 @@ module.exports = function createV1Router(deps) {
     if (!workspaceState) return res.json({ mode: "claude-local", sessionNum: null, draft: "" });
     const workspace = decodeURIComponent(req.params.workspace);
     const state = workspaceState.getWorkspace(workspace);
-    res.json({ ...state, streaming: workspaceState.isStreaming(workspace) });
+    const pending = workspaceState.getPendingPermission(workspace);
+    res.json({ ...state, streaming: workspaceState.isStreaming(workspace), ...(pending ? { pendingPermission: pending } : {}) });
   });
 
   router.patch("/workspace-state/:workspace", (req, res) => {
@@ -271,6 +271,16 @@ module.exports = function createV1Router(deps) {
 
     if (tmux.sessionExists(tmuxName)) {
       return res.status(409).json({ error: "Session already running" });
+    }
+
+    // Clean worktree before starting session (only for worktree paths, not main repos)
+    const dotGitPath = path.join(proj.path, ".git");
+    if (fs.existsSync(dotGitPath) && fs.statSync(dotGitPath).isFile()) {
+      try {
+        git.cleanWorktree(proj.path);
+      } catch (err) {
+        console.error(`[sessions/start] Failed to clean worktree: ${err.message}`);
+      }
     }
 
     const startTs = Date.now();
@@ -572,6 +582,12 @@ module.exports = function createV1Router(deps) {
 
       git.addWorktree(repoDir, worktreeDir, branchName);
 
+      // Verify clean state after worktree creation
+      const wtStatus = git.getStatus(worktreeDir);
+      if (wtStatus && wtStatus.dirtyFiles > 0) {
+        console.warn(`[sessions/new] Worktree ${worktreeDir} has ${wtStatus.dirtyFiles} dirty files after creation`);
+      }
+
       try {
         projects.addProject(projectName, worktreeDir);
       } catch {
@@ -609,6 +625,134 @@ module.exports = function createV1Router(deps) {
       });
     } catch (err) {
       res.status(500).json({ error: err.message });
+    }
+  });
+
+  // --- Chat: send message to workspace (REST wrapper for WS send) ---
+
+  router.post("/chat/:workspace/send", async (req, res) => {
+    if (!claudeChat) return res.status(501).json({ error: "claude-chat not available" });
+
+    const workspace = decodeURIComponent(req.params.workspace);
+    const { message, sender } = req.body;
+
+    if (!message) return res.status(400).json({ error: "message required" });
+
+    const proj = projects.getProject(workspace);
+    if (!proj) return res.status(404).json({ error: `workspace "${workspace}" not found` });
+
+    const senderField = sender || "user";
+
+    try {
+      if (claudeChat.isActive(workspace)) {
+        claudeChat.pushHistory(workspace, "user", message, { sender: senderField });
+        claudeChat.appendMessage(workspace, message);
+      } else {
+        claudeChat.pushHistory(workspace, "user", message, { sender: senderField });
+        await claudeChat.sendMessage(workspace, proj.path, message, config);
+      }
+      res.json({ ok: true, workspace });
+    } catch (err) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // --- Chat: workspace status ---
+
+  router.get("/chat/:workspace/status", (req, res) => {
+    const workspace = decodeURIComponent(req.params.workspace);
+
+    const proj = projects.getProject(workspace);
+    if (!proj) return res.status(404).json({ error: `workspace "${workspace}" not found` });
+
+    const wsState = workspaceState ? workspaceState.getWorkspace(workspace) : {};
+    const pending = workspaceState ? workspaceState.getPendingPermission(workspace) : null;
+
+    res.json({
+      workspace,
+      relayActive: claudeChat ? claudeChat.isActive(workspace) : false,
+      streaming: workspaceState ? workspaceState.isStreaming(workspace) : false,
+      chatMode: wsState.mode || "claude-local",
+      lastActivity: workspaceState ? workspaceState.getLastChatActivity(workspace) : 0,
+      pendingPermission: pending || null,
+    });
+  });
+
+  // --- Beads CRUD ---
+  // bd commands run in the main repo directory (where .beads/ lives)
+
+  const bdCwd = path.resolve(__dirname, "..");
+
+  router.get("/beads", (_req, res) => {
+    try {
+      const { execSync } = require("child_process");
+      const out = execSync("bd list --json --allow-stale --all", { encoding: "utf-8", cwd: bdCwd, timeout: 10000 });
+      res.json(JSON.parse(out));
+    } catch (err) {
+      res.status(500).json({ error: `bd list failed: ${err.message}` });
+    }
+  });
+
+  router.get("/beads/:id", (req, res) => {
+    const id = req.params.id;
+    if (!/^[a-zA-Z0-9-]+$/.test(id)) return res.status(400).json({ error: "invalid bead ID" });
+
+    try {
+      const { execSync } = require("child_process");
+      const out = execSync(`bd show ${id} --json --allow-stale`, { encoding: "utf-8", cwd: bdCwd, timeout: 10000 });
+      const parsed = JSON.parse(out);
+      res.json(Array.isArray(parsed) ? parsed[0] : parsed);
+    } catch (err) {
+      res.status(err.message.includes("not found") ? 404 : 500).json({ error: `bd show failed: ${err.message}` });
+    }
+  });
+
+  router.post("/beads", (req, res) => {
+    const { title, description, priority, type, deps } = req.body;
+    if (!title) return res.status(400).json({ error: "title required" });
+
+    try {
+      const { execSync } = require("child_process");
+      let cmd = `bd create ${JSON.stringify(title)}`;
+      if (description) cmd += ` --description=${JSON.stringify(description)}`;
+      if (priority !== undefined) cmd += ` -p ${Number(priority)}`;
+      if (type) cmd += ` -t ${type}`;
+      if (deps) cmd += ` --deps ${deps}`;
+      cmd += " --json --allow-stale";
+
+      const out = execSync(cmd, { encoding: "utf-8", cwd: bdCwd, timeout: 10000 });
+      res.status(201).json(JSON.parse(out));
+    } catch (err) {
+      res.status(500).json({ error: `bd create failed: ${err.message}` });
+    }
+  });
+
+  router.patch("/beads/:id", (req, res) => {
+    const id = req.params.id;
+    if (!/^[a-zA-Z0-9-]+$/.test(id)) return res.status(400).json({ error: "invalid bead ID" });
+
+    const { status, comment, assignee, priority } = req.body;
+
+    try {
+      const { execSync } = require("child_process");
+
+      if (status || assignee !== undefined || priority !== undefined) {
+        let cmd = `bd update ${id}`;
+        if (status) cmd += ` --status ${status}`;
+        if (assignee !== undefined) cmd += ` --assignee ${JSON.stringify(assignee)}`;
+        if (priority !== undefined) cmd += ` -p ${Number(priority)}`;
+        cmd += " --json --allow-stale";
+        execSync(cmd, { encoding: "utf-8", cwd: bdCwd, timeout: 10000 });
+      }
+
+      if (comment) {
+        execSync(`bd comment ${id} ${JSON.stringify(comment)} --allow-stale`, { encoding: "utf-8", cwd: bdCwd, timeout: 10000 });
+      }
+
+      const out = execSync(`bd show ${id} --json --allow-stale`, { encoding: "utf-8", cwd: bdCwd, timeout: 10000 });
+      res.json(JSON.parse(out));
+    } catch (err) {
+      res.status(500).json({ error: `bd update failed: ${err.message}` });
     }
   });
 

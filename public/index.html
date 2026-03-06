@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Klaudii — Session Manager</title>
   <link rel="stylesheet" href="/style.css">
-  <link rel="stylesheet" href="/gemini.css?v=5">
+  <link rel="stylesheet" href="/gemini.css?v=7">
 </head>
 <body>
   <header>
@@ -42,6 +42,65 @@
         <div id="sessions-list" class="card-grid"></div>
       </section>
 
+      <section id="scheduler-section" class="hidden">
+        <h2 class="scheduler-heading">
+          Scheduler
+          <button class="btn btn-sm" id="scheduler-toggle" onclick="toggleSchedulerSection()">Hide</button>
+        </h2>
+        <div id="scheduler-list" class="card-grid"></div>
+      </section>
+
+      <section id="beads-section" class="hidden">
+        <h2 class="beads-heading">
+          Beads
+          <button class="btn btn-sm" id="beads-toggle" onclick="toggleBeadsSection()">Hide</button>
+        </h2>
+        <div id="beads-toolbar" class="beads-toolbar">
+          <div class="beads-filters">
+            <button class="beads-filter active" data-filter="all" onclick="setBeadFilter('all')">All</button>
+            <button class="beads-filter" data-filter="open" onclick="setBeadFilter('open')">Open</button>
+            <button class="beads-filter" data-filter="in_progress" onclick="setBeadFilter('in_progress')">In Progress</button>
+            <button class="beads-filter" data-filter="blocked" onclick="setBeadFilter('blocked')">Blocked</button>
+            <button class="beads-filter" data-filter="closed" onclick="setBeadFilter('closed')">Closed</button>
+          </div>
+          <button class="btn btn-sm primary" onclick="openBeadForm()">+ New Bead</button>
+        </div>
+        <div id="bead-form" class="bead-form hidden">
+          <div class="form-group">
+            <label>Title</label>
+            <input id="bead-title" type="text" placeholder="Bead title" />
+          </div>
+          <div class="form-group">
+            <label>Description</label>
+            <textarea id="bead-desc" rows="3" placeholder="Details..." style="width:100%;background:var(--bg-input);color:var(--text);border:1px solid var(--border-btn);border-radius:6px;padding:0.5rem 0.75rem;font-size:0.9rem;font-family:inherit;resize:vertical"></textarea>
+          </div>
+          <div style="display:flex;gap:0.5rem;align-items:flex-end">
+            <div class="form-group" style="margin-bottom:0">
+              <label>Priority</label>
+              <select id="bead-priority" style="background:var(--bg-input);color:var(--text);border:1px solid var(--border-btn);border-radius:6px;padding:0.4rem 0.5rem;font-size:0.85rem">
+                <option value="0">0 — Critical</option>
+                <option value="1">1 — High</option>
+                <option value="2" selected>2 — Medium</option>
+                <option value="3">3 — Low</option>
+                <option value="4">4 — Backlog</option>
+              </select>
+            </div>
+            <div class="form-group" style="margin-bottom:0">
+              <label>Type</label>
+              <select id="bead-type" style="background:var(--bg-input);color:var(--text);border:1px solid var(--border-btn);border-radius:6px;padding:0.4rem 0.5rem;font-size:0.85rem">
+                <option value="task">Task</option>
+                <option value="bug">Bug</option>
+                <option value="feature">Feature</option>
+                <option value="epic">Epic</option>
+              </select>
+            </div>
+            <button class="btn btn-sm primary" onclick="submitBead()">Create</button>
+            <button class="btn btn-sm" onclick="closeBeadForm()">Cancel</button>
+          </div>
+        </div>
+        <div id="beads-list" class="beads-list"></div>
+      </section>
+
       <section id="unmanaged-section" class="hidden">
         <h2>free range claudes</h2>
         <div id="unmanaged-list" class="card-grid"></div>
@@ -64,23 +123,27 @@
       <div id="gemini-messages" class="gemini-messages"></div>
       <div id="gemini-image-strip" class="gemini-image-strip hidden"></div>
       <div class="gemini-input-area">
-        <div class="gemini-input-wrap">
+        <div class="gemini-input-card">
           <textarea id="gemini-input" rows="3" placeholder="Message Gemini..." onkeydown="geminiInputKeydown(event)"></textarea>
           <input type="file" id="gemini-file-input" accept="image/*" multiple style="display:none" onchange="geminiHandleFileInput(event)">
-          <button id="gemini-attach" class="gemini-attach-overlay" onclick="document.getElementById('gemini-file-input').click()" title="Attach image">+</button>
-        </div>
-        <div class="gemini-input-controls">
-          <div class="gemini-input-controls-row">
-            <select id="gemini-model" class="gemini-model-select" title="Model">
+          <div class="gemini-input-footer">
+            <button id="gemini-attach" class="gemini-attach-btn" onclick="document.getElementById('gemini-file-input').click()" title="Attach image">
+              <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21.44 11.05l-9.19 9.19a6 6 0 01-8.49-8.49l9.19-9.19a4 4 0 015.66 5.66l-9.2 9.19a2 2 0 01-2.83-2.83l8.49-8.48"/></svg>
+            </button>
+            <select id="gemini-model" class="gemini-chip-select" title="Model">
               <option value="">Auto</option>
             </select>
-            <select id="gemini-permission-mode" class="gemini-permission-select" title="Permission Mode" style="display:none">
+            <select id="gemini-permission-mode" class="gemini-chip-select" title="Permission Mode" style="display:none">
               <option value="bypassPermissions">Yolo</option>
               <option value="plan">Plan</option>
               <option value="allowEdits">Auto Accept Edits</option>
             </select>
+            <div class="gemini-footer-spacer"></div>
+            <button id="gemini-stop" class="gemini-stop-btn" onclick="geminiStopStreaming()" title="Stop generation" style="display:none">
+              <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><rect x="4" y="4" width="16" height="16" rx="2"/></svg>
+            </button>
+            <button id="gemini-send" class="gemini-send-btn" onclick="sendGeminiMessage()">Send</button>
           </div>
-          <button id="gemini-send" class="btn primary" onclick="sendGeminiMessage()">Send</button>
         </div>
       </div>
     </div>
@@ -166,6 +229,6 @@
 
   <script src="/app.js"></script>
   <script src="/vendor/marked.min.js"></script>
-  <script src="/gemini.js?v=15"></script>
+  <script src="/gemini.js?v=28"></script>
 </body>
 </html>

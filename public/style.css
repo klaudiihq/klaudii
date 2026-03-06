@@ -449,6 +449,11 @@ h2 {
 .chat-mode-pill.mode-claude-local:hover  { filter: brightness(1.1); }
 .chat-mode-pill.mode-claude-remote:hover { filter: brightness(1.1); }
 
+/* Streaming/active state — darker backgrounds for readability */
+.chat-mode-pill.streaming.mode-gemini        { background: var(--s-blue-deep); }
+.chat-mode-pill.streaming.mode-claude-local  { background: color-mix(in srgb, var(--s-yellow) 25%, var(--bg)); }
+.chat-mode-pill.streaming.mode-claude-remote { background: color-mix(in srgb, var(--s-green) 25%, var(--bg)); }
+
 /* Remote timing row */
 .remote-timing {
   font-size: 10px;
@@ -1119,6 +1124,165 @@ h2 {
 .usage-total { font-size: 0.75rem; color: var(--text-muted); }
 
 /* =========================================================
+   Beads section
+   ========================================================= */
+
+.beads-heading {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.beads-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 0.5rem;
+}
+
+.beads-filters {
+  display: flex;
+  gap: 4px;
+}
+
+.beads-filter {
+  font-size: 10px;
+  padding: 2px 7px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: transparent;
+  color: var(--text-faint);
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.beads-filter:hover {
+  color: var(--text-dim);
+  background: var(--bg-hover);
+}
+
+.beads-filter.active {
+  background: var(--bg-active);
+  color: var(--text-strong);
+  border-color: var(--border-active);
+}
+
+.bead-form {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 0.75rem 1rem;
+  margin-bottom: 0.75rem;
+}
+
+.beads-list {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.bead-row {
+  background: var(--bg-card);
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--border-subtle);
+  transition: background 0.1s;
+}
+
+.bead-row:last-child {
+  border-bottom: none;
+}
+
+.bead-row:hover {
+  background: var(--bg-hover);
+}
+
+.bead-row-top {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.bead-id {
+  font-size: 10px;
+  font-family: ui-monospace, monospace;
+  color: var(--text-fainter);
+  flex-shrink: 0;
+  min-width: 70px;
+}
+
+.bead-title {
+  font-size: 13px;
+  color: var(--text-strong);
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.bead-title:hover {
+  text-decoration: underline;
+}
+
+.bead-status {
+  font-size: 9px;
+  padding: 1px 6px;
+  border-radius: 999px;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  flex-shrink: 0;
+}
+
+.bead-status.open        { background: var(--s-blue-bg);   color: var(--s-blue-text); }
+.bead-status.in_progress { background: var(--s-yellow-bg); color: var(--s-yellow); }
+.bead-status.blocked     { background: var(--s-red-bg);    color: var(--s-red); }
+.bead-status.closed      { background: var(--s-green-bg);  color: var(--s-green); }
+
+.bead-priority {
+  font-size: 9px;
+  padding: 1px 5px;
+  border-radius: 999px;
+  background: var(--bg-badge);
+  color: var(--text-muted);
+  flex-shrink: 0;
+}
+
+.bead-assignee {
+  font-size: 10px;
+  color: var(--text-faint);
+  flex-shrink: 0;
+  max-width: 100px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.bead-updated {
+  font-size: 10px;
+  color: var(--text-faint);
+  flex-shrink: 0;
+}
+
+.bead-actions {
+  display: flex;
+  gap: 4px;
+  flex-shrink: 0;
+}
+
+.bead-desc-expanded {
+  font-size: 12px;
+  color: var(--text-secondary);
+  padding: 6px 0 2px 78px;
+  white-space: pre-wrap;
+  line-height: 1.5;
+}
+
+/* =========================================================
    Chat-open split layout
    ========================================================= */
 
@@ -1179,6 +1343,84 @@ body.chatonly main {
 
 body.chatonly .gemini-panel {
   flex: 1;
+}
+
+/* =========================================================
+   Scheduler section
+   ========================================================= */
+
+.scheduler-heading {
+  cursor: pointer;
+}
+
+.scheduler-card {
+  flex-direction: column;
+  padding: 0.75rem;
+}
+
+.scheduler-card-top {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 6px;
+}
+
+.scheduler-card-name {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-strong);
+}
+
+.scheduler-card-badges {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.scheduler-badge {
+  font-size: 10px;
+  padding: 2px 6px;
+  border-radius: 999px;
+  font-weight: 500;
+}
+
+.scheduler-badge.enabled {
+  background: var(--s-green-bg);
+  color: var(--s-green);
+}
+
+.scheduler-badge.disabled {
+  background: var(--s-yellow-bg);
+  color: var(--s-yellow);
+}
+
+.scheduler-badge.task-running {
+  background: var(--s-blue-bg);
+  color: var(--s-blue-text);
+  animation: mode-pulse 1.2s ease-in-out infinite;
+}
+
+.scheduler-card-info {
+  font-size: 11px;
+  color: var(--text-muted);
+  margin-bottom: 4px;
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.scheduler-card-error {
+  font-size: 11px;
+  color: var(--s-red);
+  margin-bottom: 4px;
+}
+
+.scheduler-card-actions {
+  display: flex;
+  gap: 4px;
+  margin-top: 6px;
+  padding-top: 6px;
+  border-top: 1px solid var(--border);
 }
 
 /* =========================================================
