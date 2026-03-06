@@ -1224,6 +1224,108 @@ async function confirmUnpair() {
   renderCloudModal();
 }
 
+// --- Scheduler ---
+
+let schedulerCollapsed = localStorage.getItem("klaudii-scheduler-collapsed") === "1";
+
+function formatInterval(ms) {
+  if (ms >= 3600000) {
+    const h = ms / 3600000;
+    return h === 1 ? "every 1 hour" : `every ${h} hours`;
+  }
+  if (ms >= 60000) {
+    const m = ms / 60000;
+    return m === 1 ? "every 1 min" : `every ${m} min`;
+  }
+  return `every ${ms / 1000}s`;
+}
+
+async function refreshScheduler() {
+  try {
+    const tasks = await api("/api/scheduler");
+    renderScheduler(tasks);
+  } catch {
+    // Scheduler endpoint not available
+  }
+}
+
+function renderScheduler(tasks) {
+  const section = document.getElementById("scheduler-section");
+  const container = document.getElementById("scheduler-list");
+  if (!section || !container) return;
+
+  if (!tasks || !tasks.length) {
+    section.classList.add("hidden");
+    return;
+  }
+
+  section.classList.remove("hidden");
+  const toggle = document.getElementById("scheduler-toggle");
+  if (toggle) toggle.textContent = schedulerCollapsed ? "Show" : "Hide";
+  container.style.display = schedulerCollapsed ? "none" : "";
+
+  container.innerHTML = tasks.map(t => {
+    const statusBadge = t.running
+      ? '<span class="scheduler-badge task-running">running</span>'
+      : t.enabled
+        ? '<span class="scheduler-badge enabled">enabled</span>'
+        : '<span class="scheduler-badge disabled">disabled</span>';
+
+    const lastRun = t.lastRunAt ? relativeTime(new Date(t.lastRunAt).getTime()) : "never";
+    const lastResult = t.lastResult || "—";
+
+    const errorRow = t.lastError
+      ? `<div class="scheduler-card-error">Error: ${esc(t.lastError)}</div>`
+      : "";
+
+    const toggleBtn = t.enabled
+      ? `<button class="btn btn-sm warning" onclick="schedulerPause('${esc(t.name)}')">Pause</button>`
+      : `<button class="btn btn-sm success" onclick="schedulerResume('${esc(t.name)}')">Resume</button>`;
+
+    return `
+    <div class="card scheduler-card">
+      <div class="scheduler-card-top">
+        <span class="scheduler-card-name">${esc(t.name)}</span>
+        <div class="scheduler-card-badges">${statusBadge}</div>
+      </div>
+      <div class="scheduler-card-info">
+        <span>${esc(formatInterval(t.intervalMs))}</span>
+        <span>last run: ${esc(lastRun)}</span>
+        <span>result: ${esc(lastResult)}</span>
+      </div>
+      ${errorRow}
+      <div class="scheduler-card-actions">
+        ${toggleBtn}
+        <button class="btn btn-sm primary" onclick="schedulerTrigger('${esc(t.name)}')"${t.running ? " disabled" : ""}>Trigger Now</button>
+      </div>
+    </div>`;
+  }).join("");
+}
+
+function toggleSchedulerSection() {
+  schedulerCollapsed = !schedulerCollapsed;
+  localStorage.setItem("klaudii-scheduler-collapsed", schedulerCollapsed ? "1" : "0");
+  const container = document.getElementById("scheduler-list");
+  const toggle = document.getElementById("scheduler-toggle");
+  if (container) container.style.display = schedulerCollapsed ? "none" : "";
+  if (toggle) toggle.textContent = schedulerCollapsed ? "Show" : "Hide";
+}
+
+async function schedulerPause(name) {
+  await api(`/api/scheduler/${encodeURIComponent(name)}/pause`, { method: "POST" });
+  refreshScheduler();
+}
+
+async function schedulerResume(name) {
+  await api(`/api/scheduler/${encodeURIComponent(name)}/resume`, { method: "POST" });
+  refreshScheduler();
+}
+
+async function schedulerTrigger(name) {
+  await api(`/api/scheduler/${encodeURIComponent(name)}/trigger`, { method: "POST" });
+  setTimeout(refreshScheduler, 1000);
+}
+
 // --- Theme ---
 
 function toggleTheme() {
@@ -1277,10 +1379,12 @@ if (new URLSearchParams(window.location.search).get("mode") === "chatonly") {
 } else {
   refresh();
   refreshCloudStatus();
+  refreshScheduler();
   refreshTimer = setInterval(() => {
     refresh();
     refreshCloudStatus();
   }, 10000);
   refreshUsage();
   setInterval(refreshUsage, 60000);
+  setInterval(refreshScheduler, 30000);
 }

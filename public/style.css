@@ -1187,6 +1187,84 @@ body.chatonly .gemini-panel {
 }
 
 /* =========================================================
+   Scheduler section
+   ========================================================= */
+
+.scheduler-heading {
+  cursor: pointer;
+}
+
+.scheduler-card {
+  flex-direction: column;
+  padding: 0.75rem;
+}
+
+.scheduler-card-top {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 6px;
+}
+
+.scheduler-card-name {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-strong);
+}
+
+.scheduler-card-badges {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.scheduler-badge {
+  font-size: 10px;
+  padding: 2px 6px;
+  border-radius: 999px;
+  font-weight: 500;
+}
+
+.scheduler-badge.enabled {
+  background: var(--s-green-bg);
+  color: var(--s-green);
+}
+
+.scheduler-badge.disabled {
+  background: var(--s-yellow-bg);
+  color: var(--s-yellow);
+}
+
+.scheduler-badge.task-running {
+  background: var(--s-blue-bg);
+  color: var(--s-blue-text);
+  animation: mode-pulse 1.2s ease-in-out infinite;
+}
+
+.scheduler-card-info {
+  font-size: 11px;
+  color: var(--text-muted);
+  margin-bottom: 4px;
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.scheduler-card-error {
+  font-size: 11px;
+  color: var(--s-red);
+  margin-bottom: 4px;
+}
+
+.scheduler-card-actions {
+  display: flex;
+  gap: 4px;
+  margin-top: 6px;
+  padding-top: 6px;
+  border-top: 1px solid var(--border);
+}
+
+/* =========================================================
    Utilities
    ========================================================= */
 
