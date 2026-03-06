@@ -66,8 +66,8 @@ function createBdMock() {
       return JSON.stringify(bead);
     }
 
-    // bd comment <id> "text" --allow-stale
-    const commentMatch = cmd.match(/bd comment (\S+) "([^"]+)"/);
+    // bd comments add <id> "text" --allow-stale
+    const commentMatch = cmd.match(/bd comments add (\S+) "([^"]+)"/);
     if (commentMatch) {
       const bead = findBead(commentMatch[1]);
       if (!bead) throw new Error(`bead ${commentMatch[1]} not found`);
