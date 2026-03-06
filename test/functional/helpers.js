@@ -152,7 +152,8 @@ function createClaudeChatMock() {
     getAuthStatus: () => ({ loggedIn: true }),
     startAuthCheck: () => {},
     isActive: (ws) => active.has(ws),
-    getRelayInfo: (ws) => active.has(ws) ? { pid: 99999, startedAt: Date.now(), sessionNum: 1 } : null,
+    isSessionActive: (ws, sessionNum) => active.has(ws),
+    getActiveRelayInfo: (ws) => active.has(ws) ? [{ sessionNum: 1, pid: 99999, startedAt: Date.now() }] : [],
     getSessions: (ws) => {
       const s = ensureSession(ws);
       return { current: s.current, total: s.total, sessions: Array.from({ length: s.total }, (_, i) => i + 1) };
@@ -207,7 +208,7 @@ function createClaudeChatMock() {
       };
     },
     appendMessage: (ws, message) => {},
-    stopProcess: (ws) => { active.delete(ws); },
+    stopProcess: (ws, sessionNum) => { active.delete(ws); },
     getStreamPartial: (ws) => streamPartials[ws] || null,
     getModels: () => [{ id: "claude-sonnet-4-6", name: "Claude Sonnet 4.6" }],
     getLastMessageTime: (ws) => {

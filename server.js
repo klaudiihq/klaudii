@@ -724,13 +724,18 @@ wss.on("connection", (ws) => {
         ws.send(JSON.stringify({ type: "error", workspace, message: err.message }));
       }
     } else if (type === "stop") {
-      console.log(`[gemini-ws] stop workspace=${workspace} cli=${backend}`);
+      const stopSession = msg.sessionNum !== undefined ? Number(msg.sessionNum) : undefined;
+      console.log(`[gemini-ws] stop workspace=${workspace} cli=${backend} session=${stopSession ?? "all"}`);
       if (workspace) {
-        backendModule.stopProcess(workspace);
-        workspaceState.setStreaming(workspace, false);
-        pendingWorkspaces.delete(workspace);
+        backendModule.stopProcess(workspace, stopSession);
+        // Only clear streaming if no relays remain
+        const remaining = backend === "claude" ? claudeChat.getActiveRelayInfo(workspace) : [];
+        if (remaining.length === 0) {
+          workspaceState.setStreaming(workspace, false);
+          pendingWorkspaces.delete(workspace);
+        }
         // Broadcast done to all clients viewing this workspace
-        broadcastToWorkspace(workspace, { type: "done", workspace, exitCode: null, stopped: true });
+        broadcastToWorkspace(workspace, { type: "done", workspace, exitCode: null, stopped: true, sessionNum: stopSession });
       }
     } else if (type === "draft") {
       // Relay draft text to other windows and persist to disk

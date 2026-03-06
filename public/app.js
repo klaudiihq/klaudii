@@ -276,7 +276,7 @@ function renderSessions(sessions, procs) {
     }
     if (s.relayActive && s.relays) {
       for (const r of s.relays) {
-        instances.push({ type: "relay", label: `Chat${r.sessionNum ? " #" + r.sessionNum : ""}`, pid: r.pid });
+        instances.push({ type: "relay", label: `Chat${r.sessionNum ? " #" + r.sessionNum : ""}`, pid: r.pid, sessionNum: r.sessionNum });
       }
     }
     const freerange = freerangeByProject[s.project] || [];
@@ -284,6 +284,7 @@ function renderSessions(sessions, procs) {
       instances.push({ type: "freerange", label: `PID ${fr.pid}`, pid: fr.pid, launchedBy: fr.launchedBy });
     }
 
+    const relayCount = instances.filter(i => i.type === "relay").length;
     let instancesHtml = "";
     if (instances.length > 0) {
       instancesHtml = `<div class="instance-list">${instances.map(inst => {
@@ -291,14 +292,14 @@ function renderSessions(sessions, procs) {
         if (inst.type === "terminal") {
           stopBtn = `<button class="btn btn-xs danger" onclick="event.stopPropagation(); stopSession('${esc(s.project)}')">Stop</button>`;
         } else if (inst.type === "relay") {
-          stopBtn = `<button class="btn btn-xs danger" onclick="event.stopPropagation(); stopRelay('${esc(s.project)}')">Stop</button>`;
+          stopBtn = `<button class="btn btn-xs danger" onclick="event.stopPropagation(); stopRelay('${esc(s.project)}', ${inst.sessionNum || 'undefined'})">Stop</button>`;
         } else if (inst.type === "freerange") {
           stopBtn = `<button class="btn btn-xs danger" onclick="event.stopPropagation(); confirmKill(this, ${inst.pid})">Kill</button>`;
         }
         const typeCls = inst.type;
         const fromLabel = inst.launchedBy ? ` <span class="instance-from">via ${esc(inst.launchedBy)}</span>` : "";
         return `<div class="instance-row"><span class="instance-type ${typeCls}">${esc(inst.label)}${fromLabel}</span>${stopBtn}</div>`;
-      }).join("")}</div>`;
+      }).join("")}${relayCount > 1 ? `<div class="instance-row"><span class="instance-type relay">${relayCount} chats</span><button class="btn btn-xs danger" onclick="event.stopPropagation(); stopRelay('${esc(s.project)}')">Stop All</button></div>` : ""}</div>`;
     }
 
     const isPanelOpen = openPanelProject === s.project;
@@ -390,8 +391,10 @@ async function stopSession(project) {
   refresh();
 }
 
-async function stopRelay(project) {
-  await api(`/api/chat/${encodeURIComponent(project)}/stop`, { method: "POST" });
+async function stopRelay(project, sessionNum) {
+  const body = {};
+  if (sessionNum !== undefined) body.sessionNum = sessionNum;
+  await api(`/api/chat/${encodeURIComponent(project)}/stop`, { method: "POST", body });
   refresh();
 }
 

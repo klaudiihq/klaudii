@@ -208,9 +208,9 @@ module.exports = function createV1Router(deps) {
         relayActive: claudeChat ? claudeChat.isActive(project.name) : false,
         workspaceType: workspaceState ? workspaceState.getWorkspaceType(project.name) : "user",
       };
-      // Relay details: array of active relays for this workspace
-      const relayInfo = claudeChat ? claudeChat.getRelayInfo(project.name) : null;
-      result.relays = relayInfo ? [{ id: "relay-0", ...relayInfo }] : [];
+      // Relay details: array of active relays for this workspace (one per session)
+      result.activeRelays = claudeChat ? claudeChat.getActiveRelayInfo(project.name) : [];
+      result.relays = result.activeRelays.map((r, i) => ({ id: `relay-${i}`, ...r }));
       if (wsState.beadId) result.beadId = wsState.beadId;
       return result;
     });
@@ -651,7 +651,9 @@ module.exports = function createV1Router(deps) {
     const senderField = sender || "user";
 
     try {
-      if (claudeChat.isActive(workspace)) {
+      const chatSessions = claudeChat.getSessions(workspace);
+      const currentSNum = chatSessions.current || 1;
+      if (claudeChat.isSessionActive(workspace, currentSNum)) {
         claudeChat.pushHistory(workspace, "user", message, { sender: senderField });
         claudeChat.appendMessage(workspace, message);
       } else {
@@ -678,6 +680,7 @@ module.exports = function createV1Router(deps) {
     res.json({
       workspace,
       relayActive: claudeChat ? claudeChat.isActive(workspace) : false,
+      activeRelays: claudeChat ? claudeChat.getActiveRelayInfo(workspace) : [],
       streaming: workspaceState ? workspaceState.isStreaming(workspace) : false,
       chatMode: wsState.mode || "claude-local",
       lastActivity: workspaceState ? workspaceState.getLastChatActivity(workspace) : 0,
@@ -690,8 +693,13 @@ module.exports = function createV1Router(deps) {
   router.post("/chat/:workspace/stop", (req, res) => {
     if (!claudeChat) return res.status(501).json({ error: "claude-chat not available" });
     const workspace = decodeURIComponent(req.params.workspace);
-    claudeChat.stopProcess(workspace);
-    res.json({ ok: true, workspace });
+    const { sessionNum } = req.body || {};
+    claudeChat.stopProcess(workspace, sessionNum !== undefined ? Number(sessionNum) : undefined);
+    if (workspaceState) {
+      const remaining = claudeChat.getActiveRelayInfo(workspace);
+      if (remaining.length === 0) workspaceState.setStreaming(workspace, false);
+    }
+    res.json({ ok: true, workspace, stoppedSession: sessionNum !== undefined ? Number(sessionNum) : "all" });
   });
 
   // --- User settings ---
