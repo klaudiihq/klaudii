@@ -1294,6 +1294,55 @@ h2 {
   line-height: 1.5;
 }
 
+.bead-sessions {
+  padding: 6px 0 4px 78px;
+}
+.bead-sessions-label {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-secondary);
+  margin-bottom: 4px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+.bead-session-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 3px 0;
+  font-size: 12px;
+}
+.bead-session-workspace {
+  color: var(--text);
+  font-family: var(--font-mono, monospace);
+}
+.bead-session-num {
+  color: var(--text-faint);
+}
+.bead-session-status {
+  font-size: 11px;
+  padding: 1px 6px;
+  border-radius: 4px;
+  font-weight: 500;
+}
+.bead-session-status.running {
+  background: var(--green-bg, #22c55e22);
+  color: var(--green, #22c55e);
+}
+.bead-session-status.exited {
+  background: var(--yellow-bg, #eab30822);
+  color: var(--yellow, #eab308);
+}
+.bead-session-status.stopped {
+  background: var(--text-faint-bg, #88888822);
+  color: var(--text-faint);
+}
+.btn-xs {
+  font-size: 10px;
+  padding: 1px 6px;
+  border-radius: 4px;
+}
+
 /* =========================================================
    Chat-open split layout
    ========================================================= */

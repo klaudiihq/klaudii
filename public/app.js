@@ -1372,6 +1372,7 @@ let beadsCollapsed = localStorage.getItem("klaudii-beads-collapsed") === "1";
 let beadFilter = "all";
 let beadsData = [];
 let expandedBeadId = null;
+let beadSessionsCache = {}; // beadId → { sessions: [...], fetchedAt }
 
 const PRIORITY_LABELS = ["P0", "P1", "P2", "P3", "P4"];
 
@@ -1429,6 +1430,28 @@ function renderBeads() {
         <button class="btn btn-sm success" onclick="beadSetStatus('${esc(b.id)}','closed')" title="Close">Close</button>
       </div>`;
 
+    // Worker sessions section (shown when expanded)
+    let sessionsHtml = "";
+    if (isExpanded) {
+      const cached = beadSessionsCache[b.id];
+      if (cached && cached.sessions.length > 0) {
+        const rows = cached.sessions.map(s => {
+          const statusCls = s.status === "running" ? "running" : s.status === "exited" ? "exited" : "stopped";
+          return `<div class="bead-session-row">
+            <span class="bead-session-workspace">${esc(s.workspace)}</span>
+            <span class="bead-session-num">${s.sessionNum != null ? `#${s.sessionNum}` : ""}</span>
+            <span class="bead-session-status ${statusCls}">${esc(s.status)}</span>
+            ${s.status === "running" ? `<button class="btn btn-xs danger" onclick="stopSession('${esc(s.workspace)}')">Stop</button>` : ""}
+          </div>`;
+        }).join("");
+        sessionsHtml = `<div class="bead-sessions"><div class="bead-sessions-label">Worker Sessions</div>${rows}</div>`;
+      } else if (cached) {
+        sessionsHtml = `<div class="bead-sessions"><div class="bead-sessions-label" style="color:var(--text-faint)">No worker sessions</div></div>`;
+      } else {
+        sessionsHtml = `<div class="bead-sessions"><div class="bead-sessions-label" style="color:var(--text-faint)">Loading sessions...</div></div>`;
+      }
+    }
+
     return `<div class="bead-row">
       <div class="bead-row-top">
         <span class="bead-id">${esc(b.id)}</span>
@@ -1440,6 +1463,7 @@ function renderBeads() {
         ${actionBtns}
       </div>
       ${descHtml}
+      ${sessionsHtml}
     </div>`;
   }).join("");
 }
@@ -1458,9 +1482,19 @@ function toggleBeadsSection() {
   renderBeads();
 }
 
-function toggleBeadDesc(id) {
+async function toggleBeadDesc(id) {
   expandedBeadId = expandedBeadId === id ? null : id;
   renderBeads();
+  // Fetch worker sessions when expanding
+  if (expandedBeadId === id) {
+    try {
+      const data = await api(`/api/beads/${encodeURIComponent(id)}/sessions`);
+      beadSessionsCache[id] = { sessions: data.sessions || [], fetchedAt: Date.now() };
+    } catch {
+      beadSessionsCache[id] = { sessions: [], fetchedAt: Date.now() };
+    }
+    renderBeads();
+  }
 }
 
 function openBeadForm() {

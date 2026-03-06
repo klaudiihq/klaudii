@@ -190,7 +190,7 @@ module.exports = function createV1Router(deps) {
       const chatMode = wsState.mode || "claude-local";
       const chatActive = workspaceState ? workspaceState.isStreaming(project.name) : false;
 
-      return {
+      const result = {
         project: project.name,
         projectPath: project.path,
         permissionMode: project.permissionMode || "yolo",
@@ -208,6 +208,8 @@ module.exports = function createV1Router(deps) {
         relayActive: claudeChat ? claudeChat.isActive(project.name) : false,
         workspaceType: workspaceState ? workspaceState.getWorkspaceType(project.name) : "user",
       };
+      if (wsState.beadId) result.beadId = wsState.beadId;
+      return result;
     });
 
     res.json(sessions);
@@ -754,6 +756,58 @@ module.exports = function createV1Router(deps) {
     } catch (err) {
       res.status(err.message.includes("not found") ? 404 : 500).json({ error: `bd show failed: ${err.message}` });
     }
+  });
+
+  // --- Bead worker sessions ---
+
+  router.get("/beads/:id/sessions", (req, res) => {
+    const id = req.params.id;
+    if (!/^[a-zA-Z0-9-]+$/.test(id)) return res.status(400).json({ error: "invalid bead ID" });
+
+    // Collect sessions from claude-chat that are tagged with this bead
+    const chatSessions = claudeChat ? claudeChat.getSessionsForBead(id) : [];
+
+    // Collect workspaces associated with this bead
+    const workspaces = workspaceState ? workspaceState.getWorkspacesForBead(id) : [];
+
+    // Enrich with live status
+    const allProjects = projects.getProjects();
+    const claudeSessions = tmux.getClaudeSessions();
+
+    const workerSessions = chatSessions.map(cs => {
+      const proj = allProjects.find(p => p.name === cs.workspace);
+      if (!proj) return { ...cs, status: "unknown" };
+
+      const tmuxName = tmux.sessionName(cs.workspace);
+      const tmuxSession = claudeSessions.find(s => s.name === tmuxName);
+      let status = "stopped";
+      if (tmuxSession) {
+        status = tmux.isClaudeAlive(tmuxName) ? "running" : "exited";
+      }
+      return { ...cs, status, projectPath: proj.path };
+    });
+
+    // Include any workspaces associated but not yet in chat sessions
+    for (const wsName of workspaces) {
+      if (!chatSessions.some(cs => cs.workspace === wsName)) {
+        const proj = allProjects.find(p => p.name === wsName);
+        const tmuxName = tmux.sessionName(wsName);
+        const tmuxSession = claudeSessions.find(s => s.name === tmuxName);
+        let status = "stopped";
+        if (tmuxSession) {
+          status = tmux.isClaudeAlive(tmuxName) ? "running" : "exited";
+        }
+        workerSessions.push({
+          workspace: wsName,
+          sessionNum: null,
+          cliSessionId: null,
+          status,
+          projectPath: proj ? proj.path : null,
+        });
+      }
+    }
+
+    res.json({ beadId: id, sessions: workerSessions });
   });
 
   router.post("/beads", (req, res) => {
