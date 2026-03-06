@@ -552,6 +552,11 @@ function handleGeminiEvent(event) {
       break;
     }
 
+    case "ack":
+      glog("handle: ack status=" + event.status);
+      geminiUpdateMsgStatus(event.status);
+      break;
+
     case "message":
       if (event.role === "assistant" || !event.role) {
         // First assistant content — remove thinking indicator
@@ -1175,7 +1180,7 @@ function geminiShowToolQuestions(id, questions, toolInput, isPermissionRequest) 
 
 // --- DOM rendering ---
 
-function geminiAppendMessage(role, content, streaming, images, ts, sender) {
+function geminiAppendMessage(role, content, streaming, images, ts, sender, msgStatus) {
   const container = document.getElementById("gemini-messages");
   const div = document.createElement("div");
   div.className = `gemini-msg ${role}${streaming ? " gemini-streaming" : ""}`;
@@ -1206,6 +1211,11 @@ function geminiAppendMessage(role, content, streaming, images, ts, sender) {
     const textNode = document.createElement("span");
     textNode.textContent = content;
     bubble.appendChild(textNode);
+    // Delivery status checkmarks (WhatsApp-style)
+    const statusEl = document.createElement("span");
+    statusEl.className = "msg-status";
+    statusEl.dataset.status = msgStatus || "sending";
+    bubble.appendChild(statusEl);
     div.appendChild(bubble);
   } else {
     const md = document.createElement("div");
@@ -1225,6 +1235,26 @@ function geminiAppendMessage(role, content, streaming, images, ts, sender) {
   container.appendChild(div);
   geminiScrollToBottom();
   return div;
+}
+
+/**
+ * Update the delivery status checkmarks on the most recent user bubble.
+ * Statuses progress: sending → received → delivered → processing
+ */
+function geminiUpdateMsgStatus(status) {
+  const container = document.getElementById("gemini-messages");
+  if (!container) return;
+  // Find the last user bubble's status indicator
+  const userMsgs = container.querySelectorAll(".gemini-msg.user .msg-status");
+  if (!userMsgs.length) return;
+  const el = userMsgs[userMsgs.length - 1];
+  // Only allow forward progression
+  const order = ["sending", "received", "delivered", "processing"];
+  const cur = order.indexOf(el.dataset.status);
+  const next = order.indexOf(status);
+  if (next > cur) {
+    el.dataset.status = status;
+  }
 }
 
 /** Stamp a timestamp onto an already-rendered message element (used when assistant stream completes). */
@@ -2298,7 +2328,7 @@ async function geminiRenderRecoveredContent() {
           }
         } catch {}
       } else {
-        geminiAppendMessage(msg.role, msg.content, false, null, msg.ts, msg.sender);
+        geminiAppendMessage(msg.role, msg.content, false, null, msg.ts, msg.sender, msg.role === "user" ? "processing" : undefined);
       }
     }
     for (const tu of pendingToolUses.values()) geminiAppendToolUse(tu.tool_name, tu.tool_id, tu.parameters);
@@ -2454,7 +2484,8 @@ async function geminiShowChat(wsState = null) {
         // Render non-tool messages immediately but keep pendingToolUses alive —
         // tool_result may arrive after intervening assistant/user messages due to
         // batch boundaries from synthetic result events.
-        geminiAppendMessage(msg.role, msg.content, false, null, msg.ts, msg.sender);
+        // History user messages show final "processing" checkmarks (already completed).
+        geminiAppendMessage(msg.role, msg.content, false, null, msg.ts, msg.sender, msg.role === "user" ? "processing" : undefined);
       }
     }
     // Flush any tool_uses that never got a result.

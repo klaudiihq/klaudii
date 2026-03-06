@@ -531,6 +531,8 @@ process.on("exit", clearPortFile);
 const wss = new WebSocket.Server({ server, path: "/ws/gemini" });
 
 let wsClientId = 0;
+// Per-workspace flag: has the "processing" ack been sent for the current user turn?
+const wsProcessingAcked = {};
 function broadcastToWorkspace(workspace, payload, excludeClientId) {
   const data = JSON.stringify(payload);
   for (const client of wss.clients) {
@@ -592,6 +594,9 @@ wss.on("connection", (ws) => {
         return;
       }
 
+      // Message received by server — single grey check
+      ws.send(JSON.stringify({ type: "ack", workspace, status: "received" }));
+
       // For Claude with an active relay, append to the existing session instead of spawning a new one
       if (backend === "claude" && claudeChat.isActive(workspace)) {
         workspaceState.touchChatActivity(workspace);
@@ -599,7 +604,12 @@ wss.on("connection", (ws) => {
         claudeChat.pushHistory(workspace, "user", message, { sender: msg.sender || "user" });
         broadcastToWorkspace(workspace, { type: "user_message", workspace, content: message, sender: msg.sender || "user", ts: Date.now() }, clientId);
         broadcastToWorkspace(workspace, { type: "streaming_start", workspace }, clientId);
-        claudeChat.appendMessage(workspace, message);
+        wsProcessingAcked[workspace] = false; // reset for new user turn
+        const delivered = claudeChat.appendMessage(workspace, message);
+        // Delivery ack — message piped into CLI stdin
+        if (delivered) {
+          broadcastToWorkspace(workspace, { type: "ack", workspace, status: "delivered" });
+        }
         return;
       }
 
@@ -637,13 +647,23 @@ wss.on("connection", (ws) => {
           : message;
         const handle = await backendModule.sendMessage(workspace, proj.path, effectiveMessage, config, { apiKey, model, images, permissionMode, autoExecute, thinking });
 
+        // Delivery ack — CLI process spawned and message written to stdin
+        broadcastToWorkspace(workspace, { type: "ack", workspace, status: "delivered" });
+
         // Accumulate assistant text and tool events for history persistence
         let assistantText = "";
         let eventsSent = 0;
         const toolEvents = []; // buffered tool_use/tool_result for batch save
+        // Reset "processing" ack for this workspace (new user turn)
+        wsProcessingAcked[workspace] = false;
 
         handle.onEvent((event) => {
           eventsSent++;
+          // First substantive event from agent = "processing" ack (double green checks)
+          if (!wsProcessingAcked[workspace] && (event.type === "message" || event.type === "tool_use")) {
+            wsProcessingAcked[workspace] = true;
+            broadcastToWorkspace(workspace, { type: "ack", workspace, status: "processing" });
+          }
           if (event.type === "permission_request") {
             workspaceState.setPendingPermission(workspace, event);
           }

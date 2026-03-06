@@ -184,6 +184,39 @@
   margin-bottom: 0.15rem;
 }
 
+/* Message delivery status checkmarks (WhatsApp-style) */
+.msg-status {
+  display: inline-block;
+  margin-left: 0.4rem;
+  font-size: 0.75rem;
+  vertical-align: bottom;
+  line-height: 1;
+  opacity: 0;
+  transition: opacity 0.2s ease;
+}
+.msg-status[data-status="received"],
+.msg-status[data-status="delivered"],
+.msg-status[data-status="processing"] {
+  opacity: 1;
+}
+/* Single grey check — received by server */
+.msg-status[data-status="received"]::after {
+  content: "\2713"; /* ✓ */
+  color: rgba(255,255,255,0.55);
+}
+/* Double grey checks — delivered to CLI */
+.msg-status[data-status="delivered"]::after {
+  content: "\2713\2713"; /* ✓✓ */
+  color: rgba(255,255,255,0.55);
+  letter-spacing: -0.2em;
+}
+/* Double green checks — agent processing */
+.msg-status[data-status="processing"]::after {
+  content: "\2713\2713"; /* ✓✓ */
+  color: #4ade80;
+  letter-spacing: -0.2em;
+}
+
 .gemini-msg.assistant {
   max-width: 100%;
   color: var(--text-dim);
