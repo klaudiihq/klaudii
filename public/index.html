@@ -50,6 +50,57 @@
         <div id="scheduler-list" class="card-grid"></div>
       </section>
 
+      <section id="beads-section" class="hidden">
+        <h2 class="beads-heading">
+          Beads
+          <button class="btn btn-sm" id="beads-toggle" onclick="toggleBeadsSection()">Hide</button>
+        </h2>
+        <div id="beads-toolbar" class="beads-toolbar">
+          <div class="beads-filters">
+            <button class="beads-filter active" data-filter="all" onclick="setBeadFilter('all')">All</button>
+            <button class="beads-filter" data-filter="open" onclick="setBeadFilter('open')">Open</button>
+            <button class="beads-filter" data-filter="in_progress" onclick="setBeadFilter('in_progress')">In Progress</button>
+            <button class="beads-filter" data-filter="blocked" onclick="setBeadFilter('blocked')">Blocked</button>
+            <button class="beads-filter" data-filter="closed" onclick="setBeadFilter('closed')">Closed</button>
+          </div>
+          <button class="btn btn-sm primary" onclick="openBeadForm()">+ New Bead</button>
+        </div>
+        <div id="bead-form" class="bead-form hidden">
+          <div class="form-group">
+            <label>Title</label>
+            <input id="bead-title" type="text" placeholder="Bead title" />
+          </div>
+          <div class="form-group">
+            <label>Description</label>
+            <textarea id="bead-desc" rows="3" placeholder="Details..." style="width:100%;background:var(--bg-input);color:var(--text);border:1px solid var(--border-btn);border-radius:6px;padding:0.5rem 0.75rem;font-size:0.9rem;font-family:inherit;resize:vertical"></textarea>
+          </div>
+          <div style="display:flex;gap:0.5rem;align-items:flex-end">
+            <div class="form-group" style="margin-bottom:0">
+              <label>Priority</label>
+              <select id="bead-priority" style="background:var(--bg-input);color:var(--text);border:1px solid var(--border-btn);border-radius:6px;padding:0.4rem 0.5rem;font-size:0.85rem">
+                <option value="0">0 — Critical</option>
+                <option value="1">1 — High</option>
+                <option value="2" selected>2 — Medium</option>
+                <option value="3">3 — Low</option>
+                <option value="4">4 — Backlog</option>
+              </select>
+            </div>
+            <div class="form-group" style="margin-bottom:0">
+              <label>Type</label>
+              <select id="bead-type" style="background:var(--bg-input);color:var(--text);border:1px solid var(--border-btn);border-radius:6px;padding:0.4rem 0.5rem;font-size:0.85rem">
+                <option value="task">Task</option>
+                <option value="bug">Bug</option>
+                <option value="feature">Feature</option>
+                <option value="epic">Epic</option>
+              </select>
+            </div>
+            <button class="btn btn-sm primary" onclick="submitBead()">Create</button>
+            <button class="btn btn-sm" onclick="closeBeadForm()">Cancel</button>
+          </div>
+        </div>
+        <div id="beads-list" class="beads-list"></div>
+      </section>
+
       <section id="unmanaged-section" class="hidden">
         <h2>free range claudes</h2>
         <div id="unmanaged-list" class="card-grid"></div>

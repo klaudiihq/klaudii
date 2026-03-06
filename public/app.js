@@ -1326,6 +1326,140 @@ async function schedulerTrigger(name) {
   setTimeout(refreshScheduler, 1000);
 }
 
+// --- Beads ---
+
+let beadsCollapsed = localStorage.getItem("klaudii-beads-collapsed") === "1";
+let beadFilter = "all";
+let beadsData = [];
+let expandedBeadId = null;
+
+const PRIORITY_LABELS = ["P0", "P1", "P2", "P3", "P4"];
+
+async function refreshBeads() {
+  try {
+    beadsData = await api("/api/beads");
+    if (!Array.isArray(beadsData)) beadsData = [];
+    renderBeads();
+  } catch {
+    // Beads endpoint not available
+  }
+}
+
+function renderBeads() {
+  const section = document.getElementById("beads-section");
+  const container = document.getElementById("beads-list");
+  if (!section || !container) return;
+
+  if (!beadsData.length) {
+    section.classList.add("hidden");
+    return;
+  }
+
+  section.classList.remove("hidden");
+  const toggle = document.getElementById("beads-toggle");
+  if (toggle) toggle.textContent = beadsCollapsed ? "Show" : "Hide";
+  document.getElementById("beads-toolbar").style.display = beadsCollapsed ? "none" : "";
+  document.getElementById("beads-list").style.display = beadsCollapsed ? "none" : "";
+  const form = document.getElementById("bead-form");
+  if (beadsCollapsed && form) form.classList.add("hidden");
+
+  const filtered = beadFilter === "all"
+    ? beadsData
+    : beadsData.filter(b => b.status === beadFilter);
+
+  if (!filtered.length) {
+    container.innerHTML = `<div style="padding:12px;color:var(--text-faint);font-size:12px;text-align:center">No beads matching "${beadFilter}"</div>`;
+    return;
+  }
+
+  container.innerHTML = filtered.map(b => {
+    const statusLabel = (b.status || "open").replace(/_/g, " ");
+    const updated = b.updated_at ? relativeTime(new Date(b.updated_at).getTime()) : "";
+    const assignee = b.assignee || "";
+    const priority = PRIORITY_LABELS[b.priority] || `P${b.priority}`;
+    const isExpanded = expandedBeadId === b.id;
+    const descHtml = isExpanded && b.description
+      ? `<div class="bead-desc-expanded">${esc(b.description)}</div>`
+      : "";
+
+    const closedOrBlocked = b.status === "closed" || b.status === "blocked";
+    const actionBtns = closedOrBlocked ? "" : `
+      <div class="bead-actions">
+        <button class="btn btn-sm" onclick="beadSetStatus('${esc(b.id)}','blocked')" title="Block">Block</button>
+        <button class="btn btn-sm success" onclick="beadSetStatus('${esc(b.id)}','closed')" title="Close">Close</button>
+      </div>`;
+
+    return `<div class="bead-row">
+      <div class="bead-row-top">
+        <span class="bead-id">${esc(b.id)}</span>
+        <span class="bead-title" onclick="toggleBeadDesc('${esc(b.id)}')">${esc(b.title)}</span>
+        <span class="bead-status ${esc(b.status || "open")}">${esc(statusLabel)}</span>
+        <span class="bead-priority">${esc(priority)}</span>
+        <span class="bead-assignee" title="${esc(assignee)}">${esc(assignee)}</span>
+        <span class="bead-updated">${esc(updated)}</span>
+        ${actionBtns}
+      </div>
+      ${descHtml}
+    </div>`;
+  }).join("");
+}
+
+function setBeadFilter(f) {
+  beadFilter = f;
+  document.querySelectorAll(".beads-filter").forEach(btn => {
+    btn.classList.toggle("active", btn.dataset.filter === f);
+  });
+  renderBeads();
+}
+
+function toggleBeadsSection() {
+  beadsCollapsed = !beadsCollapsed;
+  localStorage.setItem("klaudii-beads-collapsed", beadsCollapsed ? "1" : "0");
+  renderBeads();
+}
+
+function toggleBeadDesc(id) {
+  expandedBeadId = expandedBeadId === id ? null : id;
+  renderBeads();
+}
+
+function openBeadForm() {
+  document.getElementById("bead-form").classList.remove("hidden");
+  document.getElementById("bead-title").focus();
+}
+
+function closeBeadForm() {
+  document.getElementById("bead-form").classList.add("hidden");
+  document.getElementById("bead-title").value = "";
+  document.getElementById("bead-desc").value = "";
+  document.getElementById("bead-priority").value = "2";
+  document.getElementById("bead-type").value = "task";
+}
+
+async function submitBead() {
+  const title = document.getElementById("bead-title").value.trim();
+  if (!title) { document.getElementById("bead-title").focus(); return; }
+  const description = document.getElementById("bead-desc").value.trim();
+  const priority = Number(document.getElementById("bead-priority").value);
+  const type = document.getElementById("bead-type").value;
+  try {
+    await api("/api/beads", { method: "POST", body: { title, description, priority, type } });
+    closeBeadForm();
+    refreshBeads();
+  } catch (err) {
+    alert("Failed to create bead: " + err.message);
+  }
+}
+
+async function beadSetStatus(id, status) {
+  try {
+    await api(`/api/beads/${encodeURIComponent(id)}`, { method: "PATCH", body: { status } });
+    refreshBeads();
+  } catch (err) {
+    alert("Failed to update bead: " + err.message);
+  }
+}
+
 // --- Theme ---
 
 function toggleTheme() {
@@ -1380,11 +1514,12 @@ if (new URLSearchParams(window.location.search).get("mode") === "chatonly") {
   refresh();
   refreshCloudStatus();
   refreshScheduler();
+  refreshBeads();
   refreshTimer = setInterval(() => {
     refresh();
     refreshCloudStatus();
   }, 10000);
   refreshUsage();
   setInterval(refreshUsage, 60000);
-  setInterval(refreshScheduler, 30000);
+  setInterval(() => { refreshScheduler(); refreshBeads(); }, 30000);
 }
