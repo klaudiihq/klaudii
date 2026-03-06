@@ -613,5 +613,134 @@ module.exports = function createV1Router(deps) {
     }
   });
 
+  // --- Chat: send message to workspace (REST wrapper for WS send) ---
+
+  router.post("/chat/:workspace/send", async (req, res) => {
+    if (!claudeChat) return res.status(501).json({ error: "claude-chat not available" });
+
+    const workspace = decodeURIComponent(req.params.workspace);
+    const { message, sender } = req.body;
+
+    if (!message) return res.status(400).json({ error: "message required" });
+
+    const proj = projects.getProject(workspace);
+    if (!proj) return res.status(404).json({ error: `workspace "${workspace}" not found` });
+
+    const senderField = sender || "user";
+
+    try {
+      if (claudeChat.isActive(workspace)) {
+        claudeChat.pushHistory(workspace, "user", message, { sender: senderField });
+        claudeChat.appendMessage(workspace, message);
+      } else {
+        claudeChat.pushHistory(workspace, "user", message, { sender: senderField });
+        await claudeChat.sendMessage(workspace, proj.path, message, config);
+      }
+      res.json({ ok: true, workspace });
+    } catch (err) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // --- Chat: workspace status ---
+
+  router.get("/chat/:workspace/status", (req, res) => {
+    const workspace = decodeURIComponent(req.params.workspace);
+
+    const proj = projects.getProject(workspace);
+    if (!proj) return res.status(404).json({ error: `workspace "${workspace}" not found` });
+
+    const wsState = workspaceState ? workspaceState.getWorkspace(workspace) : {};
+    const pending = workspaceState ? workspaceState.getPendingPermission(workspace) : null;
+
+    res.json({
+      workspace,
+      relayActive: claudeChat ? claudeChat.isActive(workspace) : false,
+      streaming: workspaceState ? workspaceState.isStreaming(workspace) : false,
+      chatMode: wsState.mode || "claude-local",
+      lastActivity: workspaceState ? workspaceState.getLastChatActivity(workspace) : 0,
+      pendingPermission: pending || null,
+    });
+  });
+
+  // --- Beads CRUD ---
+
+  router.get("/beads", (_req, res) => {
+    try {
+      const { execSync } = require("child_process");
+      const out = execSync("bd list --json", { encoding: "utf-8", cwd: config.reposDir || process.cwd() });
+      res.json(JSON.parse(out));
+    } catch (err) {
+      res.status(500).json({ error: `bd list failed: ${err.message}` });
+    }
+  });
+
+  router.get("/beads/:id", (req, res) => {
+    const id = req.params.id;
+    if (!/^[a-zA-Z0-9-]+$/.test(id)) return res.status(400).json({ error: "invalid bead ID" });
+
+    try {
+      const { execSync } = require("child_process");
+      const out = execSync(`bd show ${id} --json`, { encoding: "utf-8", cwd: config.reposDir || process.cwd() });
+      const parsed = JSON.parse(out);
+      res.json(Array.isArray(parsed) ? parsed[0] : parsed);
+    } catch (err) {
+      res.status(err.message.includes("not found") ? 404 : 500).json({ error: `bd show failed: ${err.message}` });
+    }
+  });
+
+  router.post("/beads", (req, res) => {
+    const { title, description, priority, type, deps } = req.body;
+    if (!title) return res.status(400).json({ error: "title required" });
+
+    try {
+      const { execSync } = require("child_process");
+      let cmd = `bd create ${JSON.stringify(title)}`;
+      if (description) cmd += ` --description=${JSON.stringify(description)}`;
+      if (priority !== undefined) cmd += ` -p ${Number(priority)}`;
+      if (type) cmd += ` -t ${type}`;
+      if (deps) cmd += ` --deps ${deps}`;
+      cmd += " --json";
+
+      const out = execSync(cmd, { encoding: "utf-8", cwd: config.reposDir || process.cwd() });
+      res.status(201).json(JSON.parse(out));
+    } catch (err) {
+      res.status(500).json({ error: `bd create failed: ${err.message}` });
+    }
+  });
+
+  router.patch("/beads/:id", (req, res) => {
+    const id = req.params.id;
+    if (!/^[a-zA-Z0-9-]+$/.test(id)) return res.status(400).json({ error: "invalid bead ID" });
+
+    const { status, comment, assignee, priority } = req.body;
+
+    try {
+      const { execSync } = require("child_process");
+      const cwd = config.reposDir || process.cwd();
+
+      // Update fields if any provided
+      if (status || assignee !== undefined || priority !== undefined) {
+        let cmd = `bd update ${id}`;
+        if (status) cmd += ` --status ${status}`;
+        if (assignee !== undefined) cmd += ` --assignee ${JSON.stringify(assignee)}`;
+        if (priority !== undefined) cmd += ` -p ${Number(priority)}`;
+        cmd += " --json";
+        execSync(cmd, { encoding: "utf-8", cwd });
+      }
+
+      // Add comment if provided
+      if (comment) {
+        execSync(`bd comment ${id} ${JSON.stringify(comment)}`, { encoding: "utf-8", cwd });
+      }
+
+      // Return updated bead
+      const out = execSync(`bd show ${id} --json`, { encoding: "utf-8", cwd });
+      res.json(JSON.parse(out));
+    } catch (err) {
+      res.status(500).json({ error: `bd update failed: ${err.message}` });
+    }
+  });
+
   return router;
 };
