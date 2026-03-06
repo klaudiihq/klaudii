@@ -31,6 +31,7 @@ let geminiActiveCli = "gemini"; // "gemini" or "claude"
 let geminiSessionNum = null; // current session number (1, 2, 3...)
 let geminiLocalDraftActive = false; // true when user is actively typing — blocks incoming draft events
 let geminiLocalDraftTimeout = null;
+const geminiPageSessionDrafts = new Set(); // workspaces whose drafts were saved this page session
 let geminiWasStreamingAtDisconnect = false; // set in onclose, cleared in onopen after recovery check
 let geminiHistoryFetchFailed = false;        // set when history fetch fails (server not ready); triggers re-fetch on reconnect
 let geminiAgentRole = null;          // "architect" | "shepherd" | null — set when in agent chat mode
@@ -389,6 +390,7 @@ function geminiSaveDraft(text) {
   if (!geminiWorkspace) return;
   clearTimeout(geminiDraftTimer);
   const workspace = geminiWorkspace;
+  geminiPageSessionDrafts.add(workspace);
   const draftMode = geminiActiveCli === "claude" ? "claude-local" : "gemini";
   const draftSession = geminiSessionNum;
   geminiDraftTimer = setTimeout(() => {
@@ -407,10 +409,16 @@ function geminiSaveDraft(text) {
 
 async function geminiRestoreDraft(prefetchedState = null) {
   if (!geminiWorkspace) return;
+  const input = document.getElementById("gemini-input");
+  if (!input) return;
+  // Only restore drafts saved during this page session to avoid stale state on load
+  if (!geminiPageSessionDrafts.has(geminiWorkspace)) {
+    input.value = "";
+    return;
+  }
   try {
     const state = prefetchedState || await fetch(`/api/workspace-state/${encodeURIComponent(geminiWorkspace)}`).then(r => r.json());
-    const input = document.getElementById("gemini-input");
-    if (input) input.value = state.draft || "";
+    input.value = state.draft || "";
   } catch { /* non-fatal */ }
 }
 
