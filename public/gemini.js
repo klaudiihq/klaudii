@@ -35,6 +35,7 @@ const geminiPageSessionDrafts = new Set(); // workspaces whose drafts were saved
 let geminiWasStreamingAtDisconnect = false; // set in onclose, cleared in onopen after recovery check
 let geminiHistoryFetchFailed = false;        // set when history fetch fails (server not ready); triggers re-fetch on reconnect
 let geminiAgentRole = null;          // "architect" | "shepherd" | null — set when in agent chat mode
+let geminiThinkingEnabled = false;           // extended thinking toggle state
 
 // Per-workspace message history (in-memory cache, server is source of truth)
 // workspace → [ { role, content } ]  (for current session)
@@ -2543,6 +2544,7 @@ async function openGeminiChat(project, projectPath, cli) {
   geminiUpdateAttachVisibility();
   geminiUpdatePermissionVisibility();
   geminiRestorePermissionMode();
+  geminiRestoreThinking();
 
   // Restore last session from server state (non-blocking — geminiShowChat uses it)
   geminiSessionNum = null;
@@ -2772,6 +2774,7 @@ function sendGeminiMessage() {
       model: model || undefined,
       cli: geminiActiveCli,
       permissionMode: geminiGetPermissionMode(),
+      ...(geminiThinkingEnabled && geminiActiveCli === "claude" ? { thinking: true } : {}),
       ...(images.length ? { images } : {}),
     };
 
@@ -2908,6 +2911,9 @@ function geminiSetStreaming(active) {
   const permSelect = document.getElementById("gemini-permission-mode");
   if (permSelect) permSelect.disabled = active;
 
+  const thinkingToggle = document.getElementById("gemini-thinking-toggle");
+  if (thinkingToggle) thinkingToggle.disabled = active;
+
   // Send button stays visible always (for steering mid-stream)
   // Stop button appears next to it only during generation
   if (stopBtn) stopBtn.style.display = active ? "" : "none";
@@ -2995,6 +3001,29 @@ document.getElementById("gemini-permission-mode")?.addEventListener("change", fu
     glog("perm-switch: sent set_permission_mode=" + this.value);
   }
 });
+
+// Extended thinking toggle
+function geminiToggleThinking() {
+  geminiThinkingEnabled = !geminiThinkingEnabled;
+  const btn = document.getElementById("gemini-thinking-toggle");
+  if (btn) btn.classList.toggle("active", geminiThinkingEnabled);
+  if (geminiWorkspace) localStorage.setItem(`klaudii-thinking-${geminiWorkspace}`, geminiThinkingEnabled ? "1" : "0");
+  glog("thinking-toggle: enabled=" + geminiThinkingEnabled);
+}
+
+function geminiRestoreThinking() {
+  const btn = document.getElementById("gemini-thinking-toggle");
+  if (!btn) return;
+  // Only show for Claude backend
+  btn.style.display = geminiActiveCli === "claude" ? "" : "none";
+  if (geminiWorkspace) {
+    const saved = localStorage.getItem(`klaudii-thinking-${geminiWorkspace}`);
+    geminiThinkingEnabled = saved === "1";
+  } else {
+    geminiThinkingEnabled = false;
+  }
+  btn.classList.toggle("active", geminiThinkingEnabled);
+}
 
 // Persist model selection per workspace + send runtime model switch to active relay
 document.getElementById("gemini-model")?.addEventListener("change", function() {

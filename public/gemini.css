@@ -684,6 +684,38 @@ summary.gemini-tool-summary::marker { display: none; }
   cursor: not-allowed;
 }
 
+/* Extended thinking toggle */
+.gemini-thinking-toggle {
+  appearance: none;
+  -webkit-appearance: none;
+  background: var(--bg-btn);
+  border: 1px solid transparent;
+  border-radius: 20px;
+  color: var(--text-muted);
+  font-size: 0.72rem;
+  font-family: inherit;
+  font-weight: 500;
+  padding: 0.22rem 0.6rem;
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s, border-color 0.15s, box-shadow 0.15s;
+  flex-shrink: 0;
+  line-height: 1.4;
+}
+.gemini-thinking-toggle:hover {
+  background-color: var(--bg-btn-hover);
+  color: var(--text);
+  border-color: var(--border-btn);
+}
+.gemini-thinking-toggle.active {
+  background: var(--s-blue-bg);
+  color: var(--s-blue-text);
+  border-color: var(--s-blue-text);
+}
+.gemini-thinking-toggle:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
 /* Send / Stop button */
 .gemini-send-btn {
   background: var(--btn-primary);

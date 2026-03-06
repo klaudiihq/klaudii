@@ -555,7 +555,7 @@ wss.on("connection", (ws) => {
       return;
     }
 
-    const { type, workspace, message, model, cli, images: rawImages, permissionMode, systemPrompt } = msg;
+    const { type, workspace, message, model, cli, images: rawImages, permissionMode, systemPrompt, thinking } = msg;
     const backend = cli === "claude" ? "claude" : "gemini";
     const backendModule = backend === "claude" ? claudeChat : gemini;
 
@@ -625,7 +625,7 @@ wss.on("connection", (ws) => {
         const effectiveMessage = systemPrompt
           ? `<system-context>\n${systemPrompt}\n</system-context>\n\n${message}`
           : message;
-        const handle = await backendModule.sendMessage(workspace, proj.path, effectiveMessage, config, { apiKey, model, images, permissionMode, autoExecute });
+        const handle = await backendModule.sendMessage(workspace, proj.path, effectiveMessage, config, { apiKey, model, images, permissionMode, autoExecute, thinking });
 
         // Accumulate assistant text and tool events for history persistence
         let assistantText = "";
