@@ -151,6 +151,9 @@ function renderSessions(sessions, procs) {
   updateSortButtons();
   updateWorkerToggle();
 
+  // Always hide agent chat workspaces (accessed via header buttons)
+  sessions = sessions.filter(s => !s.project.startsWith("__") || !s.project.endsWith("__"));
+
   // Filter out worker workspaces unless toggle is on
   const workerCount = sessions.filter(s => s.workspaceType === "worker").length;
   if (!showWorkerWorkspaces) {
@@ -810,6 +813,27 @@ async function refresh() {
 }
 
 // --- New Session Modal ---
+
+// --- Agent Chat (Architect / Shepherd) ---
+
+async function openAgentChat(role) {
+  try {
+    const res = await fetch(`/api/agent-chat/${encodeURIComponent(role)}/start`, { method: "POST" });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({ error: "Unknown error" }));
+      alert("Failed to start agent chat: " + (err.error || res.statusText));
+      return;
+    }
+    const data = await res.json();
+    // Store system prompt and role for the chat UI to use on first message
+    window._agentSystemPrompt = data.systemPrompt;
+    window._agentRole = role;
+    // Open the chat panel using the agent workspace
+    openGeminiChat(data.workspace, data.workspacePath, "claude");
+  } catch (err) {
+    alert("Failed to start agent chat: " + err.message);
+  }
+}
 
 let allRepos = [];
 let selectedRepo = null;

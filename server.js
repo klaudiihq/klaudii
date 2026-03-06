@@ -555,7 +555,7 @@ wss.on("connection", (ws) => {
       return;
     }
 
-    const { type, workspace, message, model, cli, images: rawImages, permissionMode } = msg;
+    const { type, workspace, message, model, cli, images: rawImages, permissionMode, systemPrompt } = msg;
     const backend = cli === "claude" ? "claude" : "gemini";
     const backendModule = backend === "claude" ? claudeChat : gemini;
 
@@ -620,7 +620,12 @@ wss.on("connection", (ws) => {
         console.log(`[gemini-ws] spawning ${backend} for workspace=${workspace} path=${proj.path} hasApiKey=${!!apiKey}`);
         // For Gemini A2A: bypassPermissions = autoExecute (YOLO), anything else = interactive approval
         const autoExecute = backend === "gemini" ? (permissionMode === "bypassPermissions") : undefined;
-        const handle = await backendModule.sendMessage(workspace, proj.path, message, config, { apiKey, model, images, permissionMode, autoExecute });
+        // If systemPrompt is provided (agent chat), prepend it to the message sent to Claude
+        // but NOT to the history (which already stored the raw user message above).
+        const effectiveMessage = systemPrompt
+          ? `<system-context>\n${systemPrompt}\n</system-context>\n\n${message}`
+          : message;
+        const handle = await backendModule.sendMessage(workspace, proj.path, effectiveMessage, config, { apiKey, model, images, permissionMode, autoExecute });
 
         // Accumulate assistant text and tool events for history persistence
         let assistantText = "";

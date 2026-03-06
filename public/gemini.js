@@ -33,6 +33,7 @@ let geminiLocalDraftActive = false; // true when user is actively typing — blo
 let geminiLocalDraftTimeout = null;
 let geminiWasStreamingAtDisconnect = false; // set in onclose, cleared in onopen after recovery check
 let geminiHistoryFetchFailed = false;        // set when history fetch fails (server not ready); triggers re-fetch on reconnect
+let geminiAgentRole = null;          // "architect" | "shepherd" | null — set when in agent chat mode
 
 // Per-workspace message history (in-memory cache, server is source of truth)
 // workspace → [ { role, content } ]  (for current session)
@@ -2438,10 +2439,17 @@ async function openGeminiChat(project, projectPath, cli) {
   geminiLocalDraftActive = false;
   clearTimeout(geminiLocalDraftTimeout);
 
+  // Check if this is an agent chat (set by openAgentChat in app.js)
+  geminiAgentRole = window._agentRole || null;
+
   const cliLabel = geminiActiveCli === "claude" ? "Claude" : "Gemini";
 
-  // Set title
-  if (project) {
+  // Set title — show agent role label when in agent chat mode
+  if (geminiAgentRole) {
+    const roleLabel = geminiAgentRole.charAt(0).toUpperCase() + geminiAgentRole.slice(1);
+    document.getElementById("gemini-title").innerHTML =
+      `<span class="agent-role-badge ${geminiAgentRole}">${roleLabel}</span>`;
+  } else if (project) {
     const parts = project.split("--");
     const repo = parts[0];
     const branch = parts.length > 1 ? parts.slice(1).join("--") : null;
@@ -2453,7 +2461,10 @@ async function openGeminiChat(project, projectPath, cli) {
 
   // Update placeholder
   const inputEl = document.getElementById("gemini-input");
-  if (inputEl) inputEl.placeholder = `Message ${cliLabel}...`;
+  const placeholderName = geminiAgentRole
+    ? geminiAgentRole.charAt(0).toUpperCase() + geminiAgentRole.slice(1)
+    : cliLabel;
+  if (inputEl) inputEl.placeholder = `Message ${placeholderName}...`;
 
   // Reset streaming state and image attachments
   geminiCurrentMsgEl = null;
@@ -2560,6 +2571,11 @@ async function openGeminiChat(project, projectPath, cli) {
 
 function closeGeminiChat() {
   glog("closeChat");
+
+  // Clear agent chat state
+  geminiAgentRole = null;
+  delete window._agentRole;
+  delete window._agentSystemPrompt;
 
   // Flush current input draft immediately so it persists across close/reopen
   const input = document.getElementById("gemini-input");
@@ -2690,6 +2706,14 @@ function sendGeminiMessage() {
       permissionMode: geminiGetPermissionMode(),
       ...(images.length ? { images } : {}),
     };
+
+    // Agent chat: include systemPrompt on the first message only
+    if (window._agentSystemPrompt) {
+      payload.systemPrompt = window._agentSystemPrompt;
+      delete window._agentSystemPrompt;
+      glog("send: injecting agent systemPrompt (" + payload.systemPrompt.length + " chars)");
+    }
+
     glog("send: ws.send", JSON.stringify(payload).slice(0, 200));
     geminiWs.send(JSON.stringify(payload));
     geminiClearImages();

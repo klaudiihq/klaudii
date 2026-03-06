@@ -911,6 +911,75 @@ module.exports = function createV1Router(deps) {
     res.json(memory.search(agent, q, { limit: limit ? Number(limit) : 50 }));
   });
 
+  // --- Agent Chat (Architect / Shepherd dedicated chat) ---
+
+  const klaudiiRoot = path.resolve(__dirname, "..");
+
+  router.post("/agent-chat/:role/start", (req, res) => {
+    const { role } = req.params;
+    if (role !== "architect" && role !== "shepherd") {
+      return res.status(400).json({ error: "role must be 'architect' or 'shepherd'" });
+    }
+
+    // Find or create a workspace for the agent chat
+    const workspaceName = `__${role}__`;
+    let proj = projects.getProject(workspaceName);
+    if (!proj) {
+      try {
+        projects.addProject(workspaceName, klaudiiRoot);
+      } catch {
+        // Already exists is fine
+      }
+      proj = projects.getProject(workspaceName);
+    }
+    if (!proj) {
+      return res.status(500).json({ error: "Could not create agent workspace" });
+    }
+
+    // Load context files
+    let systemPrompt = "";
+    try {
+      if (role === "architect") {
+        const startup = fs.readFileSync(path.join(klaudiiRoot, "ARCHITECT_STARTUP.md"), "utf-8");
+        const system = fs.readFileSync(path.join(klaudiiRoot, "planning", "architect-system.md"), "utf-8");
+        systemPrompt = `${startup}\n\n---\n\n${system}`;
+      } else {
+        const prompt = fs.readFileSync(path.join(klaudiiRoot, "lib", "shepherd-prompt.md"), "utf-8");
+        systemPrompt = prompt;
+      }
+    } catch (err) {
+      return res.status(500).json({ error: `Failed to load context files: ${err.message}` });
+    }
+
+    // Load recent memories
+    const memories = memory ? memory.list(role, { limit: 50 }) : [];
+    if (memories.length > 0) {
+      systemPrompt += "\n\n---\n\n## Your Recent Memories\n\n";
+      systemPrompt += "The following are your memories from previous sessions (most recent first).\n";
+      systemPrompt += "These are marked as [HISTORICAL MEMORY] so you know they are from past sessions, not the current one.\n\n";
+      for (const m of memories) {
+        const cat = m.category ? ` [${m.category}]` : "";
+        systemPrompt += `- [HISTORICAL MEMORY] [${m.created_at}]${cat} ${m.content}\n`;
+      }
+    }
+
+    // Add memory instructions
+    systemPrompt += `\n\n## Memory Instructions\n\n`;
+    systemPrompt += `You have access to your memory journal. Store important decisions and observations before ending this session.\n\n`;
+    systemPrompt += `Memory API (use curl):\n`;
+    systemPrompt += `- Store: curl -s -X POST http://localhost:9876/api/memory/${role} -H 'Content-Type: application/json' -d '{"content":"...","category":"decision|observation|context"}'  \n`;
+    systemPrompt += `- List: curl -s http://localhost:9876/api/memory/${role}?limit=50\n`;
+    systemPrompt += `- Search: curl -s "http://localhost:9876/api/memory/${role}/search?q=keyword"\n`;
+    systemPrompt += `- Delete: curl -s -X DELETE http://localhost:9876/api/memory/${role}/<id>\n`;
+
+    res.json({
+      workspace: workspaceName,
+      workspacePath: klaudiiRoot,
+      systemPrompt,
+      memoriesCount: memories.length,
+    });
+  });
+
   router.delete("/memory/:agent/:id", (req, res) => {
     if (!memory) return res.status(501).json({ error: "memory not available" });
     const { agent, id } = req.params;

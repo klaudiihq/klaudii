@@ -43,6 +43,22 @@
   color: var(--text-faint);
 }
 
+.agent-role-badge {
+  font-size: 0.8rem;
+  font-weight: 700;
+  padding: 0.15rem 0.6rem;
+  border-radius: 6px;
+  letter-spacing: 0.03em;
+}
+.agent-role-badge.architect {
+  background: #166534;
+  color: #fff;
+}
+.agent-role-badge.shepherd {
+  background: #92400e;
+  color: #fff;
+}
+
 .gemini-bar-status {
   font-size: 0.65rem;
   padding: 0.1rem 0.4rem;

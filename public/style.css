@@ -1862,6 +1862,27 @@ body.chatonly .gemini-panel {
   }
 }
 
+/* --- Agent Chat buttons --- */
+
+.agent-btn.architect {
+  background: #166534;
+  color: #fff;
+  border-color: #166534;
+}
+.agent-btn.architect:hover {
+  background: #15803d;
+  border-color: #15803d;
+}
+.agent-btn.shepherd {
+  background: #92400e;
+  color: #fff;
+  border-color: #92400e;
+}
+.agent-btn.shepherd:hover {
+  background: #a16207;
+  border-color: #a16207;
+}
+
 @media (max-width: 600px) {
   .card-grid { grid-template-columns: 1fr; }
 }
