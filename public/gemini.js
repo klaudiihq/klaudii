@@ -1380,6 +1380,7 @@ function geminiMakeSubItem(toolName, toolId, params, isRunning, status, output) 
   }
   summary.innerHTML += `<span class="gemini-tool-sub-desc">${geminiEscHtml(desc || toolName || "")}</span>`;
   sub.appendChild(summary);
+  if (isRunning) geminiStartPillTimer(sub, summary);
 
   if (!isRunning && !isError && /^edit$/i.test(toolName) && params && params.old_string != null) {
     geminiRenderEditDiffFromParams(sub, params);
@@ -1453,6 +1454,7 @@ function geminiUpdateGroupSummary(groupEl) {
 
 function geminiUpdateSubItemResult(subItem, status, output, error) {
   const isError = status === "error" || !!error;
+  geminiStopPillTimer(subItem);
   subItem.classList.remove("running");
   subItem.classList.add(isError ? "error" : "success");
 
@@ -1680,6 +1682,27 @@ function geminiRenderCompletedTool(toolName, toolId, params, status, output) {
   geminiScrollToBottom();
 }
 
+/** Start a client-side elapsed timer on a running pill/sub-item element. */
+function geminiStartPillTimer(el, summaryEl) {
+  const timerEl = document.createElement("span");
+  timerEl.className = "gemini-tool-timer";
+  timerEl.textContent = " 0s";
+  if (summaryEl) summaryEl.appendChild(timerEl);
+  el._timerStart = Date.now();
+  el._timerInterval = setInterval(() => {
+    const elapsed = Math.round((Date.now() - el._timerStart) / 1000);
+    timerEl.textContent = ` ${elapsed}s`;
+  }, 1000);
+}
+
+/** Stop the client-side elapsed timer on a pill/sub-item element. */
+function geminiStopPillTimer(el) {
+  if (el._timerInterval) {
+    clearInterval(el._timerInterval);
+    el._timerInterval = null;
+  }
+}
+
 /**
  * Append a tool-use pill. Starts in a "running" state with a spinner.
  * Shows tool name + short description inline.
@@ -1711,6 +1734,7 @@ function geminiAppendToolUse(toolName, toolId, params) {
         ));
         itemsDiv.appendChild(geminiMakeSubItem(toolName, toolId, params, true, null, null));
         geminiUpdateGroupSummary(group);
+        geminiStopPillTimer(lastEl);
         container.replaceChild(group, lastEl);
         geminiScrollToBottom();
         return;
@@ -1734,6 +1758,7 @@ function geminiAppendToolUse(toolName, toolId, params) {
     `<span class="gemini-tool-name">${geminiEscHtml(toolName)}</span>` +
     (desc ? `<span class="gemini-tool-desc">${geminiEscHtml(desc)}</span>` : "");
   pill.appendChild(summary);
+  geminiStartPillTimer(pill, summary);
 
   const paramsStr = typeof params === "object" ? JSON.stringify(params, null, 2) : String(params || "");
   if (paramsStr && paramsStr !== "{}") {
@@ -1779,6 +1804,7 @@ function geminiUpdateToolResult(toolId, status, output, error) {
   const isError = status === "error" || !!error;
 
   if (pill) {
+    geminiStopPillTimer(pill);
     pill.classList.remove("running");
     pill.classList.add(isError ? "error" : "success");
     pill._toolOutput = (error || output || "");
@@ -1849,6 +1875,7 @@ function geminiFinalizeOrphanedPills() {
   if (!running.length) return;
   glog(`finalizeOrphanedPills: ${running.length} orphaned pill(s)`);
   for (const pill of running) {
+    geminiStopPillTimer(pill);
     pill.classList.remove("running");
     pill.classList.add("success");
     const spinner = pill.querySelector(".gemini-tool-spinner");
