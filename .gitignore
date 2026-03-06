@@ -11,6 +11,10 @@ connect/server/relay.db-shm
 connect/server/relay.db-wal
 .klaudii-tmux.sock
 
+# Playwright
+test-results/
+playwright-report/
+
 # Dolt database files (added by bd init)
 .dolt/
 *.db
