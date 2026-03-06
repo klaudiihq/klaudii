@@ -16,6 +16,7 @@ const claudeChat = require("./lib/claude-chat");
 const workspaceState = require("./lib/workspace-state");
 const setup = require("./lib/setup");
 const { mountMcp } = require("./lib/mcp");
+const scheduler = require("./lib/scheduler");
 
 process.on('uncaughtException', (err) => {
   console.error('[fatal] Uncaught exception:', err);
@@ -92,6 +93,32 @@ mountMcp(app, {
   config,
   claudeChat,
   workspaceState,
+});
+
+// --- Scheduler ---
+
+scheduler.register("shepherd", 5 * 60 * 1000, () => require("./lib/shepherd").run());
+
+app.get("/api/scheduler", (_req, res) => {
+  res.json(scheduler.list());
+});
+
+app.post("/api/scheduler/:name/pause", (req, res) => {
+  const ok = scheduler.pause(req.params.name);
+  if (!ok) return res.status(404).json({ error: `task "${req.params.name}" not found` });
+  res.json({ ok: true });
+});
+
+app.post("/api/scheduler/:name/resume", (req, res) => {
+  const ok = scheduler.resume(req.params.name);
+  if (!ok) return res.status(404).json({ error: `task "${req.params.name}" not found` });
+  res.json({ ok: true });
+});
+
+app.post("/api/scheduler/:name/trigger", async (req, res) => {
+  const result = await scheduler.trigger(req.params.name);
+  if (!result) return res.status(404).json({ error: `task "${req.params.name}" not found` });
+  res.json({ ok: true, ...result });
 });
 
 // --- Gemini ---
@@ -836,6 +863,7 @@ claudeChat.reconnectActiveRelays(config, (workspace, handle) => {
 
 function gracefulShutdown(signal) {
   console.log(`[server] ${signal} received, shutting down...`);
+  scheduler.stop();
   gemini.stopAllProcesses();
   // Do NOT kill Claude relay daemons — they are detached and designed to survive server
   // restarts so reconnectActiveRelays() can pick them up on the next boot.
@@ -879,6 +907,9 @@ server.listen(PORT, "0.0.0.0", () => {
 
   // Start periodic claude-chat auth probe (immediate + every 5 min)
   claudeChat.startAuthCheck(config);
+
+  // Start the task scheduler (shepherd, etc.)
+  scheduler.start();
 });
 
 server.on('error', (err) => {
