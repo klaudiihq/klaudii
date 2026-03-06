@@ -476,6 +476,18 @@ h2 {
 .perm-badge.perm-ask    { background: var(--s-blue-bg);   color: var(--s-blue-text); }
 .perm-badge.perm-strict { background: var(--s-yellow-bg); color: var(--s-yellow); }
 
+/* Worker workspace badge & card */
+.worker-badge {
+  font-size: 9px;
+  padding: 1px 5px;
+  border-radius: 999px;
+  font-weight: 500;
+  text-transform: uppercase;
+  background: rgba(168,85,247,0.15);
+  color: #a855f7;
+}
+.worker-card { opacity: 0.75; }
+
 /* =========================================================
    Git status bar (on cards — matches extension)
    ========================================================= */

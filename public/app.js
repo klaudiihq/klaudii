@@ -6,6 +6,8 @@ let sortMode = localStorage.getItem("klaudii-sort") || "activity";
 let sortDir = localStorage.getItem("klaudii-sort-dir") || "desc";
 let openPanelProject = null;
 let panelAutoCloseTimer = null;
+let showWorkerWorkspaces = localStorage.getItem("klaudii-show-workers") === "true";
+let workerDisplayMode = localStorage.getItem("klaudii-worker-mode") || "hide"; // "hide" | "show" | "auto-clean"
 
 // --- SVG icon constants (matching extension) ---
 const STAT_CPU_SVG = `<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="4" width="16" height="16" rx="2"/><rect x="9" y="9" width="6" height="6"/><line x1="9" y1="1" x2="9" y2="4"/><line x1="15" y1="1" x2="15" y2="4"/><line x1="9" y1="20" x2="9" y2="23"/><line x1="15" y1="20" x2="15" y2="23"/><line x1="20" y1="9" x2="23" y2="9"/><line x1="20" y1="14" x2="23" y2="14"/><line x1="1" y1="9" x2="4" y2="9"/><line x1="1" y1="14" x2="4" y2="14"/></svg>`;
@@ -127,9 +129,35 @@ function sortSessions(sessions) {
 
 // --- Rendering ---
 
+function toggleWorkerWorkspaces() {
+  showWorkerWorkspaces = !showWorkerWorkspaces;
+  localStorage.setItem("klaudii-show-workers", showWorkerWorkspaces);
+  updateWorkerToggle();
+  refresh();
+}
+
+function updateWorkerToggle() {
+  const btn = document.getElementById("worker-toggle");
+  if (btn) {
+    btn.classList.toggle("active", showWorkerWorkspaces);
+    btn.title = showWorkerWorkspaces ? "Showing worker workspaces" : "Worker workspaces hidden";
+  }
+}
+
 function renderSessions(sessions, procs) {
   const container = document.getElementById("sessions-list");
   updateSortButtons();
+  updateWorkerToggle();
+
+  // Filter out worker workspaces unless toggle is on
+  const workerCount = sessions.filter(s => s.workspaceType === "worker").length;
+  if (!showWorkerWorkspaces) {
+    sessions = sessions.filter(s => s.workspaceType !== "worker");
+  }
+  // Show/hide worker toggle based on whether any exist
+  const workerToggle = document.getElementById("worker-toggle");
+  if (workerToggle) workerToggle.classList.toggle("hidden", workerCount === 0);
+
   if (!sessions.length) {
     container.innerHTML = '<p style="color:#666">No workspaces configured.</p>';
     return;
@@ -242,8 +270,10 @@ function renderSessions(sessions, procs) {
     const lastAct = s.lastActivity ? absoluteTime(s.lastActivity) : null;
     const activityRow = lastAct ? `<div class="remote-timing">${lastAct}</div>` : "";
 
+    const isWorker = s.workspaceType === "worker";
+
     return `
-    <div class="card" id="card-${esc(s.project)}" data-project="${esc(s.project)}" data-chat-mode="${esc(chatMode)}" data-project-path="${esc(s.projectPath || "")}" data-claude-url="${esc(s.claudeUrl || "")}">
+    <div class="card${isWorker ? " worker-card" : ""}" id="card-${esc(s.project)}" data-project="${esc(s.project)}" data-chat-mode="${esc(chatMode)}" data-project-path="${esc(s.projectPath || "")}" data-claude-url="${esc(s.claudeUrl || "")}">
       <div class="card-accent ${status}"></div>
       <div class="card-body">
         <div class="card-header">
@@ -252,6 +282,7 @@ function renderSessions(sessions, procs) {
             ${branchLink ? `<span class="card-subtitle">${branchLink}</span>` : ""}
           </div>
           <div class="card-badges">
+            ${isWorker ? '<span class="worker-badge">worker</span>' : ""}
             ${modePill}
             ${permBadge}
             <span class="card-status ${displayStatus}">${displayStatus}</span>

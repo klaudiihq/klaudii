@@ -206,6 +206,7 @@ module.exports = function createV1Router(deps) {
         chatMode,
         chatActive,
         relayActive: claudeChat ? claudeChat.isActive(project.name) : false,
+        workspaceType: workspaceState ? workspaceState.getWorkspaceType(project.name) : "user",
       };
     });
 

@@ -100,7 +100,7 @@ mountMcp(app, {
 // --- Scheduler ---
 
 const shepherdCtx = {
-  projects: { getProjects, getProject, addProject },
+  projects: { getProjects, getProject, addProject, removeProject },
   tmux,
   ttyd,
   git,
