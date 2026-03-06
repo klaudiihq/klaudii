@@ -151,6 +151,19 @@
     </div>
   </div>
 
+  <!-- Bead Detail Panel (slide-out) -->
+  <div id="bead-detail-overlay" class="bead-detail-overlay hidden" onclick="closeBeadDetailBackdrop(event)">
+    <div class="bead-detail-panel" id="bead-detail-panel">
+      <div class="bead-detail-header">
+        <div class="bead-detail-id" id="bead-detail-id"></div>
+        <button class="btn btn-sm" onclick="closeBeadDetail()">X</button>
+      </div>
+      <div class="bead-detail-body" id="bead-detail-body">
+        <div class="bead-detail-loading">Loading...</div>
+      </div>
+    </div>
+  </div>
+
   <!-- Setup overlay -->
   <div id="setup-overlay" class="setup-overlay hidden" onclick="closeSetupOverlay(event)">
     <iframe id="setup-frame" class="setup-frame" src=""></iframe>

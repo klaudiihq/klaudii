@@ -1344,6 +1344,303 @@ h2 {
 }
 
 /* =========================================================
+   Bead Detail Panel (slide-out)
+   ========================================================= */
+
+.bead-detail-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 150;
+  background: rgba(0, 0, 0, 0.5);
+  display: flex;
+  justify-content: flex-end;
+}
+
+.bead-detail-panel {
+  width: 560px;
+  max-width: 90vw;
+  height: 100%;
+  background: var(--bg);
+  border-left: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  animation: bead-slide-in 0.2s ease-out;
+}
+
+@keyframes bead-slide-in {
+  from { transform: translateX(100%); }
+  to   { transform: translateX(0); }
+}
+
+.bead-detail-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 0.75rem 1rem;
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+}
+
+.bead-detail-id {
+  font-size: 0.8rem;
+  font-family: ui-monospace, monospace;
+  color: var(--text-muted);
+}
+
+.bead-detail-body {
+  flex: 1;
+  overflow-y: auto;
+  padding: 1rem;
+}
+
+.bead-detail-loading {
+  color: var(--text-faint);
+  font-size: 0.85rem;
+  text-align: center;
+  padding: 2rem;
+}
+
+.bead-detail-title {
+  font-size: 1.15rem;
+  font-weight: 600;
+  color: var(--text-strong);
+  margin-bottom: 0.75rem;
+  line-height: 1.4;
+}
+
+.bead-detail-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 1rem;
+  align-items: center;
+}
+
+.bead-detail-meta select {
+  font-size: 11px;
+  padding: 2px 20px 2px 6px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--bg-card);
+  color: var(--text);
+  cursor: pointer;
+  -webkit-appearance: none;
+  appearance: none;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='8' height='8' viewBox='0 0 10 10'%3E%3Cpath d='M2 3.5l3 3 3-3' fill='none' stroke='%23888' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 5px center;
+}
+
+.bead-detail-meta select:hover { border-color: var(--border-active); }
+.bead-detail-meta select:focus { outline: none; border-color: var(--btn-primary); }
+
+.bead-detail-meta-label {
+  font-size: 10px;
+  color: var(--text-faint);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.bead-detail-timestamps {
+  font-size: 11px;
+  color: var(--text-faint);
+  margin-bottom: 1rem;
+  display: flex;
+  gap: 16px;
+}
+
+.bead-detail-section {
+  margin-bottom: 1rem;
+}
+
+.bead-detail-section-title {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  margin-bottom: 0.5rem;
+  padding-bottom: 4px;
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.bead-detail-desc {
+  font-size: 13px;
+  color: var(--text-secondary);
+  line-height: 1.65;
+}
+
+.bead-detail-desc h1,
+.bead-detail-desc h2,
+.bead-detail-desc h3 {
+  font-size: 0.95rem;
+  color: var(--text-strong);
+  margin: 0.75rem 0 0.35rem;
+}
+
+.bead-detail-desc h1 { font-size: 1.05rem; }
+
+.bead-detail-desc ul,
+.bead-detail-desc ol {
+  padding-left: 1.25rem;
+  margin: 0.35rem 0;
+}
+
+.bead-detail-desc li { margin-bottom: 0.2rem; }
+
+.bead-detail-desc code {
+  font-size: 12px;
+  background: var(--bg-card);
+  padding: 1px 4px;
+  border-radius: 3px;
+  border: 1px solid var(--border-subtle);
+}
+
+.bead-detail-desc pre {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 0.5rem 0.75rem;
+  overflow-x: auto;
+  margin: 0.5rem 0;
+}
+
+.bead-detail-desc pre code {
+  background: none;
+  border: none;
+  padding: 0;
+}
+
+.bead-detail-deps {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.bead-detail-dep {
+  font-size: 12px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 8px;
+  background: var(--bg-card);
+  border-radius: 4px;
+  border: 1px solid var(--border-subtle);
+}
+
+.bead-detail-dep-id {
+  font-family: ui-monospace, monospace;
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+.bead-detail-dep-title {
+  color: var(--text-secondary);
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.bead-detail-dep-type {
+  font-size: 9px;
+  padding: 1px 5px;
+  border-radius: 999px;
+  background: var(--bg-badge);
+  color: var(--text-faint);
+  text-transform: uppercase;
+  flex-shrink: 0;
+}
+
+/* Comments */
+.bead-comments-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-bottom: 0.75rem;
+}
+
+.bead-comment {
+  background: var(--bg-card);
+  border: 1px solid var(--border-subtle);
+  border-radius: 6px;
+  padding: 8px 10px;
+}
+
+.bead-comment-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 4px;
+}
+
+.bead-comment-author {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-secondary);
+}
+
+.bead-comment-time {
+  font-size: 10px;
+  color: var(--text-faint);
+}
+
+.bead-comment-text {
+  font-size: 12px;
+  color: var(--text);
+  line-height: 1.5;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.bead-comment-form {
+  display: flex;
+  gap: 6px;
+}
+
+.bead-comment-form textarea {
+  flex: 1;
+  min-height: 36px;
+  max-height: 120px;
+  background: var(--bg-input);
+  color: var(--text);
+  border: 1px solid var(--border-btn);
+  border-radius: 6px;
+  padding: 6px 8px;
+  font-size: 12px;
+  font-family: inherit;
+  resize: vertical;
+}
+
+.bead-comment-form textarea:focus {
+  outline: none;
+  border-color: var(--btn-primary);
+}
+
+.bead-detail-assignee-input {
+  font-size: 11px;
+  padding: 2px 6px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--bg-card);
+  color: var(--text);
+  width: 120px;
+}
+
+.bead-detail-assignee-input:focus {
+  outline: none;
+  border-color: var(--btn-primary);
+}
+
+/* No comments placeholder */
+.bead-comments-empty {
+  font-size: 12px;
+  color: var(--text-faint);
+  text-align: center;
+  padding: 0.5rem;
+}
+
+/* =========================================================
    Chat-open split layout
    ========================================================= */
 

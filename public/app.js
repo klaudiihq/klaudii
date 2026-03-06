@@ -1455,7 +1455,7 @@ function renderBeads() {
     return `<div class="bead-row">
       <div class="bead-row-top">
         <span class="bead-id">${esc(b.id)}</span>
-        <span class="bead-title" onclick="toggleBeadDesc('${esc(b.id)}')">${esc(b.title)}</span>
+        <span class="bead-title" onclick="openBeadDetail('${esc(b.id)}')">${esc(b.title)}</span>
         <span class="bead-status ${esc(b.status || "open")}">${esc(statusLabel)}</span>
         <span class="bead-priority">${esc(priority)}</span>
         <span class="bead-assignee" title="${esc(assignee)}">${esc(assignee)}</span>
@@ -1529,8 +1529,185 @@ async function beadSetStatus(id, status) {
   try {
     await api(`/api/beads/${encodeURIComponent(id)}`, { method: "PATCH", body: { status } });
     refreshBeads();
+    if (currentDetailBeadId === id) openBeadDetail(id);
   } catch (err) {
     alert("Failed to update bead: " + err.message);
+  }
+}
+
+// --- Bead Detail Panel ---
+
+let currentDetailBeadId = null;
+
+async function openBeadDetail(beadId) {
+  currentDetailBeadId = beadId;
+  const overlay = document.getElementById("bead-detail-overlay");
+  const idEl = document.getElementById("bead-detail-id");
+  const bodyEl = document.getElementById("bead-detail-body");
+
+  overlay.classList.remove("hidden");
+  idEl.textContent = beadId;
+  bodyEl.innerHTML = '<div class="bead-detail-loading">Loading...</div>';
+
+  try {
+    const [bead, sessionsData] = await Promise.all([
+      api(`/api/beads/${encodeURIComponent(beadId)}`),
+      api(`/api/beads/${encodeURIComponent(beadId)}/sessions`),
+    ]);
+
+    const b = Array.isArray(bead) ? bead[0] : bead;
+    if (!b || b.error) {
+      bodyEl.innerHTML = `<div class="bead-detail-loading">${esc(b?.error || "Bead not found")}</div>`;
+      return;
+    }
+
+    const sessions = sessionsData.sessions || [];
+    const comments = b.comments || [];
+    const deps = b.dependents || [];
+
+    // Render description with markdown
+    let descHtml = "";
+    if (b.description) {
+      if (typeof marked !== "undefined" && marked.parse) {
+        descHtml = marked.parse(b.description);
+      } else {
+        descHtml = `<pre>${esc(b.description)}</pre>`;
+      }
+    }
+
+    // Status options
+    const statuses = ["open", "in_progress", "blocked", "closed"];
+    const statusOpts = statuses.map(s =>
+      `<option value="${s}"${s === b.status ? " selected" : ""}>${s.replace(/_/g, " ")}</option>`
+    ).join("");
+
+    // Priority options
+    const priorityOpts = [0,1,2,3,4].map(p =>
+      `<option value="${p}"${p === b.priority ? " selected" : ""}>P${p}</option>`
+    ).join("");
+
+    // Timestamps
+    const created = b.created_at ? new Date(b.created_at).toLocaleString() : "—";
+    const updated = b.updated_at ? new Date(b.updated_at).toLocaleString() : "—";
+
+    // Dependencies
+    let depsHtml = "";
+    if (deps.length) {
+      const depRows = deps.map(d => `
+        <div class="bead-detail-dep" onclick="openBeadDetail('${esc(d.id)}')" style="cursor:pointer">
+          <span class="bead-detail-dep-id">${esc(d.id)}</span>
+          <span class="bead-detail-dep-title">${esc(d.title)}</span>
+          <span class="bead-status ${esc(d.status || "open")}" style="font-size:9px;padding:1px 5px">${esc((d.status || "open").replace(/_/g, " "))}</span>
+          <span class="bead-detail-dep-type">${esc(d.dependency_type || "related")}</span>
+        </div>`).join("");
+      depsHtml = `
+        <div class="bead-detail-section">
+          <div class="bead-detail-section-title">Dependencies</div>
+          <div class="bead-detail-deps">${depRows}</div>
+        </div>`;
+    }
+
+    // Worker sessions
+    let sessionsHtml = "";
+    if (sessions.length) {
+      const rows = sessions.map(s => {
+        const statusCls = s.status === "running" ? "running" : s.status === "exited" ? "exited" : "stopped";
+        return `<div class="bead-session-row">
+          <span class="bead-session-workspace">${esc(s.workspace)}</span>
+          <span class="bead-session-num">${s.sessionNum != null ? `#${s.sessionNum}` : ""}</span>
+          <span class="bead-session-status ${statusCls}">${esc(s.status)}</span>
+          ${s.status === "running" ? `<button class="btn btn-xs danger" onclick="event.stopPropagation();stopSession('${esc(s.workspace)}')">Stop</button>` : ""}
+        </div>`;
+      }).join("");
+      sessionsHtml = `
+        <div class="bead-detail-section">
+          <div class="bead-detail-section-title">Worker Sessions</div>
+          ${rows}
+        </div>`;
+    }
+
+    // Comments
+    const commentsListHtml = comments.length
+      ? comments.map(c => `
+          <div class="bead-comment">
+            <div class="bead-comment-header">
+              <span class="bead-comment-author">${esc(c.author || "unknown")}</span>
+              <span class="bead-comment-time">${c.created_at ? new Date(c.created_at).toLocaleString() : ""}</span>
+            </div>
+            <div class="bead-comment-text">${esc(c.text || c.content || "")}</div>
+          </div>`).join("")
+      : '<div class="bead-comments-empty">No comments yet</div>';
+
+    bodyEl.innerHTML = `
+      <div class="bead-detail-title">${esc(b.title)}</div>
+
+      <div class="bead-detail-meta">
+        <span class="bead-detail-meta-label">Status</span>
+        <select onchange="beadDetailUpdate('${esc(b.id)}',{status:this.value})">${statusOpts}</select>
+        <span class="bead-detail-meta-label">Priority</span>
+        <select onchange="beadDetailUpdate('${esc(b.id)}',{priority:Number(this.value)})">${priorityOpts}</select>
+        <span class="bead-detail-meta-label">Assignee</span>
+        <input class="bead-detail-assignee-input" value="${esc(b.assignee || "")}" placeholder="unassigned"
+          onchange="beadDetailUpdate('${esc(b.id)}',{assignee:this.value})" />
+      </div>
+
+      <div class="bead-detail-timestamps">
+        <span>Created: ${esc(created)}</span>
+        <span>Updated: ${esc(updated)}</span>
+      </div>
+
+      ${b.description ? `
+        <div class="bead-detail-section">
+          <div class="bead-detail-section-title">Description</div>
+          <div class="bead-detail-desc">${descHtml}</div>
+        </div>` : ""}
+
+      ${depsHtml}
+      ${sessionsHtml}
+
+      <div class="bead-detail-section">
+        <div class="bead-detail-section-title">Comments (${comments.length})</div>
+        <div class="bead-comments-list">${commentsListHtml}</div>
+        <div class="bead-comment-form">
+          <textarea id="bead-comment-input" placeholder="Add a comment..." onkeydown="if(event.key==='Enter'&&event.metaKey){event.preventDefault();submitBeadComment('${esc(b.id)}')}"></textarea>
+          <button class="btn btn-sm primary" onclick="submitBeadComment('${esc(b.id)}')">Post</button>
+        </div>
+      </div>
+    `;
+  } catch (err) {
+    bodyEl.innerHTML = `<div class="bead-detail-loading">Error: ${esc(err.message)}</div>`;
+  }
+}
+
+function closeBeadDetail() {
+  currentDetailBeadId = null;
+  document.getElementById("bead-detail-overlay").classList.add("hidden");
+}
+
+function closeBeadDetailBackdrop(e) {
+  if (e.target === e.currentTarget) closeBeadDetail();
+}
+
+async function beadDetailUpdate(id, fields) {
+  try {
+    await api(`/api/beads/${encodeURIComponent(id)}`, { method: "PATCH", body: fields });
+    refreshBeads();
+    openBeadDetail(id);
+  } catch (err) {
+    alert("Failed to update bead: " + err.message);
+  }
+}
+
+async function submitBeadComment(id) {
+  const input = document.getElementById("bead-comment-input");
+  const text = input.value.trim();
+  if (!text) { input.focus(); return; }
+  try {
+    await api(`/api/beads/${encodeURIComponent(id)}`, { method: "PATCH", body: { comment: text } });
+    refreshBeads();
+    openBeadDetail(id);
+  } catch (err) {
+    alert("Failed to add comment: " + err.message);
   }
 }
 

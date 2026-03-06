@@ -849,7 +849,7 @@ module.exports = function createV1Router(deps) {
       }
 
       if (comment) {
-        execSync(`bd comment ${id} ${JSON.stringify(comment)} --allow-stale`, { encoding: "utf-8", cwd: bdCwd, timeout: 10000 });
+        execSync(`bd comments add ${id} ${JSON.stringify(comment)} --allow-stale`, { encoding: "utf-8", cwd: bdCwd, timeout: 10000 });
       }
 
       const out = execSync(`bd show ${id} --json --allow-stale`, { encoding: "utf-8", cwd: bdCwd, timeout: 10000 });
