@@ -385,7 +385,7 @@ h2 {
 }
 
 .card-status.running {
-  background: linear-gradient(to right, #86efac, #4ade80, #22c55e);
+  background: linear-gradient(to right, #15803d, #166534);
   color: #fff;
   font-weight: 500;
 }
