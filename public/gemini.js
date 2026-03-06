@@ -632,6 +632,12 @@ function handleGeminiEvent(event) {
       }
       // Stamp the assistant bubble with completion time
       geminiStampMessageTime(geminiCurrentMsgEl, Date.now());
+
+      // Finalize any orphaned running pills — tool_result events are emitted
+      // before "done", so any pills still showing "running" at this point
+      // never received their result (e.g. process stopped, relay crash).
+      geminiFinalizeOrphanedPills();
+
       geminiSetStreaming(false);
       geminiCurrentMsgEl = null;
       geminiCurrentMsgText = "";
@@ -1783,6 +1789,30 @@ function geminiUpdateToolResult(toolId, status, output, error) {
   }
 
   geminiScrollToBottom();
+}
+
+/**
+ * Finalize any tool pills still in "running" state.
+ * Called on "done" — tool_result events are emitted before "done", so any
+ * pills still running at this point never received their result.
+ */
+function geminiFinalizeOrphanedPills() {
+  const container = document.getElementById("gemini-messages");
+  if (!container) return;
+  const running = container.querySelectorAll(".gemini-tool.running");
+  if (!running.length) return;
+  glog(`finalizeOrphanedPills: ${running.length} orphaned pill(s)`);
+  for (const pill of running) {
+    pill.classList.remove("running");
+    pill.classList.add("success");
+    const spinner = pill.querySelector(".gemini-tool-spinner");
+    if (spinner) {
+      const icon = document.createElement("span");
+      icon.className = "gemini-tool-icon success";
+      icon.textContent = "\u2713";
+      spinner.replaceWith(icon);
+    }
+  }
 }
 
 function geminiEscHtml(str) {
