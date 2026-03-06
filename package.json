@@ -8,7 +8,8 @@
     "install-service": "./install.sh",
     "test": "vitest run",
     "test:watch": "vitest",
-    "test:contracts": "vitest run test/contracts/"
+    "test:contracts": "vitest run test/contracts/",
+    "test:e2e": "npx playwright test"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.27.1",
@@ -18,6 +19,7 @@
     "ws": "^8.19.0"
   },
   "devDependencies": {
+    "@playwright/test": "^1.58.2",
     "supertest": "^7.2.2",
     "vitest": "^4.0.18"
   },
