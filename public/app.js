@@ -1499,6 +1499,84 @@ document.getElementById("sessions-list").addEventListener("click", (e) => {
   openGeminiChat(project, projectPath, cli);
 });
 
+// --- Settings ---
+
+let currentSettings = null;
+
+function openSettingsModal() {
+  document.getElementById("settings-modal").classList.remove("hidden");
+  renderSettingsModal();
+}
+
+function closeSettingsModal() {
+  document.getElementById("settings-modal").classList.add("hidden");
+}
+
+function closeSettingsBackdrop(e) {
+  if (e.target.id === "settings-modal") closeSettingsModal();
+}
+
+async function renderSettingsModal() {
+  const body = document.getElementById("settings-modal-body");
+  try {
+    currentSettings = await api("/api/settings");
+  } catch {
+    currentSettings = { workerVisibility: "hide", theme: "dark" };
+  }
+
+  body.innerHTML = `
+    <div class="form-group">
+      <label>Worker workspace visibility</label>
+      <select id="setting-worker-visibility" class="settings-select" onchange="saveSettings()">
+        <option value="hide"${currentSettings.workerVisibility === "hide" ? " selected" : ""}>Hide</option>
+        <option value="show"${currentSettings.workerVisibility === "show" ? " selected" : ""}>Show</option>
+        <option value="auto-clean"${currentSettings.workerVisibility === "auto-clean" ? " selected" : ""}>Auto-clean</option>
+      </select>
+      <div class="form-hint">Controls visibility of worker-created workspaces on the dashboard.</div>
+    </div>
+    <div class="form-group">
+      <label>Theme preference</label>
+      <select id="setting-theme" class="settings-select" onchange="saveSettings()">
+        <option value="dark"${currentSettings.theme === "dark" ? " selected" : ""}>Dark</option>
+        <option value="light"${currentSettings.theme === "light" ? " selected" : ""}>Light</option>
+        <option value="auto"${currentSettings.theme === "auto" ? " selected" : ""}>Auto</option>
+      </select>
+      <div class="form-hint">Theme is also toggled via the quick-toggle in the header.</div>
+    </div>
+    <div id="settings-status" class="form-hint" style="margin-top:0.5rem"></div>
+  `;
+}
+
+async function saveSettings() {
+  const workerVisibility = document.getElementById("setting-worker-visibility").value;
+  const theme = document.getElementById("setting-theme").value;
+  const statusEl = document.getElementById("settings-status");
+
+  try {
+    currentSettings = await api("/api/settings", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ workerVisibility, theme }),
+    });
+    if (statusEl) statusEl.textContent = "Saved.";
+    applyThemeFromSettings(theme);
+  } catch (err) {
+    if (statusEl) statusEl.textContent = "Failed to save: " + err.message;
+  }
+}
+
+function applyThemeFromSettings(theme) {
+  let isLight;
+  if (theme === "auto") {
+    isLight = window.matchMedia("(prefers-color-scheme: light)").matches;
+  } else {
+    isLight = theme === "light";
+  }
+  document.documentElement.classList.toggle("light", isLight);
+  localStorage.setItem("klaudii-theme", isLight ? "light" : "dark");
+  document.getElementById("theme-toggle").textContent = isLight ? "\uD83C\uDF19" : "\u2600";
+}
+
 // --- Init ---
 
 if (localStorage.getItem("klaudii-theme") === "light") {

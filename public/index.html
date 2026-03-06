@@ -13,6 +13,7 @@
     <span id="status-badge" class="badge">checking...</span>
     <div id="auth-status" class="auth-box"></div>
     <button class="btn btn-sm" id="cloud-btn" onclick="openCloudModal()" style="margin-left:auto">Kloud Konnect</button>
+    <button class="btn-theme" id="settings-btn" onclick="openSettingsModal()" title="Settings">⚙</button>
     <button class="btn-theme" id="theme-toggle" onclick="toggleTheme()" title="Toggle light/dark">☀</button>
   </header>
 
@@ -224,6 +225,17 @@
         <button class="btn btn-sm" onclick="closeCloudModal()">X</button>
       </div>
       <div class="modal-body" id="cloud-modal-body"></div>
+    </div>
+  </div>
+
+  <!-- Settings Modal -->
+  <div id="settings-modal" class="modal-overlay hidden" onclick="closeSettingsBackdrop(event)">
+    <div class="modal">
+      <div class="modal-header">
+        <h2>Settings</h2>
+        <button class="btn btn-sm" onclick="closeSettingsModal()">X</button>
+      </div>
+      <div class="modal-body" id="settings-modal-body"></div>
     </div>
   </div>
 

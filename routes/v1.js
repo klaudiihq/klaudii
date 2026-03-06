@@ -678,6 +678,53 @@ module.exports = function createV1Router(deps) {
     });
   });
 
+  // --- User settings ---
+
+  const SETTINGS_DIR = path.join(
+    require("os").homedir(),
+    "Library",
+    "Application Support",
+    "com.klaudii.server"
+  );
+  const SETTINGS_PATH = path.join(SETTINGS_DIR, "settings.json");
+
+  const DEFAULT_SETTINGS = {
+    workerVisibility: "hide",   // "hide" | "show" | "auto-clean"
+    theme: "dark",              // "dark" | "light" | "auto"
+  };
+
+  function loadSettings() {
+    try {
+      const raw = fs.readFileSync(SETTINGS_PATH, "utf-8");
+      return { ...DEFAULT_SETTINGS, ...JSON.parse(raw) };
+    } catch {
+      return { ...DEFAULT_SETTINGS };
+    }
+  }
+
+  function saveSettings(settings) {
+    if (!fs.existsSync(SETTINGS_DIR)) {
+      fs.mkdirSync(SETTINGS_DIR, { recursive: true });
+    }
+    fs.writeFileSync(SETTINGS_PATH, JSON.stringify(settings, null, 2) + "\n");
+  }
+
+  router.get("/settings", (_req, res) => {
+    res.json(loadSettings());
+  });
+
+  router.patch("/settings", (req, res) => {
+    const current = loadSettings();
+    const allowed = ["workerVisibility", "theme"];
+    for (const key of allowed) {
+      if (req.body[key] !== undefined) {
+        current[key] = req.body[key];
+      }
+    }
+    saveSettings(current);
+    res.json(current);
+  });
+
   // --- Beads CRUD ---
   // bd commands run in the main repo directory (where .beads/ lives)
 

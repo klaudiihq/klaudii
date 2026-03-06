@@ -1424,6 +1424,29 @@ body.chatonly .gemini-panel {
 }
 
 /* =========================================================
+   Settings modal
+   ========================================================= */
+
+.settings-select {
+  width: 100%;
+  background: var(--bg-input);
+  color: var(--text);
+  border: 1px solid var(--border-btn);
+  border-radius: 6px;
+  padding: 0.5rem 0.75rem;
+  font-size: 0.9rem;
+  cursor: pointer;
+  -webkit-appearance: none;
+  appearance: none;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='10' viewBox='0 0 10 10'%3E%3Cpath d='M2 3.5l3 3 3-3' fill='none' stroke='%23888' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 10px center;
+}
+
+.settings-select:hover { border-color: var(--border-active); }
+.settings-select:focus { outline: none; border-color: var(--btn-primary); }
+
+/* =========================================================
    Utilities
    ========================================================= */
 
