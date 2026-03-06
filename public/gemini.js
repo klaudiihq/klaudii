@@ -619,7 +619,7 @@ function handleGeminiEvent(event) {
       geminiRemoveThinking();
       glog("handle: error message=" + (event.message || "?"));
       geminiAppendError(event.message || "Unknown error");
-      if (geminiStreaming) geminiSetStreaming(false);
+      geminiSetStreaming(false);
       break;
 
     case "done":
@@ -632,8 +632,7 @@ function handleGeminiEvent(event) {
       }
       // Stamp the assistant bubble with completion time
       geminiStampMessageTime(geminiCurrentMsgEl, Date.now());
-      // Only reset if still streaming (stop already resets immediately)
-      if (geminiStreaming) geminiSetStreaming(false);
+      geminiSetStreaming(false);
       geminiCurrentMsgEl = null;
       geminiCurrentMsgText = "";
 
@@ -2426,6 +2425,7 @@ async function geminiShowChat(wsState = null) {
       geminiOpenedWhileStreaming = false;
       const lastMsg = history[history.length - 1];
       if (lastMsg && lastMsg.role === "user") {
+        geminiSetStreaming(true);
         geminiStartStreamPoll(history.length);
         // Skip the geminiSetStreaming(false) below — poll completion handles it
         const input = document.getElementById("gemini-input");
