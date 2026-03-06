@@ -274,6 +274,16 @@ module.exports = function createV1Router(deps) {
       return res.status(409).json({ error: "Session already running" });
     }
 
+    // Clean worktree before starting session (only for worktree paths, not main repos)
+    const dotGitPath = path.join(proj.path, ".git");
+    if (fs.existsSync(dotGitPath) && fs.statSync(dotGitPath).isFile()) {
+      try {
+        git.cleanWorktree(proj.path);
+      } catch (err) {
+        console.error(`[sessions/start] Failed to clean worktree: ${err.message}`);
+      }
+    }
+
     const startTs = Date.now();
 
     try {
@@ -572,6 +582,12 @@ module.exports = function createV1Router(deps) {
       }
 
       git.addWorktree(repoDir, worktreeDir, branchName);
+
+      // Verify clean state after worktree creation
+      const wtStatus = git.getStatus(worktreeDir);
+      if (wtStatus && wtStatus.dirtyFiles > 0) {
+        console.warn(`[sessions/new] Worktree ${worktreeDir} has ${wtStatus.dirtyFiles} dirty files after creation`);
+      }
 
       try {
         projects.addProject(projectName, worktreeDir);
