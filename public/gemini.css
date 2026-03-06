@@ -443,6 +443,79 @@ summary.gemini-tool-summary::marker { display: none; }
   border-left: 3px solid var(--s-red);
 }
 
+/* --- Grouped tool pills --- */
+
+.gemini-tool-group-count {
+  font-size: 0.78rem;
+  color: var(--text-dim);
+}
+
+.gemini-tool-group-items {
+  padding: 0.15rem 0.5rem 0.3rem;
+}
+
+.gemini-tool-sub {
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  margin: 0.15rem 0;
+  font-size: 0.75rem;
+}
+
+.gemini-tool-sub-summary {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.2rem 0.45rem;
+  color: var(--text-muted);
+  cursor: pointer;
+  list-style: none;
+  min-height: 22px;
+}
+
+.gemini-tool-sub-summary::-webkit-details-marker { display: none; }
+.gemini-tool-sub-summary::marker { display: none; }
+
+.gemini-tool-sub-summary::before {
+  content: "\25b8";
+  font-size: 0.6rem;
+  color: var(--text-faint);
+  flex-shrink: 0;
+  transition: transform 0.15s;
+}
+
+.gemini-tool-sub[open] > .gemini-tool-sub-summary::before {
+  transform: rotate(90deg);
+}
+
+.gemini-tool-sub.running > .gemini-tool-sub-summary::before {
+  display: none;
+}
+
+.gemini-tool-sub-desc {
+  font-family: ui-monospace, monospace;
+  font-size: 0.72rem;
+  color: var(--text-dim);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+}
+
+.gemini-tool-sub .gemini-tool-section {
+  border-top: 1px solid var(--border);
+  padding: 0.25rem 0.45rem;
+  max-height: 150px;
+}
+
+.gemini-tool-sub .gemini-tool-spinner {
+  width: 8px;
+  height: 8px;
+}
+
+.gemini-tool-sub .gemini-tool-icon {
+  font-size: 0.7rem;
+}
+
 /* --- Error messages --- */
 
 .gemini-msg.error {

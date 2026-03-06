@@ -1255,6 +1255,174 @@ function geminiToolDescription(name, params) {
   }
 }
 
+// --- Tool grouping helpers ---
+
+function geminiGroupItemLabel(toolName, count) {
+  const n = (toolName || "").toLowerCase().replace(/_/g, "");
+  switch (n) {
+    case "read": case "readfile": return count + " file" + (count !== 1 ? "s" : "");
+    case "write": case "writefile": return count + " file" + (count !== 1 ? "s" : "");
+    case "edit": case "editfile": return count + " edit" + (count !== 1 ? "s" : "");
+    case "bash": case "shell": case "runcommand": return count + " command" + (count !== 1 ? "s" : "");
+    case "grep": case "search": case "searchfiles": return count + " search" + (count !== 1 ? "es" : "");
+    case "glob": case "listfiles": return count + " pattern" + (count !== 1 ? "s" : "");
+    default: return count + " call" + (count !== 1 ? "s" : "");
+  }
+}
+
+function geminiIsGroupableTool(toolName) {
+  if (!toolName) return false;
+  if (/^(ExitPlanMode|EnterPlanMode)$/i.test(toolName)) return false;
+  if (/ask.*question|askfollowup|ask_followup/i.test(toolName)) return false;
+  return true;
+}
+
+function geminiCreateToolGroup(toolName, isRunning) {
+  const group = document.createElement("details");
+  group.open = true;
+  group.className = `gemini-tool gemini-tool-group${isRunning ? " running" : ""}`;
+  group.dataset.toolName = toolName;
+  group.addEventListener("toggle", () => { if (!group.open) group.open = true; });
+
+  const summary = document.createElement("summary");
+  summary.className = "gemini-tool-summary";
+  summary.innerHTML =
+    (isRunning ? `<span class="gemini-tool-spinner"></span>` : "") +
+    `<span class="gemini-tool-name">${geminiEscHtml(toolName)}</span>` +
+    `<span class="gemini-tool-group-count"></span>`;
+  group.appendChild(summary);
+
+  const itemsDiv = document.createElement("div");
+  itemsDiv.className = "gemini-tool-group-items";
+  group.appendChild(itemsDiv);
+
+  return group;
+}
+
+function geminiMakeSubItem(toolName, toolId, params, isRunning, status, output) {
+  const isError = status === "error";
+  const sub = document.createElement("details");
+  sub.className = `gemini-tool-sub${isRunning ? " running" : (isError ? " error" : " success")}`;
+  sub.dataset.toolId = toolId || "";
+  sub.dataset.toolName = toolName || "";
+
+  const desc = geminiToolDescription(toolName, params);
+  const summary = document.createElement("summary");
+  summary.className = "gemini-tool-sub-summary";
+  if (isRunning) {
+    summary.innerHTML = `<span class="gemini-tool-spinner"></span>`;
+  } else {
+    const iconChar = isError ? "\u2717" : "\u2713";
+    summary.innerHTML = `<span class="gemini-tool-icon ${isError ? "error" : "success"}">${iconChar}</span>`;
+  }
+  summary.innerHTML += `<span class="gemini-tool-sub-desc">${geminiEscHtml(desc || toolName || "")}</span>`;
+  sub.appendChild(summary);
+
+  if (!isRunning && !isError && /^edit$/i.test(toolName) && params && params.old_string != null) {
+    geminiRenderEditDiffFromParams(sub, params);
+  } else {
+    const paramsStr = typeof params === "object" ? JSON.stringify(params, null, 2) : String(params || "");
+    if (paramsStr && paramsStr !== "{}") {
+      const sec = document.createElement("div");
+      sec.className = "gemini-tool-section";
+      sec.innerHTML = `<div class="gemini-tool-section-label">Parameters</div>`;
+      const pre = document.createElement("pre");
+      pre.textContent = paramsStr;
+      sec.appendChild(pre);
+      sub.appendChild(sec);
+    }
+  }
+
+  if (!isRunning) {
+    const trimmed = (output || "").trim();
+    if (trimmed && !(!isError && /^edit$/i.test(toolName) && params?.old_string != null)) {
+      const sec = document.createElement("div");
+      sec.className = "gemini-tool-section";
+      sec.innerHTML = `<div class="gemini-tool-section-label">${isError ? "Error" : "Output"}</div>`;
+      const pre = document.createElement("pre");
+      pre.textContent = trimmed.length > 5000 ? trimmed.slice(0, 5000) + "\n...(truncated)" : trimmed;
+      sec.appendChild(pre);
+      sub.appendChild(sec);
+    }
+  }
+
+  return sub;
+}
+
+function geminiUpdateGroupSummary(groupEl) {
+  const items = groupEl.querySelectorAll(":scope > .gemini-tool-group-items > .gemini-tool-sub");
+  const total = items.length;
+  let errors = 0, running = 0;
+  items.forEach(item => {
+    if (item.classList.contains("running")) running++;
+    else if (item.classList.contains("error")) errors++;
+  });
+
+  const toolName = groupEl.dataset.toolName;
+  const countEl = groupEl.querySelector(":scope > .gemini-tool-summary .gemini-tool-group-count");
+  if (countEl) {
+    let text = geminiGroupItemLabel(toolName, total);
+    if (errors > 0 && running === 0) text += ` (${errors} error${errors > 1 ? "s" : ""})`;
+    countEl.textContent = text;
+  }
+
+  const summary = groupEl.querySelector(":scope > .gemini-tool-summary");
+  if (running === 0) {
+    groupEl.classList.remove("running");
+    const isAllError = errors > 0 && errors === total;
+    groupEl.classList.add(isAllError ? "error" : "success");
+    const spinner = summary?.querySelector(".gemini-tool-spinner");
+    if (spinner) {
+      const icon = document.createElement("span");
+      icon.className = `gemini-tool-icon ${isAllError ? "error" : "success"}`;
+      icon.textContent = isAllError ? "\u2717" : "\u2713";
+      spinner.replaceWith(icon);
+    } else if (summary && !summary.querySelector(".gemini-tool-icon")) {
+      const icon = document.createElement("span");
+      icon.className = `gemini-tool-icon ${isAllError ? "error" : "success"}`;
+      icon.textContent = isAllError ? "\u2717" : "\u2713";
+      const nameEl = summary.querySelector(".gemini-tool-name");
+      if (nameEl) summary.insertBefore(icon, nameEl);
+      else summary.prepend(icon);
+    }
+  }
+}
+
+function geminiUpdateSubItemResult(subItem, status, output, error) {
+  const isError = status === "error" || !!error;
+  subItem.classList.remove("running");
+  subItem.classList.add(isError ? "error" : "success");
+
+  const summary = subItem.querySelector(".gemini-tool-sub-summary");
+  const spinner = summary?.querySelector(".gemini-tool-spinner");
+  if (spinner) {
+    const icon = document.createElement("span");
+    icon.className = `gemini-tool-icon ${isError ? "error" : "success"}`;
+    icon.textContent = isError ? "\u2717" : "\u2713";
+    spinner.replaceWith(icon);
+  }
+
+  const toolName = subItem.dataset.toolName || "";
+
+  if (!isError && /^edit$/i.test(toolName)) {
+    geminiRenderEditDiff(subItem);
+  }
+
+  const trimmed = (error || output || "").trim();
+  if (trimmed && !(!isError && /^edit$/i.test(toolName))) {
+    const sec = document.createElement("div");
+    sec.className = "gemini-tool-section";
+    sec.innerHTML = `<div class="gemini-tool-section-label">${isError ? "Error" : "Output"}</div>`;
+    const pre = document.createElement("pre");
+    pre.textContent = trimmed.length > 5000 ? trimmed.slice(0, 5000) + "\n...(truncated)" : trimmed;
+    sec.appendChild(pre);
+    subItem.appendChild(sec);
+  }
+
+  const groupEl = subItem.closest(".gemini-tool-group");
+  if (groupEl) geminiUpdateGroupSummary(groupEl);
+}
+
 function geminiShowApprovalPrompt(event) {
   const container = document.getElementById("gemini-messages");
   const div = document.createElement("div");
@@ -1368,12 +1536,43 @@ function geminiRenderCompletedQuestion(params, output, status) {
 
 function geminiRenderCompletedTool(toolName, toolId, params, status, output) {
   const container = document.getElementById("gemini-messages");
+
+  // Check if we can group with previous element
+  if (geminiIsGroupableTool(toolName)) {
+    const lastEl = container.lastElementChild;
+    if (lastEl && lastEl.dataset.toolName === toolName) {
+      if (lastEl.classList.contains("gemini-tool-group")) {
+        const itemsDiv = lastEl.querySelector(".gemini-tool-group-items");
+        itemsDiv.appendChild(geminiMakeSubItem(toolName, toolId, params, false, status, output));
+        geminiUpdateGroupSummary(lastEl);
+        geminiScrollToBottom();
+        return;
+      }
+      if (lastEl.classList.contains("gemini-tool") && !lastEl.classList.contains("gemini-tool-group")) {
+        const group = geminiCreateToolGroup(toolName, false);
+        const itemsDiv = group.querySelector(".gemini-tool-group-items");
+        itemsDiv.appendChild(geminiMakeSubItem(
+          lastEl.dataset.toolName, lastEl.dataset.toolId,
+          lastEl._toolParams || {}, false, lastEl._toolStatus || "success", lastEl._toolOutput || ""
+        ));
+        itemsDiv.appendChild(geminiMakeSubItem(toolName, toolId, params, false, status, output));
+        geminiUpdateGroupSummary(group);
+        container.replaceChild(group, lastEl);
+        geminiScrollToBottom();
+        return;
+      }
+    }
+  }
+
   const isError = status === "error";
   const pill = document.createElement("details");
   pill.open = true;
   pill.className = `gemini-tool ${isError ? "error" : "success"}`;
   pill.dataset.toolId = toolId || "";
   pill.dataset.toolName = toolName || "";
+  pill._toolParams = params;
+  pill._toolOutput = output || "";
+  pill._toolStatus = status;
   pill.addEventListener("toggle", () => { if (!pill.open) pill.open = true; });
 
   const desc = geminiToolDescription(toolName, params);
@@ -1425,11 +1624,43 @@ function geminiRenderCompletedTool(toolName, toolId, params, status, output) {
  */
 function geminiAppendToolUse(toolName, toolId, params) {
   const container = document.getElementById("gemini-messages");
+
+  // Check if we can group with previous element
+  if (geminiIsGroupableTool(toolName)) {
+    const lastEl = container.lastElementChild;
+    if (lastEl && lastEl.dataset.toolName === toolName) {
+      if (lastEl.classList.contains("gemini-tool-group")) {
+        const itemsDiv = lastEl.querySelector(".gemini-tool-group-items");
+        itemsDiv.appendChild(geminiMakeSubItem(toolName, toolId, params, true, null, null));
+        geminiUpdateGroupSummary(lastEl);
+        geminiScrollToBottom();
+        return;
+      }
+      if (lastEl.classList.contains("gemini-tool") && !lastEl.classList.contains("gemini-tool-group")) {
+        const group = geminiCreateToolGroup(toolName, true);
+        const itemsDiv = group.querySelector(".gemini-tool-group-items");
+        const existingRunning = lastEl.classList.contains("running");
+        const existingStatus = existingRunning ? null : (lastEl.classList.contains("error") ? "error" : "success");
+        itemsDiv.appendChild(geminiMakeSubItem(
+          lastEl.dataset.toolName, lastEl.dataset.toolId,
+          lastEl._toolParams || {}, existingRunning, existingStatus,
+          existingRunning ? null : (lastEl._toolOutput || "")
+        ));
+        itemsDiv.appendChild(geminiMakeSubItem(toolName, toolId, params, true, null, null));
+        geminiUpdateGroupSummary(group);
+        container.replaceChild(group, lastEl);
+        geminiScrollToBottom();
+        return;
+      }
+    }
+  }
+
   const pill = document.createElement("details");
   pill.open = true;
   pill.className = "gemini-tool running";
   pill.dataset.toolId = toolId;
   pill.dataset.toolName = toolName;
+  pill._toolParams = params;
   pill.addEventListener("toggle", () => { if (!pill.open) pill.open = true; });
 
   const desc = geminiToolDescription(toolName, params);
@@ -1463,6 +1694,16 @@ function geminiAppendToolUse(toolName, toolId, params) {
 function geminiUpdateToolResult(toolId, status, output, error) {
   const container = document.getElementById("gemini-messages");
 
+  // Check if tool is a sub-item in a group
+  if (toolId) {
+    const subItem = container.querySelector(`.gemini-tool-group .gemini-tool-sub[data-tool-id="${CSS.escape(toolId)}"]`);
+    if (subItem) {
+      geminiUpdateSubItemResult(subItem, status, output, error);
+      geminiScrollToBottom();
+      return;
+    }
+  }
+
   // Find by tool_id first, fall back to last running pill
   let pill = toolId
     ? container.querySelector(`.gemini-tool.running[data-tool-id="${CSS.escape(toolId)}"]`)
@@ -1477,6 +1718,8 @@ function geminiUpdateToolResult(toolId, status, output, error) {
   if (pill) {
     pill.classList.remove("running");
     pill.classList.add(isError ? "error" : "success");
+    pill._toolOutput = (error || output || "");
+    pill._toolStatus = isError ? "error" : "success";
 
     // Replace spinner with status icon
     const summaryEl = pill.querySelector(".gemini-tool-summary");
