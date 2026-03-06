@@ -153,6 +153,21 @@
   word-break: break-word;
 }
 
+.gemini-msg.user .user-bubble.bubble-architect {
+  background: #166534;
+}
+
+.gemini-msg.user .user-bubble.bubble-shepherd {
+  background: #92400e;
+}
+
+.bubble-sender-label {
+  font-size: 0.7rem;
+  font-weight: 600;
+  opacity: 0.8;
+  margin-bottom: 0.15rem;
+}
+
 .gemini-msg.assistant {
   max-width: 100%;
   color: var(--text-dim);

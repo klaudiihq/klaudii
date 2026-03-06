@@ -527,8 +527,8 @@ wss.on("connection", (ws) => {
       if (backend === "claude" && claudeChat.isActive(workspace)) {
         workspaceState.touchChatActivity(workspace);
         workspaceState.setStreaming(workspace, true);
-        claudeChat.pushHistory(workspace, "user", message);
-        broadcastToWorkspace(workspace, { type: "user_message", workspace, content: message, ts: Date.now() }, clientId);
+        claudeChat.pushHistory(workspace, "user", message, { sender: msg.sender || "user" });
+        broadcastToWorkspace(workspace, { type: "user_message", workspace, content: message, sender: msg.sender || "user", ts: Date.now() }, clientId);
         broadcastToWorkspace(workspace, { type: "streaming_start", workspace }, clientId);
         claudeChat.appendMessage(workspace, message);
         return;
@@ -548,10 +548,10 @@ wss.on("connection", (ws) => {
         pendingWorkspaces.add(workspace);
 
         // Persist user message
-        backendModule.pushHistory(workspace, "user", message);
+        backendModule.pushHistory(workspace, "user", message, { sender: msg.sender || "user" });
 
         // Notify other windows about the user message and streaming start
-        broadcastToWorkspace(workspace, { type: "user_message", workspace, content: message, ts: Date.now() }, clientId);
+        broadcastToWorkspace(workspace, { type: "user_message", workspace, content: message, sender: msg.sender || "user", ts: Date.now() }, clientId);
         broadcastToWorkspace(workspace, { type: "streaming_start", workspace }, clientId);
 
         // Resolve API key: per-workspace > global

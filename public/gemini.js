@@ -691,8 +691,8 @@ function handleGeminiEvent(event) {
       // Another window sent a message — render the user bubble
       glog("handle: user_message from another window");
       if (!geminiHistory[event.workspace]) geminiHistory[event.workspace] = [];
-      geminiHistory[event.workspace].push({ role: "user", content: event.content });
-      geminiAppendMessage("user", event.content, false, null, event.ts);
+      geminiHistory[event.workspace].push({ role: "user", content: event.content, sender: event.sender });
+      geminiAppendMessage("user", event.content, false, null, event.ts, event.sender);
       // Clear input since the message was sent
       const input = document.getElementById("gemini-input");
       if (input) {
@@ -1142,14 +1142,15 @@ function geminiShowToolQuestions(id, questions, toolInput, isPermissionRequest) 
 
 // --- DOM rendering ---
 
-function geminiAppendMessage(role, content, streaming, images, ts) {
+function geminiAppendMessage(role, content, streaming, images, ts, sender) {
   const container = document.getElementById("gemini-messages");
   const div = document.createElement("div");
   div.className = `gemini-msg ${role}${streaming ? " gemini-streaming" : ""}`;
 
   if (role === "user") {
     const bubble = document.createElement("div");
-    bubble.className = "user-bubble";
+    const senderClass = sender === "architect" ? " bubble-architect" : sender === "shepherd" ? " bubble-shepherd" : "";
+    bubble.className = "user-bubble" + senderClass;
     // Render any attached images above the message text
     if (images && images.length) {
       const imgRow = document.createElement("div");
@@ -1162,6 +1163,12 @@ function geminiAppendMessage(role, content, streaming, images, ts) {
         imgRow.appendChild(im);
       });
       bubble.appendChild(imgRow);
+    }
+    if (sender === "architect" || sender === "shepherd") {
+      const label = document.createElement("div");
+      label.className = "bubble-sender-label";
+      label.textContent = sender.charAt(0).toUpperCase() + sender.slice(1);
+      bubble.appendChild(label);
     }
     const textNode = document.createElement("span");
     textNode.textContent = content;
@@ -1977,7 +1984,7 @@ async function geminiRenderRecoveredContent() {
           }
         } catch {}
       } else {
-        geminiAppendMessage(msg.role, msg.content, false, null, msg.ts);
+        geminiAppendMessage(msg.role, msg.content, false, null, msg.ts, msg.sender);
       }
     }
     for (const tu of pendingToolUses.values()) geminiAppendToolUse(tu.tool_name, tu.tool_id, tu.parameters);
@@ -2055,7 +2062,7 @@ function geminiStartStreamPoll(historyLengthAtOpen) {
               }
             } catch { /* ignore */ }
           } else {
-            geminiAppendMessage(msg.role, msg.content, false, null, msg.ts);
+            geminiAppendMessage(msg.role, msg.content, false, null, msg.ts, msg.sender);
           }
         }
         for (const tu of pendingToolUses.values()) {
@@ -2126,7 +2133,7 @@ async function geminiShowChat(wsState = null) {
         // Render non-tool messages immediately but keep pendingToolUses alive —
         // tool_result may arrive after intervening assistant/user messages due to
         // batch boundaries from synthetic result events.
-        geminiAppendMessage(msg.role, msg.content, false, null, msg.ts);
+        geminiAppendMessage(msg.role, msg.content, false, null, msg.ts, msg.sender);
       }
     }
     // Flush any tool_uses that never got a result.
