@@ -118,8 +118,8 @@ async function geminiFetchSessions(workspace) {
       select.appendChild(opt);
     }
 
-    // Show selector once there's at least 1 session
-    select.classList.toggle("hidden", sessions.length < 1);
+    // Show selector only when there are 2+ sessions (nothing to switch with just 1)
+    select.classList.toggle("hidden", sessions.length < 2);
 
     return data;
   } catch {
