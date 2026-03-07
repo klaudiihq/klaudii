@@ -523,16 +523,106 @@ function geminiConnect() {
   };
 }
 
+let geminiServerConnected = true; // unified connection state
+
 function geminiUpdateStatus(connected) {
   const el = document.getElementById("gemini-status");
-  if (!el) return;
-  if (connected) {
-    el.textContent = "connected";
-    el.className = "gemini-bar-status connected";
-  } else {
-    el.textContent = "disconnected";
-    el.className = "gemini-bar-status";
+  const wasConnected = geminiServerConnected;
+  geminiServerConnected = connected;
+
+  if (el) {
+    if (connected) {
+      el.textContent = "connected";
+      el.className = "gemini-bar-status connected";
+    } else {
+      el.textContent = "disconnected";
+      el.className = "gemini-bar-status";
+    }
   }
+
+  const input = document.getElementById("gemini-input");
+  const sendBtn = document.getElementById("gemini-send");
+
+  const inputCard = input ? input.closest(".gemini-input-card") : null;
+
+  if (connected) {
+    // Re-enable input
+    if (input && !geminiStreaming) {
+      input.disabled = false;
+      input.placeholder = geminiActiveCli === "claude" ? "Message Claude\u2026" : "Message Gemini\u2026";
+    }
+    if (sendBtn && !geminiStreaming) sendBtn.disabled = false;
+    if (inputCard) inputCard.classList.remove("disconnected");
+
+    // Remove disconnect banner
+    const banner = document.getElementById("gemini-disconnect-banner");
+    if (banner) banner.remove();
+
+    // Show "Reconnected" toast briefly (only if was previously disconnected)
+    if (!wasConnected) {
+      geminiShowReconnectedToast();
+      // Restore draft from localStorage
+      geminiRestoreDraftFromLocal();
+    }
+  } else {
+    // Disable input so users don't type into a dead connection
+    if (input) {
+      input.disabled = true;
+      input.placeholder = "Server disconnected\u2026";
+    }
+    if (sendBtn) sendBtn.disabled = true;
+    if (inputCard) inputCard.classList.add("disconnected");
+
+    // Save draft to localStorage so it survives page reload
+    geminiSaveDraftToLocal();
+
+    // Show disconnect banner in the chat area
+    geminiShowDisconnectBanner();
+  }
+}
+
+function geminiSaveDraftToLocal() {
+  const input = document.getElementById("gemini-input");
+  if (!input || !input.value.trim()) return;
+  const key = `klaudii-draft-${geminiWorkspace || "global"}`;
+  localStorage.setItem(key, input.value);
+}
+
+function geminiRestoreDraftFromLocal() {
+  const input = document.getElementById("gemini-input");
+  if (!input || !geminiWorkspace) return;
+  const key = `klaudii-draft-${geminiWorkspace}`;
+  const saved = localStorage.getItem(key);
+  if (saved && !input.value.trim()) {
+    input.value = saved;
+    // Auto-resize
+    input.style.height = "auto";
+    input.style.height = Math.min(input.scrollHeight, 256) + "px";
+  }
+  localStorage.removeItem(key);
+}
+
+function geminiShowDisconnectBanner() {
+  if (document.getElementById("gemini-disconnect-banner")) return;
+  const container = document.getElementById("gemini-messages");
+  if (!container) return;
+  const banner = document.createElement("div");
+  banner.id = "gemini-disconnect-banner";
+  banner.className = "gemini-disconnect-banner";
+  banner.textContent = "Server disconnected — reconnecting\u2026";
+  container.appendChild(banner);
+  geminiScrollToBottom();
+}
+
+function geminiShowReconnectedToast() {
+  const container = document.getElementById("gemini-messages");
+  if (!container) return;
+  const toast = document.createElement("div");
+  toast.className = "gemini-reconnected-toast";
+  toast.textContent = "Reconnected";
+  container.appendChild(toast);
+  geminiScrollToBottom();
+  setTimeout(() => toast.remove(), 3000);
 }
 
 // --- Event handling ---
@@ -2836,6 +2926,11 @@ function geminiInputKeydown(event) {
 }
 
 function sendGeminiMessage() {
+  if (!geminiServerConnected) {
+    glog("send: blocked (server disconnected)");
+    return;
+  }
+
   const input = document.getElementById("gemini-input");
   const message = input.value.trim();
   if (!message) {
