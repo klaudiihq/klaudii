@@ -3,6 +3,7 @@
 
 const express = require("express");
 const path = require("path");
+const { WebSocketServer } = require("ws");
 
 const mockSessions = [
   {
@@ -57,8 +58,30 @@ const mockBeads = [
 ];
 
 const mockSchedulerTasks = [
-  { name: "shepherd", intervalMs: 300000, paused: false, lastRun: Date.now() - 120000, nextRun: Date.now() + 180000 },
+  { name: "shepherd", intervalMs: 300000, enabled: true, running: false, lastRunAt: new Date(Date.now() - 120000).toISOString(), lastResult: "ok", lastError: null },
 ];
+
+const mockSettings = { workerVisibility: "hide", theme: "dark" };
+
+const mockChatHistory = {
+  "nova-frontend": [
+    { role: "user", content: "Add dark mode support", ts: Date.now() - 60000 },
+    { role: "assistant", content: "I'll add dark mode support to the app. Let me start by creating a theme toggle.", ts: Date.now() - 55000 },
+  ],
+  "aurora-api": [
+    { role: "user", content: "Fix the auth middleware", ts: Date.now() - 30000 },
+    { role: "assistant", content: "I'll review the auth middleware and fix the issue.", ts: Date.now() - 25000 },
+  ],
+};
+
+const mockWorkspaceStates = {};
+
+function getWorkspaceState(workspace) {
+  if (!mockWorkspaceStates[workspace]) {
+    mockWorkspaceStates[workspace] = { mode: "claude-local", streaming: false, draft: "", pendingPermission: null, sessionNum: 1 };
+  }
+  return mockWorkspaceStates[workspace];
+}
 
 function createTestServer() {
   const app = express();
@@ -104,11 +127,33 @@ function createTestServer() {
   });
 
   app.get("/api/workspace-state/:workspace", (req, res) => {
-    res.json({ mode: "claude-local", streaming: false, draft: "", pendingPermission: null });
+    res.json(getWorkspaceState(req.params.workspace));
   });
 
   app.patch("/api/workspace-state/:workspace", (req, res) => {
-    res.json({ ok: true });
+    const state = getWorkspaceState(req.params.workspace);
+    Object.assign(state, req.body);
+    res.json(state);
+  });
+
+  // Settings
+  app.get("/api/settings", (_req, res) => res.json({ ...mockSettings }));
+  app.patch("/api/settings", (req, res) => {
+    Object.assign(mockSettings, req.body);
+    res.json({ ...mockSettings });
+  });
+
+  // Projects list (for gemini.js workspace picker)
+  app.get("/api/projects", (_req, res) => {
+    res.json(mockSessions.map((s) => ({ name: s.project, path: s.path })));
+  });
+
+  // Chat stop
+  app.post("/api/chat/:project/stop", (req, res) => res.json({ ok: true }));
+
+  // Agent chat start
+  app.post("/api/agent-chat/:role/start", (req, res) => {
+    res.json({ ok: true, workspace: `agent-${req.params.role}`, workspacePath: "/tmp/agent" });
   });
 
   app.get("/api/history", (_req, res) => res.json([]));
@@ -149,8 +194,25 @@ function createTestServer() {
   app.patch("/api/beads/:id", (req, res) => {
     const bead = mockBeads.find((b) => b.id === req.params.id);
     if (!bead) return res.status(404).json({ error: "not found" });
+    // Support comment field — append to description for mock
+    if (req.body.comment) {
+      bead.description = (bead.description || "") + "\n---\n" + req.body.comment;
+      delete req.body.comment;
+    }
     Object.assign(bead, req.body);
     res.json(bead);
+  });
+
+  // Bead sessions (workers assigned to bead)
+  app.get("/api/beads/:id/sessions", (req, res) => {
+    const bead = mockBeads.find((b) => b.id === req.params.id);
+    if (!bead) return res.status(404).json({ error: "not found" });
+    // Return mock sessions for in_progress beads
+    if (bead.status === "in_progress" && bead.assignee) {
+      res.json([{ workspace: `bead-${bead.id}`, status: "running", assignee: bead.assignee }]);
+    } else {
+      res.json([]);
+    }
   });
 
   // GitHub repos (for new session modal)
@@ -200,25 +262,101 @@ function createTestServer() {
 
   // Cloud / Gemini / Claude-chat stubs
   app.get("/api/cloud/status", (_req, res) => res.json({ paired: false, connected: false }));
+  app.get("/api/cloud/connection-key", (_req, res) => res.json({ key: "test-key-123" }));
+  app.post("/api/cloud/pair", (req, res) => res.json({ ok: true }));
+  app.post("/api/cloud/unpair", (req, res) => res.json({ ok: true }));
   app.get("/api/gemini/status", (_req, res) => res.json({ installed: false }));
   app.get("/api/gemini/sessions/:project", (_req, res) => res.json({ sessions: [], current: 0, active: false }));
   app.get("/api/gemini/history/:project", (_req, res) => res.json([]));
   app.get("/api/gemini/quota", (_req, res) => res.json({ buckets: [] }));
   app.get("/api/gemini/models", (_req, res) => res.json([]));
+  app.get("/api/gemini/apikey/:project", (_req, res) => res.json({ hasKey: false }));
+  app.get("/api/gemini/stream-partial/:workspace", (_req, res) => res.json({ content: "", done: false }));
+  app.post("/api/gemini/auth/login", (_req, res) => res.json({ ok: true }));
+  app.post("/api/gemini/auth/recheck", (_req, res) => res.json({ ok: true, loggedIn: false }));
+  app.post("/api/gemini/:workspace/confirm", (_req, res) => res.json({ ok: true }));
   app.get("/api/claude-chat/status", (_req, res) => res.json({ installed: true }));
-  app.get("/api/claude-chat/sessions/:project", (_req, res) => res.json({ sessions: [], current: 0, active: false }));
-  app.get("/api/claude-chat/history/:project", (_req, res) => res.json([]));
+  app.get("/api/claude-chat/sessions/:project", (req, res) => {
+    const project = req.params.project;
+    const history = mockChatHistory[project];
+    res.json({ sessions: history ? [1] : [], current: history ? 1 : 0, active: false });
+  });
+  app.get("/api/claude-chat/history/:project", (req, res) => {
+    const project = req.params.project;
+    res.json(mockChatHistory[project] || []);
+  });
   app.get("/api/claude-chat/models", (_req, res) => res.json(["claude-sonnet-4-6"]));
+  app.get("/api/claude-chat/apikey/:project", (_req, res) => res.json({ hasKey: false }));
   app.get("/api/setup/status", (_req, res) => res.json({ ready: true, limpMode: false, deps: {} }));
+  app.post("/api/repos/create", (req, res) => res.json({ ok: true, name: req.body.name }));
 
-  return { app, mockSessions, mockBeads, mockSchedulerTasks };
+  return { app, mockSessions, mockBeads, mockSchedulerTasks, mockChatHistory, mockSettings };
+}
+
+function attachWebSocket(server) {
+  const wss = new WebSocketServer({ server, path: "/ws/gemini" });
+
+  wss.on("connection", (ws) => {
+    // Send a mock response when a message is sent
+    ws.on("message", (raw) => {
+      let msg;
+      try { msg = JSON.parse(raw); } catch { return; }
+
+      if (msg.type === "send") {
+        // Acknowledge
+        ws.send(JSON.stringify({ type: "ack", workspace: msg.workspace, status: "received" }));
+
+        // Simulate assistant response with tool_use and message
+        setTimeout(() => {
+          ws.send(JSON.stringify({
+            type: "tool_use",
+            workspace: msg.workspace,
+            tool_name: "Read",
+            tool_id: "tool_001",
+            parameters: { file_path: "/src/app.js" },
+          }));
+        }, 50);
+
+        setTimeout(() => {
+          ws.send(JSON.stringify({
+            type: "tool_result",
+            workspace: msg.workspace,
+            tool_id: "tool_001",
+            tool_name: "Read",
+            status: "success",
+            output: "file contents here",
+          }));
+        }, 100);
+
+        setTimeout(() => {
+          ws.send(JSON.stringify({
+            type: "message",
+            workspace: msg.workspace,
+            role: "assistant",
+            content: `Mock response to: ${msg.message}`,
+          }));
+        }, 150);
+
+        setTimeout(() => {
+          ws.send(JSON.stringify({
+            type: "done",
+            workspace: msg.workspace,
+            exitCode: 0,
+          }));
+        }, 200);
+      }
+    });
+  });
+
+  return wss;
 }
 
 // If run directly, start the server
 if (require.main === module) {
   const port = Number(process.env.PORT || 9899);
   const { app } = createTestServer();
-  app.listen(port, () => console.log(`E2E test server on http://localhost:${port}`));
+  const server = app.listen(port, () => console.log(`E2E test server on http://localhost:${port}`));
+  attachWebSocket(server);
 }
 
-module.exports = { createTestServer };
+module.exports = { createTestServer, attachWebSocket };

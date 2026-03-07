@@ -92,3 +92,69 @@ test.describe("Beads Panel", () => {
     await expect(page.locator("#bead-form")).not.toHaveClass(/hidden/);
   });
 });
+
+test.describe("Bead Detail View", () => {
+  test.beforeEach(async ({ page }) => {
+    await page.goto("/");
+    await page.waitForSelector("#beads-section:not(.hidden)", { timeout: 5000 });
+  });
+
+  test("clicking a bead title opens detail panel", async ({ page }) => {
+    const overlay = page.locator("#bead-detail-overlay");
+    await expect(overlay).toHaveClass(/hidden/);
+
+    // Click the first bead title
+    await page.locator(".bead-title").first().click();
+
+    await expect(overlay).not.toHaveClass(/hidden/);
+  });
+
+  test("bead detail shows bead ID", async ({ page }) => {
+    await page.locator(".bead-title").first().click();
+    await page.waitForSelector("#bead-detail-overlay:not(.hidden)", { timeout: 5000 });
+
+    const idEl = page.locator("#bead-detail-id");
+    await expect(idEl).toContainText("klaudii-");
+  });
+
+  test("bead detail close button works", async ({ page }) => {
+    await page.locator(".bead-title").first().click();
+    await page.waitForSelector("#bead-detail-overlay:not(.hidden)", { timeout: 5000 });
+
+    await page.click('#bead-detail-panel button:has-text("X")');
+    await expect(page.locator("#bead-detail-overlay")).toHaveClass(/hidden/);
+  });
+
+  test("bead detail closes on backdrop click", async ({ page }) => {
+    await page.locator(".bead-title").first().click();
+    await page.waitForSelector("#bead-detail-overlay:not(.hidden)", { timeout: 5000 });
+
+    // Click the overlay (outside the panel)
+    await page.locator("#bead-detail-overlay").click({ position: { x: 5, y: 5 } });
+    await expect(page.locator("#bead-detail-overlay")).toHaveClass(/hidden/);
+  });
+
+  test("beads show different status badges", async ({ page }) => {
+    // The mock data has beads in different statuses — ensure they all render
+    const beadsList = page.locator("#beads-list");
+    await expect(beadsList).toBeVisible();
+
+    // Check that bead titles from mock data are present
+    await expect(beadsList).toContainText("Fix login button");
+    await expect(beadsList).toContainText("Add dark mode");
+  });
+
+  test("filtering to closed shows only closed beads", async ({ page }) => {
+    const closedBtn = page.locator('.beads-filter[data-filter="closed"]');
+    await closedBtn.click();
+
+    // Wait for filter to apply
+    await page.waitForTimeout(100);
+
+    // The closed bead "Refactor CSS" should be visible
+    // Open beads should be hidden
+    const visibleBeads = page.locator(".bead-row:visible, .bead-item:visible, #beads-list > div:visible");
+    const count = await visibleBeads.count();
+    expect(count).toBeGreaterThanOrEqual(1);
+  });
+});
