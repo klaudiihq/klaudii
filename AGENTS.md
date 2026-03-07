@@ -21,6 +21,19 @@ bd close <id>         # Complete work
 bd sync               # Sync with git
 ```
 
+## Critical File Safety
+
+**NEVER** run these commands on the **main worktree** (the primary checkout):
+- `git reset --hard` — wipes machine-specific files like `config.json`
+- `git clean -fd` — deletes untracked files including `config.json`
+- `git checkout .` — reverts all local changes
+
+These files are machine-specific and must never be committed or destroyed:
+- `config.json` — local server configuration (ports, paths, etc.)
+- `workspace-state.json` — runtime workspace state
+
+Workers operate in **isolated worktrees** (e.g. `klaudii--bead-xyz/`). Destructive git commands in a worktree are safe because they cannot affect the main repo's working directory.
+
 ## Non-Interactive Shell Commands
 
 **ALWAYS use non-interactive flags** with file operations to avoid hanging on confirmation prompts.

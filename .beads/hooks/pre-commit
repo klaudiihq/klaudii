@@ -1,4 +1,13 @@
 #!/usr/bin/env sh
+
+# Prevent committing machine-specific files
+if git diff --cached --name-only | grep -qE '^config\.json$|^workspace-state\.json$'; then
+  echo "ERROR: Refusing to commit machine-specific files (config.json, workspace-state.json)."
+  echo "These files are in .gitignore and should not be tracked."
+  echo "Run: git rm --cached <file> to untrack, then retry."
+  exit 1
+fi
+
 # --- BEGIN BEADS INTEGRATION v0.58.0 ---
 # This section is managed by beads. Do not remove these markers.
 if command -v bd >/dev/null 2>&1; then

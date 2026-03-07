@@ -3,6 +3,7 @@ node_modules/
 mac/menubar/KlaudiiMenu
 *.log
 config.json
+workspace-state.json
 sessions.json
 gemini-sessions.json
 claude-chat-sessions.json
