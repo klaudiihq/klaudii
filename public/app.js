@@ -9,6 +9,9 @@ let panelAutoCloseTimer = null;
 let showWorkerWorkspaces = false; // driven by server settings (workerVisibility)
 let currentProject = localStorage.getItem("klaudii-current-project") || "";
 let allProjectsList = [];
+let sidebarTab = localStorage.getItem("klaudii-sidebar-tab") || "workspaces";
+let lastSessions = [];
+let lastProcs = [];
 
 // --- SVG icon constants (matching extension) ---
 const STAT_CPU_SVG = `<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="4" width="16" height="16" rx="2"/><rect x="9" y="9" width="6" height="6"/><line x1="9" y1="1" x2="9" y2="4"/><line x1="15" y1="1" x2="15" y2="4"/><line x1="9" y1="20" x2="9" y2="23"/><line x1="15" y1="20" x2="15" y2="23"/><line x1="20" y1="9" x2="23" y2="9"/><line x1="20" y1="14" x2="23" y2="14"/><line x1="1" y1="9" x2="4" y2="9"/><line x1="1" y1="14" x2="4" y2="14"/></svg>`;
@@ -865,8 +868,11 @@ async function refresh() {
     }
     authEl.innerHTML = (authRows.length ? '<span class="auth-title">auth</span>' : '') + authRows.join("");
 
+    lastSessions = sessions;
+    lastProcs = procs;
     renderSessions(sessions, procs);
     renderProcesses(procs);
+    renderSidebar();
   } catch (err) {
     const badge = document.getElementById("status-badge");
     badge.textContent = "offline";
@@ -1510,6 +1516,7 @@ async function refreshBeads() {
     beadsData = await api("/api/beads");
     if (!Array.isArray(beadsData)) beadsData = [];
     renderBeads();
+    renderSidebar();
   } catch {
     // Beads endpoint not available
   }
@@ -2185,6 +2192,199 @@ function workerRenderMarkdown(text) {
     try { return marked.parse(text); } catch {}
   }
   return `<p>${esc(text)}</p>`;
+}
+
+// --- Sidebar ---
+
+function switchSidebarTab(tab) {
+  sidebarTab = tab;
+  localStorage.setItem("klaudii-sidebar-tab", tab);
+  document.querySelectorAll(".sidebar-tab").forEach(btn => {
+    btn.classList.toggle("active", btn.dataset.tab === tab);
+  });
+  renderSidebar();
+}
+
+function renderSidebar() {
+  const container = document.getElementById("sidebar-content");
+  if (!container) return;
+
+  document.querySelectorAll(".sidebar-tab").forEach(btn => {
+    btn.classList.toggle("active", btn.dataset.tab === sidebarTab);
+  });
+
+  updateSidebarBadges();
+
+  if (sidebarTab === "workers") renderSidebarWorkers();
+  else if (sidebarTab === "beads") renderSidebarBeads();
+  else renderSidebarWorkspaces();
+}
+
+function updateSidebarBadges() {
+  const sessions = lastSessions.filter(s => !(s.project.startsWith("__") && s.project.endsWith("__")));
+  const workers = sessions.filter(s => s.workspaceType === "worker");
+  const workspaces = sessions.filter(s => s.workspaceType !== "worker");
+
+  const runningWorkers = workers.filter(s => {
+    const st = s.status || (s.running ? "running" : "stopped");
+    return st === "running";
+  });
+  const runningWorkspaces = workspaces.filter(s => {
+    const st = s.status || (s.running ? "running" : "stopped");
+    return st === "running" || s.relayActive;
+  });
+  const openBeads = beadsData.filter(b => b.status !== "closed");
+
+  const wb = document.getElementById("sidebar-badge-workers");
+  const bb = document.getElementById("sidebar-badge-beads");
+  const wsb = document.getElementById("sidebar-badge-workspaces");
+  if (wb) {
+    wb.textContent = runningWorkers.length;
+    wb.classList.toggle("has-activity", runningWorkers.length > 0);
+  }
+  if (bb) bb.textContent = openBeads.length;
+  if (wsb) wsb.textContent = runningWorkspaces.length;
+}
+
+function findBeadForWorker(session) {
+  if (!beadsData.length) return null;
+  const branch = session.git?.branch || session.project.split("--").slice(1).join("--") || "";
+  return beadsData.find(b => branch.includes(b.id)) || null;
+}
+
+function renderSidebarWorkers() {
+  const container = document.getElementById("sidebar-content");
+  const workers = lastSessions.filter(s => s.workspaceType === "worker");
+
+  if (!workers.length) {
+    container.innerHTML = '<div class="sidebar-empty">No workers</div>';
+    return;
+  }
+
+  const procByProject = {};
+  if (lastProcs) {
+    for (const p of lastProcs) {
+      if (p.managed && p.project) procByProject[p.project] = p;
+    }
+  }
+
+  container.innerHTML = workers.map(s => {
+    const branch = s.git?.branch || s.project.split("--").slice(1).join("--") || s.project;
+    const status = s.status || (s.running ? "running" : "stopped");
+    const isActive = status === "running";
+    const proc = procByProject[s.project];
+    const uptime = proc?.uptime || "";
+    const bead = findBeadForWorker(s);
+    const beadTitle = bead ? bead.title : "";
+    const metaParts = [uptime, beadTitle].filter(Boolean);
+
+    return `<div class="sidebar-card" onclick="sidebarWorkerClick('${esc(s.project)}')">
+      <div class="sidebar-card-accent ${status}"></div>
+      <div class="sidebar-card-body">
+        <div class="sidebar-card-header">
+          <span class="sidebar-card-title"><span class="sidebar-worker-dot ${isActive ? "active" : "idle"}"></span>${esc(branch)}</span>
+          <span class="card-status ${status}" style="font-size:9px;padding:1px 5px">${esc(status)}</span>
+        </div>
+        ${metaParts.length ? `<span class="sidebar-card-meta">${esc(metaParts.join(" \u00b7 "))}</span>` : ""}
+      </div>
+    </div>`;
+  }).join("");
+}
+
+function renderSidebarBeads() {
+  const container = document.getElementById("sidebar-content");
+
+  if (!beadsData.length) {
+    container.innerHTML = '<div class="sidebar-empty">No beads</div>';
+    return;
+  }
+
+  const sorted = [...beadsData].sort((a, b) => {
+    const statusOrder = { open: 0, in_progress: 1, blocked: 2, closed: 3 };
+    const sa = statusOrder[a.status] ?? 99;
+    const sb2 = statusOrder[b.status] ?? 99;
+    if (sa !== sb2) return sa - sb2;
+    return (a.priority || 2) - (b.priority || 2);
+  });
+
+  container.innerHTML = sorted.map(b => {
+    const statusLabel = (b.status || "open").replace(/_/g, " ");
+    const priority = PRIORITY_LABELS[b.priority] || `P${b.priority}`;
+    const shortId = b.id.includes("-") ? b.id.split("-").pop() : b.id;
+
+    return `<div class="sidebar-bead" onclick="openBeadDetail('${esc(b.id)}')">
+      <span class="sidebar-bead-priority p${b.priority || 2}">${esc(priority)}</span>
+      <div class="sidebar-bead-info">
+        <span class="sidebar-card-title">${esc(b.title)}</span>
+        <span class="sidebar-card-meta">${esc(shortId)} \u00b7 ${esc(statusLabel)}</span>
+      </div>
+      <span class="bead-status ${esc(b.status || "open")}" style="font-size:9px;padding:1px 5px">${esc(statusLabel)}</span>
+    </div>`;
+  }).join("");
+}
+
+function renderSidebarWorkspaces() {
+  const container = document.getElementById("sidebar-content");
+  let sessions = lastSessions.filter(s =>
+    s.workspaceType !== "worker" && !(s.project.startsWith("__") && s.project.endsWith("__"))
+  );
+
+  if (!sessions.length) {
+    container.innerHTML = '<div class="sidebar-empty">No workspaces</div>';
+    return;
+  }
+
+  sessions = sortSessions(sessions);
+
+  container.innerHTML = sessions.map(s => {
+    const parts = s.project.split("--");
+    const repo = parts[0];
+    const branch = parts.length > 1 ? parts.slice(1).join("--") : null;
+    const status = s.status || (s.running ? "running" : "stopped");
+    const displayStatus = (status === "stopped" && s.relayActive) ? "running" : status;
+    const lastAct = s.lastActivity ? relativeTime(s.lastActivity) : "";
+
+    return `<div class="sidebar-card" data-project="${esc(s.project)}" data-project-path="${esc(s.projectPath || "")}" data-chat-mode="${esc(s.chatMode || "claude-local")}" data-claude-url="${esc(s.claudeUrl || "")}" onclick="sidebarWorkspaceClick(this)">
+      <div class="sidebar-card-accent ${displayStatus}"></div>
+      <div class="sidebar-card-body">
+        <div class="sidebar-card-header">
+          <span class="sidebar-card-title">${esc(repo)}</span>
+          <span class="card-status ${displayStatus}" style="font-size:9px;padding:1px 5px">${esc(displayStatus)}</span>
+        </div>
+        ${branch ? `<span class="sidebar-card-sub">${esc(branch)}</span>` : ""}
+        ${lastAct ? `<span class="sidebar-card-meta">${esc(lastAct)}</span>` : ""}
+      </div>
+    </div>`;
+  }).join("");
+}
+
+function sidebarWorkspaceClick(el) {
+  const project = el.dataset.project;
+  if (!project) return;
+  const chatMode = el.dataset.chatMode || "claude-local";
+  const projectPath = el.dataset.projectPath || "";
+  const claudeUrl = el.dataset.claudeUrl || "";
+
+  document.querySelectorAll(".sidebar-card.active-workspace, .card.active-workspace").forEach(c => c.classList.remove("active-workspace"));
+  el.classList.add("active-workspace");
+  const mainCard = document.getElementById(`card-${project}`);
+  if (mainCard) mainCard.classList.add("active-workspace");
+
+  if (chatMode === "claude-remote") {
+    if (claudeUrl) window.open(claudeUrl, "_blank");
+    return;
+  }
+
+  const cli = chatMode === "gemini" ? "gemini" : "claude";
+  openGeminiChat(project, projectPath, cli);
+}
+
+function sidebarWorkerClick(project) {
+  const card = document.getElementById(`card-${project}`);
+  if (card) {
+    card.scrollIntoView({ behavior: "smooth", block: "center" });
+    openWorkerDetail(project);
+  }
 }
 
 // --- Theme ---

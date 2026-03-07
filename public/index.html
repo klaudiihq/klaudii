@@ -25,6 +25,14 @@
   </header>
 
   <div id="app-layout" class="app-layout">
+    <aside id="sidebar" class="sidebar">
+      <div class="sidebar-tabs">
+        <button class="sidebar-tab" data-tab="workers" onclick="switchSidebarTab('workers')">Workers <span class="sidebar-badge" id="sidebar-badge-workers">0</span></button>
+        <button class="sidebar-tab" data-tab="beads" onclick="switchSidebarTab('beads')">Beads <span class="sidebar-badge" id="sidebar-badge-beads">0</span></button>
+        <button class="sidebar-tab active" data-tab="workspaces" onclick="switchSidebarTab('workspaces')">Workspaces <span class="sidebar-badge" id="sidebar-badge-workspaces">0</span></button>
+      </div>
+      <div class="sidebar-content" id="sidebar-content"></div>
+    </aside>
     <main>
       <section id="usage-section" class="usage-section hidden">
         <div class="usage-header">
