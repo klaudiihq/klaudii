@@ -23,10 +23,12 @@ describe("normalizeEvent", () => {
   // =========================================================================
 
   describe("user event → synthetic result (CRITICAL)", () => {
-    it("emits tool_result events BEFORE synthetic result", () => {
-      // tool_result must come first so clients finalize tool pills before
-      // the "result" event triggers "done" and resets streaming state.
-      // See lib/claude-chat.js lines 645-651 for the rationale.
+    it("emits tool_result events BEFORE the synthetic { type: 'result' }", () => {
+      // The synthetic result triggers "done" on the client, which resets
+      // streaming state. Tool_results must be emitted first so clients
+      // finalize tool pills before the done signal. The synthetic result
+      // is still the SOLE trigger for persisting assistant turns — it just
+      // comes AFTER tool_results now.
       const raw = {
         type: "user",
         message: {
@@ -44,13 +46,12 @@ describe("normalizeEvent", () => {
 
       const events = normalizeEvent(raw);
 
-      expect(events.length).toBeGreaterThanOrEqual(2);
-
       // tool_result comes first
+      expect(events.length).toBeGreaterThanOrEqual(2);
       expect(events[0].type).toBe("tool_result");
       expect(events[0].tool_id).toBe("tool_abc");
 
-      // synthetic result is LAST
+      // Synthetic result comes LAST
       expect(events[events.length - 1]).toEqual({ type: "result", stats: {} });
     });
 

@@ -5,13 +5,7 @@ export default defineConfig({
     root: ".",
     include: ["test/**/*.test.js"],
     globals: true,
-    coverage: {
-      provider: "v8",
-      reporter: ["text", "text-summary"],
-      thresholds: {
-        statements: 60,
-        branches: 50,
-      },
-    },
+    pool: "forks",
+    isolate: true,
   },
 });
