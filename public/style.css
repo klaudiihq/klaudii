@@ -45,27 +45,27 @@
 }
 
 html.light {
-  --bg:           #edf0f5;
-  --bg-card:      #f5f7fa;
-  --bg-hover:     #e4e7ec;
-  --bg-input:     #f5f7fa;
-  --bg-btn:       #eef0f5;
-  --bg-btn-hover: #e2e5ec;
-  --bg-active:    #dde2ed;
-  --bg-badge:     #e5e8f0;
+  --bg:           #d0d4dc;
+  --bg-card:      #d8dce3;
+  --bg-hover:     #c8cdd6;
+  --bg-input:     #d8dce3;
+  --bg-btn:       #d3d7df;
+  --bg-btn-hover: #ccd0d9;
+  --bg-active:    #c4c9d5;
+  --bg-badge:     #cdd2db;
 
-  --border:        #dce0ea;
-  --border-subtle: #eaecf2;
-  --border-btn:    #b8bfc9;
-  --border-active: #9099b2;
+  --border:        #b5bac6;
+  --border-subtle: #c2c6cf;
+  --border-btn:    #a0a8b5;
+  --border-active: #808aa0;
 
   --text:          #1e2433;
   --text-strong:   #0d1017;
   --text-secondary:#3a4153;
   --text-dim:      #5a6477;
   --text-muted:    #6b7a8d;
-  --text-faint:    #9ca3af;
-  --text-fainter:  #b8c0d0;
+  --text-faint:    #8890a0;
+  --text-fainter:  #9ea6b6;
 
   --s-green:       #15803d;
   --s-green-bg:    #dcfce7;

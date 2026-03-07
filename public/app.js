@@ -264,7 +264,7 @@ function renderSessions(sessions, procs) {
           </select>
         </div>
         <button class="btn btn-sm primary" onclick="startSession('${esc(s.project)}', {continueSession:true})">Continue</button>
-        <button class="btn btn-sm" onclick="startSession('${esc(s.project)}')">New Session</button>
+        <button class="btn btn-sm" onclick="startSession('${esc(s.project)}')">New Workspace</button>
         <button class="btn btn-sm" onclick="toggleHistory('${esc(s.project)}')">History</button>
         <button class="btn btn-sm danger" onclick="removeWorkspace(this, '${esc(s.project)}', ${!!(g && (g.dirtyFiles || g.unpushed))})">Remove</button>`;
     }
@@ -953,7 +953,7 @@ async function createNewSession() {
     alert("Failed: " + err.message);
   } finally {
     btn.disabled = false;
-    btn.textContent = "Start Session";
+    btn.textContent = "Create Workspace";
   }
 }
 

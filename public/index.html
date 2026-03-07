@@ -43,7 +43,7 @@
             <button class="sort-dir-btn" id="sort-dir-btn" onclick="toggleSortDir()" title="Toggle sort direction"></button>
           </div>
           <button class="sort-btn hidden" id="worker-toggle" onclick="toggleWorkerWorkspaces()" title="Worker workspaces hidden">Workers</button>
-          <button class="btn primary btn-sm" onclick="openNewSessionModal()">+ New Session</button>
+          <button class="btn primary btn-sm" onclick="openNewSessionModal()">+ New Workspace</button>
         </div>
         <div id="sessions-list" class="card-grid"></div>
       </section>
@@ -188,7 +188,7 @@
   <div id="new-session-modal" class="modal-overlay hidden" onclick="closeModal(event)">
     <div class="modal">
       <div class="modal-header">
-        <h2>New Session</h2>
+        <h2>New Workspace</h2>
         <button class="btn btn-sm" onclick="closeNewSessionModal()">X</button>
       </div>
       <div class="modal-body">
@@ -204,7 +204,7 @@
             <label>Branch name</label>
             <input id="branch-input" type="text" placeholder="e.g. fix-auth-bug" />
             <div class="form-hint">A new git worktree will be created with this branch.</div>
-            <button class="btn primary" onclick="createNewSession()" id="create-session-btn">Start Session</button>
+            <button class="btn primary" onclick="createNewSession()" id="create-session-btn">Create Workspace</button>
           </div>
         </div>
         <!-- Create new repo view -->
