@@ -5,5 +5,7 @@ export default defineConfig({
     root: ".",
     include: ["test/**/*.test.js"],
     globals: true,
+    pool: "forks",
+    isolate: true,
   },
 });
