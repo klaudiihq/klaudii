@@ -27,6 +27,8 @@ module.exports = function createV1Router(deps) {
     memory,         // optional — persistent memory for architect/shepherd
   } = deps;
 
+  const completion = require("../lib/completion");
+
   const router = express.Router();
 
   // Version header on every response
@@ -953,6 +955,26 @@ module.exports = function createV1Router(deps) {
     const sessionId = trackedIds[0];
     const messages = claude.getSessionMessages(proj.path, sessionId);
     res.json({ sessionId, messages });
+  });
+
+  // --- Bead Completion Pipeline ---
+
+  router.post("/beads/:id/complete", async (req, res) => {
+    const id = req.params.id;
+    if (!/^[a-zA-Z0-9-]+$/.test(id)) return res.status(400).json({ error: "invalid bead ID" });
+
+    const { workspace } = req.body;
+    if (!workspace) return res.status(400).json({ error: "workspace required" });
+
+    const ctx = { claudeChat, tmux, projects, config, workspaceState };
+
+    try {
+      const result = await completion.runPipeline(id, workspace, ctx);
+      const status = result.ok ? 200 : 422;
+      res.status(status).json(result);
+    } catch (err) {
+      res.status(500).json({ error: `Completion pipeline failed: ${err.message}` });
+    }
   });
 
   // --- Agent Memory ---
