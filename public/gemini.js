@@ -1211,11 +1211,8 @@ function geminiAppendMessage(role, content, streaming, images, ts, sender, msgSt
     const textNode = document.createElement("span");
     textNode.textContent = content;
     bubble.appendChild(textNode);
-    // Delivery status checkmarks (WhatsApp-style)
-    const statusEl = document.createElement("span");
-    statusEl.className = "msg-status";
-    statusEl.dataset.status = msgStatus || "sending";
-    bubble.appendChild(statusEl);
+    // Update the fixed-position delivery checkmark
+    geminiSetMsgStatusFloat(msgStatus || "sending");
     div.appendChild(bubble);
   } else {
     const md = document.createElement("div");
@@ -1238,16 +1235,37 @@ function geminiAppendMessage(role, content, streaming, images, ts, sender, msgSt
 }
 
 /**
- * Update the delivery status checkmarks on the most recent user bubble.
+ * Get or create the fixed-position delivery status checkmark element.
+ * Lives as a child of .gemini-panel, positioned bottom-right of the chat area.
+ */
+function geminiGetMsgStatusFloat() {
+  let el = document.getElementById("msg-status-float");
+  if (!el) {
+    el = document.createElement("span");
+    el.id = "msg-status-float";
+    el.className = "msg-status-float";
+    const panel = document.getElementById("gemini-overlay");
+    if (panel) panel.appendChild(el);
+  }
+  return el;
+}
+
+/**
+ * Set the floating delivery status checkmark to a given status.
+ */
+function geminiSetMsgStatusFloat(status) {
+  const el = geminiGetMsgStatusFloat();
+  if (!el) return;
+  el.dataset.status = status;
+}
+
+/**
+ * Update the delivery status checkmarks (fixed bottom-right).
  * Statuses progress: sending → received → delivered → processing
  */
 function geminiUpdateMsgStatus(status) {
-  const container = document.getElementById("gemini-messages");
-  if (!container) return;
-  // Find the last user bubble's status indicator
-  const userMsgs = container.querySelectorAll(".gemini-msg.user .msg-status");
-  if (!userMsgs.length) return;
-  const el = userMsgs[userMsgs.length - 1];
+  const el = geminiGetMsgStatusFloat();
+  if (!el) return;
   // Only allow forward progression
   const order = ["sending", "received", "delivered", "processing"];
   const cur = order.indexOf(el.dataset.status);
@@ -2464,6 +2482,7 @@ async function geminiShowChat(wsState = null) {
   const workspaceAtCall = geminiWorkspace;
   const container = document.getElementById("gemini-messages");
   container.innerHTML = "";
+  geminiSetMsgStatusFloat("sending"); // reset checkmark (hidden via opacity)
 
   // Fetch sessions list, conversation history, and cumulative stats in parallel
   if (geminiWorkspace) {
