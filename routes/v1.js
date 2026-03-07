@@ -879,6 +879,82 @@ module.exports = function createV1Router(deps) {
     }
   });
 
+  // --- Worker stats ---
+
+  router.get("/workspace-stats/:workspace", (req, res) => {
+    const workspace = decodeURIComponent(req.params.workspace);
+    const proj = projects.getProject(workspace);
+    if (!proj) return res.status(404).json({ error: "workspace not found" });
+
+    // Git diff stats
+    let filesChanged = 0, linesAdded = 0, linesRemoved = 0;
+    try {
+      const { execSync } = require("child_process");
+      const stat = execSync("git diff --stat HEAD 2>/dev/null || git diff --stat 2>/dev/null || true", {
+        cwd: proj.path, encoding: "utf-8", timeout: 5000,
+      });
+      const match = stat.match(/(\d+) files? changed(?:, (\d+) insertions?\(\+\))?(?:, (\d+) deletions?\(-\))?/);
+      if (match) {
+        filesChanged = parseInt(match[1]) || 0;
+        linesAdded = parseInt(match[2]) || 0;
+        linesRemoved = parseInt(match[3]) || 0;
+      }
+    } catch {}
+
+    // Process stats
+    const managedPids = tmux.getManagedPids();
+    const procs = processes.findClaudeProcesses(managedPids);
+    const proc = procs.find(p => p.managed && p.project === workspace);
+
+    // Last activity
+    const tracked = sessionTracker.getSessions(workspace);
+    const lastActivity = Math.max(
+      claude.getProjectLastActivity(proj.path) || 0,
+      tracked.length ? tracked[0].startedAt : 0,
+      workspaceState ? workspaceState.getLastChatActivity(workspace) : 0,
+    );
+
+    // Running time
+    const tmuxName = tmux.sessionName(workspace);
+    const isRunning = tmux.sessionExists(tmuxName) && tmux.isClaudeAlive(tmuxName);
+
+    res.json({
+      filesChanged,
+      linesAdded,
+      linesRemoved,
+      cpu: proc ? proc.cpu : null,
+      memMB: proc ? proc.memMB : null,
+      uptime: proc ? proc.uptime : null,
+      lastActivity,
+      isRunning,
+    });
+  });
+
+  // --- Worker activity (Claude native session messages) ---
+
+  router.get("/worker-activity/:workspace", (req, res) => {
+    const workspace = decodeURIComponent(req.params.workspace);
+    const proj = projects.getProject(workspace);
+    if (!proj) return res.status(404).json({ error: "workspace not found" });
+
+    // Get tracked session IDs
+    const trackedIds = sessionTracker.getSessionIds(workspace);
+    if (!trackedIds.length) {
+      // Try to find sessions from Claude's native storage
+      const sessions = claude.getRecentSessions(proj.path, 5);
+      if (sessions.length) {
+        const messages = claude.getSessionMessages(proj.path, sessions[0].sessionId);
+        return res.json({ sessionId: sessions[0].sessionId, messages });
+      }
+      return res.json({ sessionId: null, messages: [] });
+    }
+
+    // Use the most recent tracked session
+    const sessionId = trackedIds[0];
+    const messages = claude.getSessionMessages(proj.path, sessionId);
+    res.json({ sessionId, messages });
+  });
+
   // --- Agent Memory ---
 
   router.get("/memory/:agent", (req, res) => {

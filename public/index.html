@@ -160,6 +160,24 @@
     </div>
   </div>
 
+  <!-- Worker Detail Panel (slide-out) -->
+  <div id="worker-detail-overlay" class="worker-detail-overlay hidden" onclick="closeWorkerDetailBackdrop(event)">
+    <div class="worker-detail-panel" id="worker-detail-panel">
+      <div class="worker-detail-header">
+        <div class="worker-detail-title" id="worker-detail-title"></div>
+        <button class="btn btn-sm" onclick="closeWorkerDetail()">X</button>
+      </div>
+      <div class="worker-detail-stats" id="worker-detail-stats"></div>
+      <div class="worker-detail-tabs">
+        <button class="worker-tab active" data-tab="task" onclick="switchWorkerTab('task')">Task</button>
+        <button class="worker-tab" data-tab="activity" onclick="switchWorkerTab('activity')">Activity</button>
+      </div>
+      <div class="worker-detail-body" id="worker-detail-body">
+        <div class="worker-detail-loading">Loading...</div>
+      </div>
+    </div>
+  </div>
+
   <!-- Bead Detail Panel (slide-out) -->
   <div id="bead-detail-overlay" class="bead-detail-overlay hidden" onclick="closeBeadDetailBackdrop(event)">
     <div class="bead-detail-panel" id="bead-detail-panel">

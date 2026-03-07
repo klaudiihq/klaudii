@@ -1838,6 +1838,355 @@ async function submitBeadComment(id) {
   }
 }
 
+// --- Worker Detail View ---
+
+let currentWorkerProject = null;
+let workerActiveTab = "task";
+let workerStatsTimer = null;
+let workerActivityTimer = null;
+
+async function openWorkerDetail(project) {
+  currentWorkerProject = project;
+  workerActiveTab = "task";
+
+  const overlay = document.getElementById("worker-detail-overlay");
+  const titleEl = document.getElementById("worker-detail-title");
+  const bodyEl = document.getElementById("worker-detail-body");
+  const statsEl = document.getElementById("worker-detail-stats");
+
+  overlay.classList.remove("hidden");
+
+  const parts = project.split("--");
+  const branch = parts.length > 1 ? parts.slice(1).join("--") : project;
+  titleEl.textContent = branch;
+
+  statsEl.innerHTML = '<span class="worker-stat">Loading stats...</span>';
+  bodyEl.innerHTML = '<div class="worker-detail-loading">Loading...</div>';
+
+  // Set active tab button
+  document.querySelectorAll(".worker-tab").forEach(b => b.classList.toggle("active", b.dataset.tab === "task"));
+
+  // Fetch stats and content in parallel
+  refreshWorkerStats(project);
+  await renderWorkerTask(project);
+
+  // Start polling stats every 5 seconds
+  clearInterval(workerStatsTimer);
+  workerStatsTimer = setInterval(() => {
+    if (currentWorkerProject === project) refreshWorkerStats(project);
+  }, 5000);
+}
+
+function closeWorkerDetail() {
+  currentWorkerProject = null;
+  document.getElementById("worker-detail-overlay").classList.add("hidden");
+  clearInterval(workerStatsTimer);
+  clearInterval(workerActivityTimer);
+  workerStatsTimer = null;
+  workerActivityTimer = null;
+}
+
+function closeWorkerDetailBackdrop(e) {
+  if (e.target === e.currentTarget) closeWorkerDetail();
+}
+
+async function refreshWorkerStats(project) {
+  const statsEl = document.getElementById("worker-detail-stats");
+  if (!statsEl) return;
+
+  try {
+    const data = await api(`/api/workspace-stats/${encodeURIComponent(project)}`);
+    const stats = [];
+
+    // Files changed
+    if (data.filesChanged != null) {
+      stats.push(`<span class="worker-stat">${PENCIL_SVG} ${data.filesChanged} file${data.filesChanged === 1 ? "" : "s"}</span>`);
+    }
+
+    // Lines changed
+    const lines = (data.linesAdded || 0) + (data.linesRemoved || 0);
+    if (lines > 0) {
+      stats.push(`<span class="worker-stat">
+        <span class="worker-stat-added">+${data.linesAdded || 0}</span>
+        <span class="worker-stat-removed">-${data.linesRemoved || 0}</span>
+      </span>`);
+    }
+
+    // CPU
+    stats.push(`<span class="worker-stat">${STAT_CPU_SVG} ${data.cpu != null ? data.cpu + "%" : "—"}</span>`);
+
+    // RAM
+    stats.push(`<span class="worker-stat">${STAT_MEM_SVG} ${data.memMB != null ? data.memMB + " MB" : "—"}</span>`);
+
+    // Uptime
+    if (data.uptime) {
+      stats.push(`<span class="worker-stat">${STAT_CLOCK_SVG} ${esc(data.uptime)}</span>`);
+    }
+
+    // Last activity
+    if (data.lastActivity) {
+      const ago = timeSince(data.lastActivity);
+      stats.push(`<span class="worker-stat" title="Last activity">${ago} ago</span>`);
+    }
+
+    // Running indicator
+    stats.push(`<span class="worker-stat-status ${data.isRunning ? "running" : "stopped"}">${data.isRunning ? "Running" : "Stopped"}</span>`);
+
+    statsEl.innerHTML = stats.join("");
+  } catch {
+    statsEl.innerHTML = '<span class="worker-stat">Stats unavailable</span>';
+  }
+}
+
+function timeSince(ts) {
+  const sec = Math.floor((Date.now() - ts) / 1000);
+  if (sec < 60) return sec + "s";
+  if (sec < 3600) return Math.floor(sec / 60) + "m";
+  if (sec < 86400) return Math.floor(sec / 3600) + "h";
+  return Math.floor(sec / 86400) + "d";
+}
+
+async function switchWorkerTab(tab) {
+  workerActiveTab = tab;
+  document.querySelectorAll(".worker-tab").forEach(b => b.classList.toggle("active", b.dataset.tab === tab));
+  clearInterval(workerActivityTimer);
+  workerActivityTimer = null;
+
+  if (tab === "task") {
+    await renderWorkerTask(currentWorkerProject);
+  } else {
+    await renderWorkerActivity(currentWorkerProject);
+  }
+}
+
+async function renderWorkerTask(project) {
+  const bodyEl = document.getElementById("worker-detail-body");
+  if (!bodyEl || workerActiveTab !== "task") return;
+
+  // Find the bead ID for this worker from session data
+  try {
+    const sessions = await api("/api/sessions");
+    const session = sessions.find(s => s.project === project);
+    const beadId = session?.beadId;
+
+    if (!beadId) {
+      bodyEl.innerHTML = '<div class="worker-detail-empty">No bead assigned to this worker</div>';
+      return;
+    }
+
+    const bead = await api(`/api/beads/${encodeURIComponent(beadId)}`);
+    if (!bead || bead.error) {
+      bodyEl.innerHTML = `<div class="worker-detail-empty">Bead ${esc(beadId)} not found</div>`;
+      return;
+    }
+
+    // Parse description into sections (Goal, Specs, Verification, Safety)
+    const desc = bead.description || "";
+    const sections = parseBeadSections(desc);
+
+    let html = `<div class="worker-task">
+      <div class="worker-task-title">${esc(bead.title)}</div>
+      <div class="worker-task-id">${esc(bead.id)} · P${bead.priority || 2} · ${esc((bead.status || "open").replace(/_/g, " "))}</div>`;
+
+    for (const [heading, content] of sections) {
+      html += `<div class="worker-task-section">
+        <div class="worker-task-section-title">${esc(heading)}</div>
+        <div class="worker-task-section-body">${renderTaskContent(content)}</div>
+      </div>`;
+    }
+
+    html += `</div>`;
+    bodyEl.innerHTML = html;
+  } catch (err) {
+    bodyEl.innerHTML = `<div class="worker-detail-empty">Error loading task: ${esc(err.message)}</div>`;
+  }
+}
+
+function parseBeadSections(desc) {
+  // Split description by known headings (Goal, Specs, Verification, Safety)
+  // or by markdown-style headers
+  const lines = desc.split("\n");
+  const sections = [];
+  let currentHeading = "Description";
+  let currentContent = [];
+
+  for (const line of lines) {
+    const headingMatch = line.match(/^(Goal|Specs|Verification|Safety|Description)\s*:/i) ||
+                          line.match(/^#{1,3}\s+(.*)/);
+    if (headingMatch) {
+      if (currentContent.length) {
+        sections.push([currentHeading, currentContent.join("\n").trim()]);
+      }
+      currentHeading = headingMatch[1];
+      const rest = line.slice(headingMatch[0].length).trim();
+      currentContent = rest ? [rest] : [];
+    } else {
+      currentContent.push(line);
+    }
+  }
+  if (currentContent.length) {
+    sections.push([currentHeading, currentContent.join("\n").trim()]);
+  }
+
+  return sections;
+}
+
+function renderTaskContent(text) {
+  // Render list items and paragraphs
+  const lines = text.split("\n");
+  let html = "";
+  let inList = false;
+
+  for (const line of lines) {
+    const listMatch = line.match(/^\s*[-*]\s+(.*)/);
+    if (listMatch) {
+      if (!inList) { html += "<ul>"; inList = true; }
+      html += `<li>${esc(listMatch[1])}</li>`;
+    } else {
+      if (inList) { html += "</ul>"; inList = false; }
+      if (line.trim()) html += `<p>${esc(line)}</p>`;
+    }
+  }
+  if (inList) html += "</ul>";
+  return html;
+}
+
+async function renderWorkerActivity(project) {
+  const bodyEl = document.getElementById("worker-detail-body");
+  if (!bodyEl || workerActiveTab !== "activity") return;
+
+  bodyEl.innerHTML = '<div class="worker-detail-loading">Loading activity...</div>';
+
+  try {
+    const data = await api(`/api/worker-activity/${encodeURIComponent(project)}`);
+    const messages = data.messages || [];
+
+    if (!messages.length) {
+      bodyEl.innerHTML = '<div class="worker-detail-empty">No activity recorded yet</div>';
+      return;
+    }
+
+    bodyEl.innerHTML = renderActivityMessages(messages);
+    bodyEl.scrollTop = bodyEl.scrollHeight;
+
+    // Poll for updates if worker is running
+    clearInterval(workerActivityTimer);
+    workerActivityTimer = setInterval(async () => {
+      if (currentWorkerProject !== project || workerActiveTab !== "activity") {
+        clearInterval(workerActivityTimer);
+        return;
+      }
+      try {
+        const fresh = await api(`/api/worker-activity/${encodeURIComponent(project)}`);
+        const freshMsgs = fresh.messages || [];
+        if (freshMsgs.length !== messages.length) {
+          const wasAtBottom = bodyEl.scrollHeight - bodyEl.scrollTop - bodyEl.clientHeight < 50;
+          bodyEl.innerHTML = renderActivityMessages(freshMsgs);
+          messages.length = 0;
+          messages.push(...freshMsgs);
+          if (wasAtBottom) bodyEl.scrollTop = bodyEl.scrollHeight;
+        }
+      } catch {}
+    }, 3000);
+  } catch (err) {
+    bodyEl.innerHTML = `<div class="worker-detail-empty">Error: ${esc(err.message)}</div>`;
+  }
+}
+
+function renderActivityMessages(messages) {
+  let html = '<div class="worker-activity">';
+  const pendingTools = new Map();
+
+  for (const msg of messages) {
+    if (msg.role === "thinking") {
+      html += `<div class="wa-thinking">
+        <div class="wa-thinking-header" onclick="this.parentElement.classList.toggle('expanded')">Thinking</div>
+        <div class="wa-thinking-content">${esc(msg.content)}</div>
+      </div>`;
+    } else if (msg.role === "user") {
+      html += `<div class="wa-msg wa-user"><div class="wa-role">User</div><div class="wa-content">${esc(msg.content)}</div></div>`;
+    } else if (msg.role === "assistant") {
+      html += `<div class="wa-msg wa-assistant"><div class="wa-content">${workerRenderMarkdown(msg.content)}</div></div>`;
+    } else if (msg.role === "tool_use") {
+      try {
+        const d = JSON.parse(msg.content);
+        pendingTools.set(d.tool_id, d);
+        // Don't render yet — wait for tool_result to pair with it
+      } catch {
+        html += `<div class="wa-tool-pill">Unknown tool</div>`;
+      }
+    } else if (msg.role === "tool_result") {
+      try {
+        const d = JSON.parse(msg.content);
+        const tu = d.tool_id ? pendingTools.get(d.tool_id) : null;
+        if (tu) pendingTools.delete(d.tool_id);
+        const toolName = tu ? tu.tool_name : "tool";
+        const params = tu ? tu.parameters : {};
+        const statusCls = d.status === "error" ? "error" : "success";
+        const output = d.output || "";
+
+        html += renderToolPill(toolName, params, statusCls, output);
+      } catch {}
+    }
+  }
+
+  // Flush pending tools that never got results (still running)
+  for (const tu of pendingTools.values()) {
+    html += `<div class="wa-tool-pill running">
+      <div class="wa-tool-header">${esc(tu.tool_name)} <span class="wa-tool-status running">running</span></div>
+      ${renderToolParams(tu.parameters)}
+    </div>`;
+  }
+
+  html += '</div>';
+  return html;
+}
+
+function renderToolPill(name, params, statusCls, output) {
+  const paramSummary = renderToolParamSummary(name, params);
+  const outputPreview = output.length > 500 ? output.slice(0, 500) + "..." : output;
+
+  return `<div class="wa-tool-pill ${esc(statusCls)}">
+    <div class="wa-tool-header" onclick="this.parentElement.classList.toggle('expanded')">
+      <span class="wa-tool-name">${esc(name)}</span>
+      ${paramSummary ? `<span class="wa-tool-summary">${paramSummary}</span>` : ""}
+      <span class="wa-tool-status ${esc(statusCls)}">${statusCls === "error" ? "error" : "done"}</span>
+    </div>
+    <div class="wa-tool-body">
+      ${renderToolParams(params)}
+      ${output ? `<div class="wa-tool-output"><pre>${esc(outputPreview)}</pre></div>` : ""}
+    </div>
+  </div>`;
+}
+
+function renderToolParamSummary(name, params) {
+  // Show a short summary depending on tool type
+  if (name === "Read" && params.file_path) return esc(params.file_path.split("/").pop());
+  if (name === "Edit" && params.file_path) return esc(params.file_path.split("/").pop());
+  if (name === "Write" && params.file_path) return esc(params.file_path.split("/").pop());
+  if (name === "Bash" && params.command) return esc(params.command.slice(0, 60));
+  if (name === "Grep" && params.pattern) return esc(params.pattern.slice(0, 40));
+  if (name === "Glob" && params.pattern) return esc(params.pattern);
+  return "";
+}
+
+function renderToolParams(params) {
+  if (!params || !Object.keys(params).length) return "";
+  const entries = Object.entries(params).filter(([k]) => k !== "content" && k !== "new_string" && k !== "old_string");
+  if (!entries.length) return "";
+  return `<div class="wa-tool-params">${entries.map(([k, v]) => {
+    const val = typeof v === "string" ? (v.length > 100 ? v.slice(0, 100) + "..." : v) : JSON.stringify(v);
+    return `<span class="wa-param"><span class="wa-param-key">${esc(k)}</span>: ${esc(val)}</span>`;
+  }).join("")}</div>`;
+}
+
+function workerRenderMarkdown(text) {
+  if (typeof marked !== "undefined" && marked.parse) {
+    try { return marked.parse(text); } catch {}
+  }
+  return `<p>${esc(text)}</p>`;
+}
+
 // --- Theme ---
 
 function toggleTheme() {
@@ -1857,6 +2206,12 @@ document.getElementById("sessions-list").addEventListener("click", (e) => {
 
   const project = card.dataset.project;
   if (!project) return;
+
+  // Worker cards open the worker detail view
+  if (card.classList.contains("worker-card")) {
+    openWorkerDetail(project);
+    return;
+  }
 
   const chatMode = card.dataset.chatMode || "claude-local";
   const projectPath = card.dataset.projectPath || "";
