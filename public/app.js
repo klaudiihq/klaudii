@@ -7,6 +7,8 @@ let sortDir = localStorage.getItem("klaudii-sort-dir") || "desc";
 let openPanelProject = null;
 let panelAutoCloseTimer = null;
 let showWorkerWorkspaces = false; // driven by server settings (workerVisibility)
+let currentProject = localStorage.getItem("klaudii-current-project") || "";
+let allProjectsList = [];
 
 // --- SVG icon constants (matching extension) ---
 const STAT_CPU_SVG = `<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="4" width="16" height="16" rx="2"/><rect x="9" y="9" width="6" height="6"/><line x1="9" y1="1" x2="9" y2="4"/><line x1="15" y1="1" x2="15" y2="4"/><line x1="9" y1="20" x2="9" y2="23"/><line x1="15" y1="20" x2="15" y2="23"/><line x1="20" y1="9" x2="23" y2="9"/><line x1="20" y1="14" x2="23" y2="14"/><line x1="1" y1="9" x2="4" y2="9"/><line x1="1" y1="14" x2="4" y2="14"/></svg>`;
@@ -85,6 +87,56 @@ async function api(path, opts = {}) {
   return res.json();
 }
 
+// --- Project switcher ---
+
+function getRepoName(projectName) {
+  const parts = projectName.split("--");
+  return parts[0];
+}
+
+async function refreshProjectSwitcher() {
+  try {
+    allProjectsList = await api("/api/projects");
+    if (!Array.isArray(allProjectsList)) allProjectsList = [];
+  } catch {
+    allProjectsList = [];
+  }
+
+  const repos = [...new Set(allProjectsList.map(p => getRepoName(p.name)))].sort();
+  const select = document.getElementById("project-switcher");
+  if (!select) return;
+
+  const prev = select.value;
+  select.innerHTML = `<option value="">All Projects</option>` +
+    repos.map(r => `<option value="${esc(r)}"${r === currentProject ? " selected" : ""}>${esc(r)}</option>`).join("");
+
+  // If stored project no longer exists, reset to all
+  if (currentProject && !repos.includes(currentProject)) {
+    currentProject = "";
+    localStorage.removeItem("klaudii-current-project");
+    select.value = "";
+  }
+
+  // Hide switcher if only one repo
+  select.style.display = repos.length <= 1 ? "none" : "";
+}
+
+function switchProject(repo) {
+  currentProject = repo;
+  if (repo) {
+    localStorage.setItem("klaudii-current-project", repo);
+  } else {
+    localStorage.removeItem("klaudii-current-project");
+  }
+  refresh();
+  refreshBeads();
+}
+
+function matchesCurrentProject(projectName) {
+  if (!currentProject) return true;
+  return getRepoName(projectName) === currentProject;
+}
+
 // --- Sorting ---
 
 function setSort(mode) {
@@ -154,6 +206,11 @@ function renderSessions(sessions, procs) {
   // Always hide agent chat workspaces (accessed via header buttons)
   sessions = sessions.filter(s => !s.project.startsWith("__") || !s.project.endsWith("__"));
 
+  // Filter by selected project
+  if (currentProject) {
+    sessions = sessions.filter(s => matchesCurrentProject(s.project));
+  }
+
   // Filter out worker workspaces unless toggle is on
   const workerCount = sessions.filter(s => s.workspaceType === "worker").length;
   if (!showWorkerWorkspaces) {
@@ -164,7 +221,10 @@ function renderSessions(sessions, procs) {
   if (workerToggle) workerToggle.classList.toggle("hidden", workerCount === 0);
 
   if (!sessions.length) {
-    container.innerHTML = '<p style="color:#666">No workspaces configured.</p>';
+    const msg = currentProject
+      ? `No workspaces for project "${esc(currentProject)}".`
+      : "No workspaces configured.";
+    container.innerHTML = `<p style="color:#666">${msg}</p>`;
     return;
   }
 
@@ -1465,6 +1525,15 @@ function renderBeads() {
     return;
   }
 
+  let visibleBeads = beadsData;
+  if (currentProject) {
+    visibleBeads = beadsData.filter(b => b.id.startsWith(currentProject + "-"));
+  }
+  if (!visibleBeads.length) {
+    section.classList.add("hidden");
+    return;
+  }
+
   section.classList.remove("hidden");
   const toggle = document.getElementById("beads-toggle");
   if (toggle) toggle.textContent = beadsCollapsed ? "Show" : "Hide";
@@ -1474,8 +1543,8 @@ function renderBeads() {
   if (beadsCollapsed && form) form.classList.add("hidden");
 
   const filtered = beadFilter === "all"
-    ? beadsData
-    : beadsData.filter(b => b.status === beadFilter);
+    ? visibleBeads
+    : visibleBeads.filter(b => b.status === beadFilter);
 
   if (!filtered.length) {
     container.innerHTML = `<div style="padding:12px;color:var(--text-faint);font-size:12px;text-align:center">No beads matching "${beadFilter}"</div>`;
@@ -1898,6 +1967,7 @@ if (new URLSearchParams(window.location.search).get("mode") === "chatonly") {
   // Fetch health once (for auth status used by gemini.js)
   api("/api/health").then(h => { lastHealthData = h; }).catch(() => {});
 } else {
+  refreshProjectSwitcher();
   refresh();
   refreshCloudStatus();
   refreshScheduler();
@@ -1909,4 +1979,6 @@ if (new URLSearchParams(window.location.search).get("mode") === "chatonly") {
   refreshUsage();
   setInterval(refreshUsage, 60000);
   setInterval(() => { refreshScheduler(); refreshBeads(); }, 30000);
+  // Refresh project list periodically (new projects may be added)
+  setInterval(refreshProjectSwitcher, 30000);
 }
