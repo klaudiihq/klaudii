@@ -10,6 +10,9 @@
 <body>
   <header>
     <h1>Klaudii</h1>
+    <select id="project-switcher" class="project-switcher" onchange="switchProject(this.value)" title="Switch project">
+      <option value="">All Projects</option>
+    </select>
     <span id="status-badge" class="badge">checking...</span>
     <div id="auth-status" class="auth-box"></div>
     <div class="agent-btns" style="margin-left:auto;display:flex;gap:0.25rem">
@@ -22,6 +25,14 @@
   </header>
 
   <div id="app-layout" class="app-layout">
+    <aside id="sidebar" class="sidebar">
+      <div class="sidebar-tabs">
+        <button class="sidebar-tab" data-tab="workers" onclick="switchSidebarTab('workers')">Workers <span class="sidebar-badge" id="sidebar-badge-workers">0</span></button>
+        <button class="sidebar-tab" data-tab="beads" onclick="switchSidebarTab('beads')">Beads <span class="sidebar-badge" id="sidebar-badge-beads">0</span></button>
+        <button class="sidebar-tab active" data-tab="workspaces" onclick="switchSidebarTab('workspaces')">Workspaces <span class="sidebar-badge" id="sidebar-badge-workspaces">0</span></button>
+      </div>
+      <div class="sidebar-content" id="sidebar-content"></div>
+    </aside>
     <main>
       <section id="usage-section" class="usage-section hidden">
         <div class="usage-header">
@@ -153,6 +164,24 @@
             <button id="gemini-send" class="gemini-send-btn" onclick="sendGeminiMessage()">Send</button>
           </div>
         </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Worker Detail Panel (slide-out) -->
+  <div id="worker-detail-overlay" class="worker-detail-overlay hidden" onclick="closeWorkerDetailBackdrop(event)">
+    <div class="worker-detail-panel" id="worker-detail-panel">
+      <div class="worker-detail-header">
+        <div class="worker-detail-title" id="worker-detail-title"></div>
+        <button class="btn btn-sm" onclick="closeWorkerDetail()">X</button>
+      </div>
+      <div class="worker-detail-stats" id="worker-detail-stats"></div>
+      <div class="worker-detail-tabs">
+        <button class="worker-tab active" data-tab="task" onclick="switchWorkerTab('task')">Task</button>
+        <button class="worker-tab" data-tab="activity" onclick="switchWorkerTab('activity')">Activity</button>
+      </div>
+      <div class="worker-detail-body" id="worker-detail-body">
+        <div class="worker-detail-loading">Loading...</div>
       </div>
     </div>
   </div>

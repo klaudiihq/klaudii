@@ -29,3 +29,34 @@ jobs:
           node-version: 22
       - run: cd konnect/server && npm ci
       - run: cd konnect/server && npm test
+
+  test-e2e:
+    name: E2E Playwright Tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npx playwright install --with-deps chromium
+      - run: npx playwright test --retries=2
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: playwright-screenshots
+          path: test-results/
+          retention-days: 7
+
+  coverage:
+    name: Code Coverage
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npx vitest run --coverage

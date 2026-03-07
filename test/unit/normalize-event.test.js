@@ -23,11 +23,10 @@ describe("normalizeEvent", () => {
   // =========================================================================
 
   describe("user event → synthetic result (CRITICAL)", () => {
-    it("emits a synthetic { type: 'result' } BEFORE tool_result events", () => {
-      // This is the #1 load-bearing line in the entire system.
-      // Claude CLI never emits "result" in stream-json mode.
-      // This synthetic result is the SOLE trigger for persisting assistant turns.
-      // Removing or reordering it silently loses all assistant responses.
+    it("emits tool_result events BEFORE synthetic result", () => {
+      // tool_result must come first so clients finalize tool pills before
+      // the "result" event triggers "done" and resets streaming state.
+      // See lib/claude-chat.js lines 645-651 for the rationale.
       const raw = {
         type: "user",
         message: {
@@ -45,13 +44,14 @@ describe("normalizeEvent", () => {
 
       const events = normalizeEvent(raw);
 
-      // FIRST event MUST be the synthetic result
       expect(events.length).toBeGreaterThanOrEqual(2);
-      expect(events[0]).toEqual({ type: "result", stats: {} });
 
-      // tool_result follows
-      expect(events[1].type).toBe("tool_result");
-      expect(events[1].tool_id).toBe("tool_abc");
+      // tool_result comes first
+      expect(events[0].type).toBe("tool_result");
+      expect(events[0].tool_id).toBe("tool_abc");
+
+      // synthetic result is LAST
+      expect(events[events.length - 1]).toEqual({ type: "result", stats: {} });
     });
 
     it("emits synthetic result even for user events with no tool_result blocks", () => {

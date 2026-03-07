@@ -10,12 +10,12 @@ test.describe("New Session Modal", () => {
     const modal = page.locator("#new-session-modal");
     await expect(modal).toHaveClass(/hidden/);
 
-    await page.click('button:has-text("+ New Session")');
+    await page.click('button:has-text("+ New Workspace")');
     await expect(modal).not.toHaveClass(/hidden/);
   });
 
   test("modal shows repo list", async ({ page }) => {
-    await page.click('button:has-text("+ New Session")');
+    await page.click('button:has-text("+ New Workspace")');
 
     // Wait for repos to load
     await page.waitForSelector("#repo-list .repo-item, #repo-list div", { timeout: 5000 });
@@ -24,7 +24,7 @@ test.describe("New Session Modal", () => {
   });
 
   test("modal closes on X button", async ({ page }) => {
-    await page.click('button:has-text("+ New Session")');
+    await page.click('button:has-text("+ New Workspace")');
     const modal = page.locator("#new-session-modal");
     await expect(modal).not.toHaveClass(/hidden/);
 
@@ -33,7 +33,7 @@ test.describe("New Session Modal", () => {
   });
 
   test("modal closes on backdrop click", async ({ page }) => {
-    await page.click('button:has-text("+ New Session")');
+    await page.click('button:has-text("+ New Workspace")');
     const modal = page.locator("#new-session-modal");
     await expect(modal).not.toHaveClass(/hidden/);
 
@@ -43,7 +43,7 @@ test.describe("New Session Modal", () => {
   });
 
   test("repo search filters the list", async ({ page }) => {
-    await page.click('button:has-text("+ New Session")');
+    await page.click('button:has-text("+ New Workspace")');
 
     // Wait for repo list to render
     await page.waitForFunction(() => {
@@ -62,7 +62,7 @@ test.describe("New Session Modal", () => {
   });
 
   test("branch form appears after selecting a repo", async ({ page }) => {
-    await page.click('button:has-text("+ New Session")');
+    await page.click('button:has-text("+ New Workspace")');
 
     // Wait for repos to load
     await page.waitForFunction(() => {
@@ -82,7 +82,7 @@ test.describe("New Session Modal", () => {
   });
 
   test("create new repo form toggle", async ({ page }) => {
-    await page.click('button:has-text("+ New Session")');
+    await page.click('button:has-text("+ New Workspace")');
 
     const repoSearchView = page.locator("#repo-search-view");
     const createRepoView = page.locator("#create-repo-view");
