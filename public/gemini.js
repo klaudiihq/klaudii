@@ -36,11 +36,114 @@ let geminiWasStreamingAtDisconnect = false; // set in onclose, cleared in onopen
 let geminiHistoryFetchFailed = false;        // set when history fetch fails (server not ready); triggers re-fetch on reconnect
 let geminiAgentRole = null;          // "architect" | "shepherd" | null — set when in agent chat mode
 let geminiThinkingEnabled = false;           // extended thinking toggle state
+let geminiToolDisplayMode = "normal";        // "minimal" | "normal" | "full"
 
 // Per-workspace message history (in-memory cache, server is source of truth)
 // workspace → [ { role, content } ]  (for current session)
 const geminiHistory = {};
 const geminiAskToolIds = new Set(); // tool_ids for AskUserQuestion — suppress their tool_result pills
+
+// --- Tool display mode helpers ---
+
+const READONLY_TOOLS = new Set([
+  "read", "readfile", "glob", "listfiles", "grep", "search", "searchfiles",
+  "webfetch", "websearch", "toolsearch", "lsp", "agent",
+]);
+
+const READONLY_BASH_PATTERNS = /^\s*(ls|pwd|echo|cat|head|tail|wc|find|grep|rg|git\s+(status|log|diff|show|branch|remote|tag)|which|whoami|date|env|printenv|uname|file|stat|du|df|tree|type|readlink|bd\s+(show|ready|list|export))\b/;
+
+function isReadOnlyTool(toolName, params) {
+  const n = (toolName || "").toLowerCase().replace(/_/g, "");
+  if (READONLY_TOOLS.has(n)) return true;
+  if (n === "bash" || n === "shell" || n === "runcommand") {
+    const cmd = (params && (params.command || params.cmd)) || "";
+    return READONLY_BASH_PATTERNS.test(cmd);
+  }
+  return false;
+}
+
+function geminiGetToolDisplayMode() {
+  if (geminiWorkspace) {
+    return localStorage.getItem(`klaudii-tool-display-${geminiWorkspace}`) || "normal";
+  }
+  return "normal";
+}
+
+function geminiSetToolDisplayMode(mode) {
+  if (!["minimal", "normal", "full"].includes(mode)) return;
+  geminiToolDisplayMode = mode;
+  if (geminiWorkspace) {
+    localStorage.setItem(`klaudii-tool-display-${geminiWorkspace}`, mode);
+  }
+  const sel = document.getElementById("gemini-tool-display");
+  if (sel && sel.value !== mode) sel.value = mode;
+  geminiApplyToolDisplayMode();
+}
+
+function geminiRestoreToolDisplayMode() {
+  geminiToolDisplayMode = geminiGetToolDisplayMode();
+  const sel = document.getElementById("gemini-tool-display");
+  if (sel) sel.value = geminiToolDisplayMode;
+}
+
+function geminiApplyToolDisplayMode() {
+  const container = document.getElementById("gemini-messages");
+  if (!container) return;
+  container.dataset.toolDisplay = geminiToolDisplayMode;
+
+  // Retroactively apply to all existing tool pills
+  const pills = container.querySelectorAll(".gemini-tool");
+  for (const pill of pills) {
+    const name = pill.dataset.toolName || "";
+    const readonly = pill.dataset.toolReadonly === "true";
+
+    if (geminiToolDisplayMode === "minimal" && readonly) {
+      pill.style.display = "none";
+    } else {
+      pill.style.display = "";
+    }
+
+    if (pill.tagName === "DETAILS") {
+      if (geminiToolDisplayMode === "full") {
+        pill.open = true;
+      } else {
+        pill.open = false;
+      }
+    }
+  }
+
+  // Also handle sub-items in groups
+  const subs = container.querySelectorAll(".gemini-tool-sub");
+  for (const sub of subs) {
+    if (sub.tagName === "DETAILS") {
+      sub.open = geminiToolDisplayMode === "full";
+    }
+  }
+
+  // Handle group visibility in minimal mode
+  const groups = container.querySelectorAll(".gemini-tool-group");
+  for (const group of groups) {
+    const visibleSubs = group.querySelectorAll(".gemini-tool-sub:not([style*='display: none'])");
+    if (geminiToolDisplayMode === "minimal") {
+      // Hide group if all sub-items are readonly
+      const allReadonly = [...group.querySelectorAll(".gemini-tool-sub")].every(
+        s => s.dataset.toolReadonly === "true"
+      );
+      group.style.display = allReadonly ? "none" : "";
+    } else {
+      group.style.display = "";
+    }
+  }
+}
+
+function geminiShouldShowTool(toolName, params) {
+  if (geminiToolDisplayMode !== "minimal") return true;
+  return !isReadOnlyTool(toolName, params);
+}
+
+function geminiInitialPillOpen() {
+  return geminiToolDisplayMode === "full";
+}
 
 // --- URL query parameter support ---
 
@@ -1453,7 +1556,9 @@ function geminiCreateToolGroup(toolName, isRunning) {
   group.open = true;
   group.className = `gemini-tool gemini-tool-group${isRunning ? " running" : ""}`;
   group.dataset.toolName = toolName;
-  group.addEventListener("toggle", () => { if (!group.open) group.open = true; });
+  group.addEventListener("toggle", () => {
+    if (!group.open && geminiToolDisplayMode === "full") group.open = true;
+  });
 
   const summary = document.createElement("summary");
   summary.className = "gemini-tool-summary";
@@ -1472,10 +1577,16 @@ function geminiCreateToolGroup(toolName, isRunning) {
 
 function geminiMakeSubItem(toolName, toolId, params, isRunning, status, output) {
   const isError = status === "error";
+  const readonly = isReadOnlyTool(toolName, params);
   const sub = document.createElement("details");
   sub.className = `gemini-tool-sub${isRunning ? " running" : (isError ? " error" : " success")}`;
   sub.dataset.toolId = toolId || "";
   sub.dataset.toolName = toolName || "";
+  sub.dataset.toolReadonly = readonly ? "true" : "false";
+  if (!isRunning && geminiToolDisplayMode === "full") sub.open = true;
+  if (geminiToolDisplayMode === "minimal" && readonly && !isRunning) {
+    sub.style.display = "none";
+  }
 
   const desc = geminiToolDescription(toolName, params);
   const summary = document.createElement("summary");
@@ -1565,6 +1676,14 @@ function geminiUpdateSubItemResult(subItem, status, output, error) {
   geminiStopPillTimer(subItem);
   subItem.classList.remove("running");
   subItem.classList.add(isError ? "error" : "success");
+  if (geminiToolDisplayMode === "full") {
+    subItem.open = true;
+  } else {
+    subItem.open = false;
+  }
+  if (geminiToolDisplayMode === "minimal" && subItem.dataset.toolReadonly === "true") {
+    subItem.style.display = "none";
+  }
 
   const summary = subItem.querySelector(".gemini-tool-sub-summary");
   const spinner = summary?.querySelector(".gemini-tool-spinner");
@@ -1738,15 +1857,23 @@ function geminiRenderCompletedTool(toolName, toolId, params, status, output) {
   }
 
   const isError = status === "error";
+  const readonly = isReadOnlyTool(toolName, params);
   const pill = document.createElement("details");
-  pill.open = true;
+  pill.open = geminiInitialPillOpen();
   pill.className = `gemini-tool ${isError ? "error" : "success"}`;
   pill.dataset.toolId = toolId || "";
   pill.dataset.toolName = toolName || "";
+  pill.dataset.toolReadonly = readonly ? "true" : "false";
   pill._toolParams = params;
   pill._toolOutput = output || "";
   pill._toolStatus = status;
-  pill.addEventListener("toggle", () => { if (!pill.open) pill.open = true; });
+  pill.addEventListener("toggle", () => {
+    if (!pill.open && geminiToolDisplayMode === "full") pill.open = true;
+  });
+
+  if (!geminiShouldShowTool(toolName, params)) {
+    pill.style.display = "none";
+  }
 
   const desc = geminiToolDescription(toolName, params);
   const summary = document.createElement("summary");
@@ -1850,13 +1977,19 @@ function geminiAppendToolUse(toolName, toolId, params) {
     }
   }
 
+  const readonly = isReadOnlyTool(toolName, params);
   const pill = document.createElement("details");
-  pill.open = true;
+  pill.open = true; // Running tools always start open
   pill.className = "gemini-tool running";
   pill.dataset.toolId = toolId;
   pill.dataset.toolName = toolName;
+  pill.dataset.toolReadonly = readonly ? "true" : "false";
   pill._toolParams = params;
   pill.addEventListener("toggle", () => { if (!pill.open) pill.open = true; });
+
+  if (!geminiShouldShowTool(toolName, params)) {
+    pill.style.display = "none";
+  }
 
   const desc = geminiToolDescription(toolName, params);
   const summary = document.createElement("summary");
@@ -1918,6 +2051,11 @@ function geminiUpdateToolResult(toolId, status, output, error) {
     pill._toolOutput = (error || output || "");
     pill._toolStatus = isError ? "error" : "success";
 
+    // Collapse if not in full mode (running pills were open for spinner visibility)
+    if (geminiToolDisplayMode !== "full") {
+      pill.open = false;
+    }
+
     // Replace spinner with status icon
     const summaryEl = pill.querySelector(".gemini-tool-summary");
     if (summaryEl) {
@@ -1951,9 +2089,11 @@ function geminiUpdateToolResult(toolId, status, output, error) {
   } else {
     // No matching pill — standalone fallback
     const pill2 = document.createElement("details");
-    pill2.open = true;
+    pill2.open = geminiInitialPillOpen();
     pill2.className = `gemini-tool ${isError ? "error" : "success"}`;
-    pill2.addEventListener("toggle", () => { if (!pill2.open) pill2.open = true; });
+    pill2.addEventListener("toggle", () => {
+      if (!pill2.open && geminiToolDisplayMode === "full") pill2.open = true;
+    });
     const summary = document.createElement("summary");
     summary.className = "gemini-tool-summary";
     const icon = isError ? "\u2717" : "\u2713";
@@ -1986,6 +2126,7 @@ function geminiFinalizeOrphanedPills() {
     geminiStopPillTimer(pill);
     pill.classList.remove("running");
     pill.classList.add("success");
+    if (geminiToolDisplayMode !== "full") pill.open = false;
     const spinner = pill.querySelector(".gemini-tool-spinner");
     if (spinner) {
       const icon = document.createElement("span");
@@ -2742,6 +2883,7 @@ async function openGeminiChat(project, projectPath, cli) {
   geminiUpdatePermissionVisibility();
   geminiRestorePermissionMode();
   geminiRestoreThinking();
+  geminiRestoreToolDisplayMode();
 
   // Restore last session from server state (non-blocking — geminiShowChat uses it)
   geminiSessionNum = null;

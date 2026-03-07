@@ -2111,7 +2111,15 @@ async function renderWorkerActivity(project) {
   }
 }
 
+function getWorkerToolDisplayMode() {
+  if (currentWorkerProject) {
+    return localStorage.getItem(`klaudii-tool-display-${currentWorkerProject}`) || "normal";
+  }
+  return "normal";
+}
+
 function renderActivityMessages(messages) {
+  const mode = getWorkerToolDisplayMode();
   let html = '<div class="worker-activity">';
   const pendingTools = new Map();
 
@@ -2143,14 +2151,16 @@ function renderActivityMessages(messages) {
         const statusCls = d.status === "error" ? "error" : "success";
         const output = d.output || "";
 
-        html += renderToolPill(toolName, params, statusCls, output);
+        html += renderToolPill(toolName, params, statusCls, output, mode);
       } catch {}
     }
   }
 
   // Flush pending tools that never got results (still running)
   for (const tu of pendingTools.values()) {
-    html += `<div class="wa-tool-pill running">
+    const readonly = typeof isReadOnlyTool === "function" && isReadOnlyTool(tu.tool_name, tu.parameters);
+    const hidden = mode === "minimal" && readonly;
+    html += `<div class="wa-tool-pill running"${hidden ? ' style="display:none"' : ''}>
       <div class="wa-tool-header">${esc(tu.tool_name)} <span class="wa-tool-status running">running</span></div>
       ${renderToolParams(tu.parameters)}
     </div>`;
@@ -2160,11 +2170,18 @@ function renderActivityMessages(messages) {
   return html;
 }
 
-function renderToolPill(name, params, statusCls, output) {
+function renderToolPill(name, params, statusCls, output, mode) {
+  mode = mode || "normal";
+  const readonly = typeof isReadOnlyTool === "function" && isReadOnlyTool(name, params);
+
+  // Minimal: hide read-only tools
+  if (mode === "minimal" && readonly) return "";
+
   const paramSummary = renderToolParamSummary(name, params);
   const outputPreview = output.length > 500 ? output.slice(0, 500) + "..." : output;
+  const expanded = mode === "full" ? " expanded" : "";
 
-  return `<div class="wa-tool-pill ${esc(statusCls)}">
+  return `<div class="wa-tool-pill ${esc(statusCls)}${expanded}">
     <div class="wa-tool-header" onclick="this.parentElement.classList.toggle('expanded')">
       <span class="wa-tool-name">${esc(name)}</span>
       ${paramSummary ? `<span class="wa-tool-summary">${paramSummary}</span>` : ""}

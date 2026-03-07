@@ -132,6 +132,11 @@
         <div class="gemini-bar-actions">
           <span id="gemini-quota" class="gemini-bar-quota"></span>
           <span id="gemini-status" class="gemini-bar-status"></span>
+          <select id="gemini-tool-display" class="gemini-chip-select" title="Tool display mode" onchange="geminiSetToolDisplayMode(this.value)">
+            <option value="minimal">Minimal</option>
+            <option value="normal" selected>Normal</option>
+            <option value="full">Full</option>
+          </select>
           <select id="gemini-session" class="gemini-session-select hidden" title="Session" onchange="geminiSwitchSession(Number(this.value))"></select>
           <button class="btn btn-sm" onclick="clearGeminiSession()">New Chat</button>
           <button class="btn btn-sm" onclick="closeGeminiChat()">Close</button>
