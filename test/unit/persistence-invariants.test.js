@@ -127,7 +127,7 @@ describe("claude-chat.js invariants", () => {
     // from normalizeEvent's "user" case, but text-only turns don't because the
     // next user message comes from sendMessage, not from Claude's event stream.
     //
-    // flushTurn() emits a synthetic { type: "result", _flush: true } to trigger
+    // flushTurn() emits a synthetic { type: "result", stats: {} } to trigger
     // persistence of the accumulated content before the new message starts.
     const sendFn = claudeChat.match(/function\s+sendMessage\s*\([^)]*\)\s*\{([\s\S]*?)\n\}/);
     expect(sendFn, "sendMessage function must exist").toBeTruthy();
@@ -204,21 +204,22 @@ describe("claude-chat.js invariants", () => {
     ].join("\n")).toBe(true);
   });
 
-  it("flushTurn must emit _flush: true on the synthetic result", () => {
-    // The _flush flag tells the server's result handler not to broadcast "done"
-    // or clear streaming state. Without it, flushTurn() prematurely signals
-    // turn completion to all connected browsers right before the next message starts.
+  it("flushTurn must emit a synthetic result with empty stats", () => {
+    // flushTurn() emits { type: "result", stats: {} } to trigger persistence
+    // of accumulated content before a new user message starts. The empty stats
+    // object signals to the server that this is a synthetic flush, not a real
+    // turn-end — so the server must NOT broadcast "done" or clear streaming.
 
     // Find the flushTurn method body — it's a multi-line method in an object literal
     const flushRegion = claudeChat.match(/flushTurn\s*\(\s*\)\s*\{([\s\S]*?)\n\s{4}\}/);
     expect(flushRegion, "flushTurn method must exist").toBeTruthy();
 
     const body = flushRegion[1];
-    const hasFlushFlag = /_flush\s*:\s*true/.test(body);
-    expect(hasFlushFlag, [
-      "flushTurn() must set _flush: true on the synthetic result event.",
-      "Without this flag, the server broadcasts a premature 'done' event",
-      "to all clients between every pair of user messages.",
+    const emitsSyntheticResult = /type:\s*["']result["']/.test(body) && /stats:\s*\{\s*\}/.test(body);
+    expect(emitsSyntheticResult, [
+      "flushTurn() must emit a synthetic { type: 'result', stats: {} }.",
+      "The empty stats object tells the server this is a flush, not a real turn-end.",
+      "Without this, text-only assistant responses are never persisted.",
     ].join("\n")).toBe(true);
   });
 
@@ -282,14 +283,15 @@ describe("claude-chat.js invariants", () => {
 // =========================================================================
 
 describe("server.js invariants", () => {
-  it("result handler must check _flush flag before broadcasting done", () => {
-    // flushTurn() emits { type: "result", _flush: true }. The server's result
-    // handler must NOT broadcast "done" or clear streaming state for _flush results.
-    // Without this check, every sendMessage() causes a premature "done" broadcast.
-    const hasFlushCheck = /event\._flush|event\s*\[\s*["']_flush["']\s*\]/.test(serverJs);
-    expect(hasFlushCheck, [
-      "server.js result handler must check event._flush before broadcasting 'done'.",
-      "flushTurn() emits synthetic results with _flush:true — these must NOT",
+  it("result handler must detect synthetic flushes (empty stats) before broadcasting done", () => {
+    // flushTurn() emits { type: "result", stats: {} }. The server's result handler
+    // must detect synthetic results (empty stats) and NOT broadcast "done" or clear
+    // streaming state. Without this, every sendMessage() causes a premature "done".
+    const hasSyntheticCheck = /isSyntheticFlush/.test(serverJs) ||
+      /Object\.keys\s*\(\s*event\.stats/.test(serverJs);
+    expect(hasSyntheticCheck, [
+      "server.js result handler must detect synthetic flushes (empty stats).",
+      "flushTurn() emits results with stats:{} — these must NOT",
       "trigger 'done' broadcasts or clear streaming state.",
     ].join("\n")).toBe(true);
   });

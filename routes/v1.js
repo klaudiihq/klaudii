@@ -766,6 +766,7 @@ module.exports = function createV1Router(deps) {
 
   router.get("/tasks/:id", (req, res) => {
     const id = req.params.id;
+    if (!/^\d+$/.test(id)) return res.status(400).json({ error: "invalid task ID" });
     try {
       const task = tasks.get(id);
       if (!task) return res.status(404).json({ error: "task not found" });
@@ -841,6 +842,7 @@ module.exports = function createV1Router(deps) {
 
   router.patch("/tasks/:id", (req, res) => {
     const id = req.params.id;
+    if (!/^\d+$/.test(id)) return res.status(400).json({ error: "invalid task ID" });
     const { status, comment, assignee, priority } = req.body;
 
     try {

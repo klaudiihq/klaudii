@@ -91,7 +91,7 @@ describe("gemini-a2a", () => {
 
   describe("module exports", () => {
     it("exports the expected public API", () => {
-      expect(geminiA2A).toHaveProperty("sendMessage");
+      expect(geminiA2A).toHaveProperty("startChat");
       expect(geminiA2A).toHaveProperty("isActive");
       expect(geminiA2A).toHaveProperty("stopProcess");
       expect(geminiA2A).toHaveProperty("stopAllProcesses");

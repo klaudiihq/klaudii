@@ -1,7 +1,28 @@
+const path = require("path");
+const fs = require("fs");
+const os = require("os");
+
+// ── PID lockfile: bail immediately if another instance is running ──
+(function checkPidLock() {
+  const dir = path.join(os.homedir(), "Library", "Application Support", "com.klaudii.server");
+  const pidPath = path.join(dir, "server.pid");
+  try {
+    const pid = parseInt(fs.readFileSync(pidPath, "utf8").trim(), 10);
+    if (!isNaN(pid)) {
+      try {
+        process.kill(pid, 0);
+        console.error(`[server] Another instance is already running (PID ${pid}). Exiting.`);
+        process.exit(1);
+      } catch {
+        console.log(`[server] Removing stale PID file (PID ${pid} not running)`);
+      }
+    }
+  } catch { /* no pidfile — first launch */ }
+})();
+
 const express = require("express");
 const http = require("http");
 const WebSocket = require("ws");
-const path = require("path");
 const { loadConfig, getProjects, addProject, removeProject, getProject, setPermissionMode } = require("./lib/projects");
 const tmux = require("./lib/tmux");
 const ttyd = require("./lib/ttyd");
@@ -14,6 +35,7 @@ const createV1Router = require("./routes/v1");
 const gemini = require("./lib/gemini");
 const claudeChat = require("./lib/claude-chat");
 const workspaceState = require("./lib/workspace-state");
+claudeChat.init({ workspaceState });
 const setup = require("./lib/setup");
 const { mountMcp } = require("./lib/mcp");
 const scheduler = require("./lib/scheduler");
@@ -509,22 +531,31 @@ connector.init(app, config);
 
 const server = http.createServer(app);
 
-const os  = require("os");
+const SUPPORT_DIR = path.join(os.homedir(), "Library", "Application Support", "com.klaudii.server");
 
 function writePortFile(port) {
-  const dir = path.join(os.homedir(), "Library", "Application Support", "com.klaudii.server");
   try {
-    require("fs").mkdirSync(dir, { recursive: true });
-    require("fs").writeFileSync(path.join(dir, "port"), String(port));
+    fs.mkdirSync(SUPPORT_DIR, { recursive: true });
+    fs.writeFileSync(path.join(SUPPORT_DIR, "port"), String(port));
   } catch {}
 }
 
 function clearPortFile() {
-  const f = path.join(os.homedir(), "Library", "Application Support", "com.klaudii.server", "port");
-  try { require("fs").unlinkSync(f); } catch {}
+  try { fs.unlinkSync(path.join(SUPPORT_DIR, "port")); } catch {}
 }
 
-process.on("exit", clearPortFile);
+function writePidFile() {
+  try {
+    fs.mkdirSync(SUPPORT_DIR, { recursive: true });
+    fs.writeFileSync(path.join(SUPPORT_DIR, "server.pid"), String(process.pid));
+  } catch {}
+}
+
+function clearPidFile() {
+  try { fs.unlinkSync(path.join(SUPPORT_DIR, "server.pid")); } catch {}
+}
+
+process.on("exit", () => { clearPortFile(); clearPidFile(); });
 
 // --- Chat WebSocket ---
 
@@ -626,8 +657,11 @@ wss.on("connection", (ws) => {
         workspaceState.setStreaming(workspace, true);
         pendingWorkspaces.add(workspace);
 
+        // Capture session number now — it must not change if sessions are switched during streaming
+        const chatSessionNum = backendModule.currentSessionNum(workspace);
+
         // Persist user message
-        backendModule.pushHistory(workspace, "user", message, { sender: msg.sender || "user" });
+        backendModule.pushHistory(workspace, "user", message, { sender: msg.sender || "user" }, chatSessionNum);
 
         // Notify other windows about the user message and streaming start
         broadcastToWorkspace(workspace, { type: "user_message", workspace, content: message, sender: msg.sender || "user", ts: Date.now() }, clientId);
@@ -703,17 +737,18 @@ wss.on("connection", (ws) => {
             }
           } else if (event.type === "result") {
             // Turn completed — persist history, reset streaming, reset accumulators for next turn
-            console.log(`[chat-ws] turn done workspace=${workspace} cli=${backend} eventsSent=${eventsSent} assistantLen=${assistantText.length} toolEvents=${toolEvents.length} flush=${!!event._flush}`);
+            const isSyntheticFlush = !event.stats || Object.keys(event.stats).length === 0;
+            console.log(`[chat-ws] turn done workspace=${workspace} cli=${backend} session#${chatSessionNum} eventsSent=${eventsSent} assistantLen=${assistantText.length} toolEvents=${toolEvents.length} synthetic=${isSyntheticFlush}`);
             const batch = [...toolEvents];
             if (assistantText) batch.push({ role: "assistant", content: assistantText });
-            if (batch.length > 0) backendModule.pushHistoryBatch(workspace, batch);
+            if (batch.length > 0) backendModule.pushHistoryBatch(workspace, batch, chatSessionNum);
             assistantText = "";
             toolEvents.length = 0;
             eventsSent = 0;
             workspaceState.setPendingPermission(workspace, null);
-            // _flush = synthetic turn-end from sendMessage — don't broadcast "done"
-            // or clear streaming, since a new message is about to start immediately.
-            if (!event._flush) {
+            // Synthetic results (empty stats) come from normalizeEvent between tool-call
+            // turns — persist history but don't broadcast "done" or clear streaming.
+            if (!isSyntheticFlush) {
               // Forward result event with stats so client can show cost/token footer
               if (event.stats && Object.keys(event.stats).length > 0) {
                 workspaceState.addTurnStats(workspace, event.stats);
@@ -736,7 +771,7 @@ wss.on("connection", (ws) => {
           workspaceState.touchChatActivity(workspace);
           const batch = [...toolEvents];
           if (assistantText) batch.push({ role: "assistant", content: assistantText });
-          if (batch.length > 0) backendModule.pushHistoryBatch(workspace, batch);
+          if (batch.length > 0) backendModule.pushHistoryBatch(workspace, batch, chatSessionNum);
           broadcastToWorkspace(workspace, {
             type: "done",
             workspace,
@@ -856,7 +891,8 @@ claudeChat.recoverStreams();
 
 // --- Wire up event routing for a Claude relay handle ---
 
-function wireRelayEvents(workspace, handle) {
+function wireRelayEvents(workspace, handle, sessionNum) {
+  const chatSessionNum = sessionNum || claudeChat.currentSessionNum(workspace);
   workspaceState.setStreaming(workspace, false);
 
   let assistantText = "";
@@ -897,14 +933,15 @@ function wireRelayEvents(workspace, handle) {
         broadcastToWorkspace(workspace, { type: "usage", workspace, stats: event.stats, cumulative });
       }
     } else if (event.type === "result") {
-      console.log(`[server] reconnect-handler result workspace=${workspace} flush=${!!event._flush} statsKeys=${Object.keys(event.stats || {}).join(",")} assistantLen=${assistantText.length} toolEvents=${toolEvents.length}`);
+      const isSyntheticFlush = !event.stats || Object.keys(event.stats).length === 0;
+      console.log(`[server] reconnect-handler result workspace=${workspace} session#${chatSessionNum} synthetic=${isSyntheticFlush} statsKeys=${Object.keys(event.stats || {}).join(",")} assistantLen=${assistantText.length} toolEvents=${toolEvents.length}`);
       const batch = [...toolEvents];
       if (assistantText) batch.push({ role: "assistant", content: assistantText });
-      if (batch.length > 0) claudeChat.pushHistoryBatch(workspace, batch);
+      if (batch.length > 0) claudeChat.pushHistoryBatch(workspace, batch, chatSessionNum);
       assistantText = "";
       toolEvents.length = 0;
       workspaceState.setPendingPermission(workspace, null); // turn complete, clear any pending prompt
-      if (!event._flush) {
+      if (!isSyntheticFlush) {
         if (event.stats && Object.keys(event.stats).length > 0) {
           workspaceState.addTurnStats(workspace, event.stats);
           const cumulative = workspaceState.getCumulativeStats(workspace);
@@ -926,8 +963,8 @@ function wireRelayEvents(workspace, handle) {
               .then((result) => {
                 if (result) {
                   console.log(`[server] handoff complete workspace=${workspace} newSession=${result.sessionNum}`);
-                  // Wire up the new relay's events
-                  wireRelayEvents(workspace, result.handle);
+                  // Wire up the new relay's events (pass new session number so history goes to the right place)
+                  wireRelayEvents(workspace, result.handle, result.sessionNum);
                 } else {
                   console.log(`[server] handoff returned null workspace=${workspace}`);
                   broadcastToWorkspace(workspace, { type: "done", workspace, exitCode: 0 });
@@ -954,7 +991,7 @@ function wireRelayEvents(workspace, handle) {
     workspaceState.touchChatActivity(workspace);
     const batch = [...toolEvents];
     if (assistantText) batch.push({ role: "assistant", content: assistantText });
-    if (batch.length > 0) claudeChat.pushHistoryBatch(workspace, batch);
+    if (batch.length > 0) claudeChat.pushHistoryBatch(workspace, batch, chatSessionNum);
     broadcastToWorkspace(workspace, { type: "done", workspace, exitCode: code });
   });
 
@@ -998,6 +1035,7 @@ process.on("SIGINT", () => gracefulShutdown("SIGINT"));
 
 const PORT = Number(process.env.PORT || config.port || 9876);
 server.listen(PORT, "0.0.0.0", () => {
+  writePidFile();
   writePortFile(PORT);
   console.log(`Klaudii manager running at http://0.0.0.0:${PORT}`);
   console.log(`  tmux: ${tmux.isTmuxInstalled() ? "installed" : "NOT FOUND — run: brew install tmux"}`);

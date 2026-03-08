@@ -2249,9 +2249,8 @@ function renderSidebar() {
 }
 
 function updateSidebarBadges() {
-  const sessions = lastSessions.filter(s => !(s.project.startsWith("__") && s.project.endsWith("__")));
-  const workers = sessions.filter(s => s.workspaceType === "worker");
-  const workspaces = sessions.filter(s => s.workspaceType !== "worker");
+  const workers = lastSessions.filter(s => s.workspaceType === "worker");
+  const workspaces = lastSessions.filter(s => s.workspaceType !== "worker");
 
   const runningWorkers = workers.filter(s => {
     const st = s.status || (s.running ? "running" : "stopped");
@@ -2353,18 +2352,43 @@ function renderSidebarTasks() {
 
 function renderSidebarWorkspaces() {
   const container = document.getElementById("sidebar-content");
+
+  // Agent workspaces (pinned at top)
+  const agents = lastSessions.filter(s =>
+    s.project.startsWith("__") && s.project.endsWith("__")
+  );
+  // Regular workspaces
   let sessions = lastSessions.filter(s =>
     s.workspaceType !== "worker" && !(s.project.startsWith("__") && s.project.endsWith("__"))
   );
 
-  if (!sessions.length) {
+  if (!sessions.length && !agents.length) {
     container.innerHTML = '<div class="sidebar-empty">No workspaces</div>';
     return;
   }
 
   sessions = sortSessions(sessions);
 
-  container.innerHTML = sessions.map(s => {
+  const agentHtml = agents.map(s => {
+    const role = s.project.replace(/^__|__$/g, "");
+    const label = role.charAt(0).toUpperCase() + role.slice(1);
+    const status = s.status || (s.running ? "running" : "stopped");
+    const displayStatus = (status === "stopped" && s.relayActive) ? "running" : status;
+    const lastAct = s.lastActivity ? relativeTime(s.lastActivity) : "";
+
+    return `<div class="sidebar-card sidebar-card-pinned" data-project="${esc(s.project)}" data-project-path="${esc(s.projectPath || "")}" data-chat-mode="${esc(s.chatMode || "claude-local")}" data-claude-url="${esc(s.claudeUrl || "")}" data-agent-role="${esc(role)}" onclick="sidebarAgentClick(this)">
+      <div class="sidebar-card-accent ${displayStatus}"></div>
+      <div class="sidebar-card-body">
+        <div class="sidebar-card-header">
+          <span class="sidebar-card-title"><span class="agent-role-dot ${esc(role)}"></span>${esc(label)}</span>
+          <span class="card-status ${displayStatus}" style="font-size:9px;padding:1px 5px">${esc(displayStatus)}</span>
+        </div>
+        ${lastAct ? `<span class="sidebar-card-meta">${esc(lastAct)}</span>` : ""}
+      </div>
+    </div>`;
+  }).join("");
+
+  const workspaceHtml = sessions.map(s => {
     const parts = s.project.split("--");
     const repo = parts[0];
     const branch = parts.length > 1 ? parts.slice(1).join("--") : null;
@@ -2384,6 +2408,8 @@ function renderSidebarWorkspaces() {
       </div>
     </div>`;
   }).join("");
+
+  container.innerHTML = agentHtml + workspaceHtml;
 }
 
 function sidebarWorkspaceClick(el) {
@@ -2405,6 +2431,14 @@ function sidebarWorkspaceClick(el) {
 
   const cli = chatMode === "gemini" ? "gemini" : "claude";
   openChat(project, projectPath, cli);
+}
+
+function sidebarAgentClick(el) {
+  const role = el.dataset.agentRole;
+  if (!role) return;
+  document.querySelectorAll(".sidebar-card.active-workspace, .card.active-workspace").forEach(c => c.classList.remove("active-workspace"));
+  el.classList.add("active-workspace");
+  openAgentChat(role);
 }
 
 function sidebarWorkerClick(project) {

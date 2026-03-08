@@ -137,7 +137,14 @@
             <option value="expanded">Expanded</option>
             <option value="hidden">Hidden</option>
           </select>
-          <select id="chat-session" class="chat-session-select hidden" title="Session" onchange="chatSwitchSession(Number(this.value))"></select>
+          <div id="chat-session-dropdown" class="chat-session-dropdown hidden">
+            <button id="chat-session-btn" class="chat-session-btn" onclick="chatToggleSessionMenu()">
+              <span id="chat-session-dot" class="session-dot"></span>
+              <span id="chat-session-label">Chat 1</span>
+              <svg class="chat-session-chevron" xmlns="http://www.w3.org/2000/svg" width="10" height="6"><path d="M0 0l5 6 5-6z" fill="#888"/></svg>
+            </button>
+            <div id="chat-session-menu" class="chat-session-menu hidden"></div>
+          </div>
           <button class="btn btn-sm" onclick="clearGeminiSession()">New Chat</button>
           <button class="btn btn-sm" onclick="closeGeminiChat()">Close</button>
         </div>
@@ -295,6 +302,6 @@
 
   <script src="/app.js"></script>
   <script src="/vendor/marked.min.js"></script>
-  <script src="/chat.js?v=28"></script>
+  <script src="/chat.js?v=29"></script>
 </body>
 </html>
