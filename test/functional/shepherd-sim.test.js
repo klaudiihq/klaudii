@@ -82,14 +82,14 @@ function buildMockCtx(sessions = [], opts = {}) {
     },
     claudeChat: {
       getLastMessageTime: () => 0,
-      tagSessionWithBead: () => {},
+      tagSessionWithTask: () => {},
     },
     workspaceState: {
-      getBeadId: (name) => {
+      getTaskId: (name) => {
         const s = sessions.find((ws) => ws.project === name);
         return s ? s.taskId || null : null;
       },
-      setBeadId: () => {},
+      setTaskId: () => {},
       getWorkspaceType: () => "worker",
       setWorkspaceType: () => {},
     },

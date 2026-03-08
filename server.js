@@ -134,9 +134,9 @@ app.post("/api/scheduler/:name/trigger", async (req, res) => {
   res.json({ ok: true, ...result });
 });
 
-// --- Beads ---
+// --- Tasks ---
 
-// Beads CRUD endpoints are in routes/v1.js
+// Tasks CRUD endpoints are in routes/v1.js
 
 // --- Gemini ---
 
@@ -526,9 +526,9 @@ function clearPortFile() {
 
 process.on("exit", clearPortFile);
 
-// --- Gemini WebSocket ---
+// --- Chat WebSocket ---
 
-const wss = new WebSocket.Server({ server, path: "/ws/gemini" });
+const wss = new WebSocket.Server({ server, path: "/ws/chat" });
 
 let wsClientId = 0;
 // Per-workspace flag: has the "processing" ack been sent for the current user turn?
@@ -545,13 +545,13 @@ function broadcastToWorkspace(workspace, payload, excludeClientId) {
 wss.on("connection", (ws) => {
   const clientId = ++wsClientId;
   ws._clientId = clientId;
-  console.log(`[gemini-ws] client #${clientId} connected`);
+  console.log(`[chat-ws] client #${clientId} connected`);
 
   // Track which workspaces this client has active sends — cleared on disconnect
   const pendingWorkspaces = new Set();
 
   ws.on("close", (code, reason) => {
-    console.log(`[gemini-ws] client #${clientId} disconnected code=${code} reason=${reason || ""}`);
+    console.log(`[chat-ws] client #${clientId} disconnected code=${code} reason=${reason || ""}`);
     // Clear streaming flags for any workspaces this client was handling
     for (const w of pendingWorkspaces) workspaceState.setStreaming(w, false);
     pendingWorkspaces.clear();
@@ -562,7 +562,7 @@ wss.on("connection", (ws) => {
     try {
       msg = JSON.parse(raw);
     } catch {
-      console.log(`[gemini-ws] client #${clientId} invalid JSON`);
+      console.log(`[chat-ws] client #${clientId} invalid JSON`);
       ws.send(JSON.stringify({ type: "error", message: "Invalid JSON" }));
       return;
     }
@@ -579,7 +579,7 @@ wss.on("connection", (ws) => {
         }).filter(Boolean)
       : [];
 
-    console.log(`[gemini-ws] client #${clientId} msg type=${type} workspace=${workspace || ""} model=${model || "auto"} cli=${backend} msgLen=${message ? message.length : 0} images=${images.length}`);
+    console.log(`[chat-ws] client #${clientId} msg type=${type} workspace=${workspace || ""} model=${model || "auto"} cli=${backend} msgLen=${message ? message.length : 0} images=${images.length}`);
 
     if (type === "send") {
       if (!workspace || !message) {
@@ -589,7 +589,7 @@ wss.on("connection", (ws) => {
 
       const proj = getProject(workspace);
       if (!proj) {
-        console.log(`[gemini-ws] project not found: ${workspace}`);
+        console.log(`[chat-ws] project not found: ${workspace}`);
         ws.send(JSON.stringify({ type: "error", workspace, message: `project "${workspace}" not found` }));
         return;
       }
@@ -605,7 +605,7 @@ wss.on("connection", (ws) => {
         broadcastToWorkspace(workspace, { type: "user_message", workspace, content: message, sender: msg.sender || "user", ts: Date.now() }, clientId);
         broadcastToWorkspace(workspace, { type: "streaming_start", workspace }, clientId);
         wsProcessingAcked[workspace] = false; // reset for new user turn
-        const delivered = claudeChat.appendMessage(workspace, message);
+        const delivered = claudeChat.sendMessage(workspace, message);
         // Delivery ack — message piped into CLI stdin
         if (delivered) {
           broadcastToWorkspace(workspace, { type: "ack", workspace, status: "delivered" });
@@ -637,7 +637,7 @@ wss.on("connection", (ws) => {
         const apiKeyField = backend === "claude" ? "claudeApiKey" : "geminiApiKey";
         const globalKeyField = backend === "claude" ? "claudeApiKey" : "geminiApiKey";
         const apiKey = proj[apiKeyField] || config[globalKeyField] || undefined;
-        console.log(`[gemini-ws] spawning ${backend} for workspace=${workspace} path=${proj.path} hasApiKey=${!!apiKey}`);
+        console.log(`[chat-ws] spawning ${backend} for workspace=${workspace} path=${proj.path} hasApiKey=${!!apiKey}`);
         // For Gemini A2A: bypassPermissions = autoExecute (YOLO), anything else = interactive approval
         const autoExecute = backend === "gemini" ? (permissionMode === "bypassPermissions") : undefined;
         // If systemPrompt is provided (agent chat), prepend it to the message sent to Claude
@@ -645,7 +645,7 @@ wss.on("connection", (ws) => {
         const effectiveMessage = systemPrompt
           ? `<system-context>\n${systemPrompt}\n</system-context>\n\n${message}`
           : message;
-        const handle = await backendModule.sendMessage(workspace, proj.path, effectiveMessage, config, { apiKey, model, images, permissionMode, autoExecute, thinking });
+        const handle = await backendModule.startChat(workspace, proj.path, effectiveMessage, config, { apiKey, model, images, permissionMode, autoExecute, thinking });
 
         // Delivery ack — CLI process spawned and message written to stdin
         broadcastToWorkspace(workspace, { type: "ack", workspace, status: "delivered" });
@@ -694,9 +694,16 @@ wss.on("connection", (ws) => {
                 output: out.length > 3000 ? out.slice(0, 3000) + "\n...(truncated)" : out,
               }),
             });
+          } else if (event.type === "usage") {
+            // Per-turn usage from assistant message — update context tracking
+            if (event.stats) {
+              workspaceState.addTurnStats(workspace, event.stats);
+              const cumulative = workspaceState.getCumulativeStats(workspace);
+              broadcastToWorkspace(workspace, { type: "usage", workspace, stats: event.stats, cumulative });
+            }
           } else if (event.type === "result") {
             // Turn completed — persist history, reset streaming, reset accumulators for next turn
-            console.log(`[gemini-ws] turn done workspace=${workspace} cli=${backend} eventsSent=${eventsSent} assistantLen=${assistantText.length} toolEvents=${toolEvents.length} flush=${!!event._flush}`);
+            console.log(`[chat-ws] turn done workspace=${workspace} cli=${backend} eventsSent=${eventsSent} assistantLen=${assistantText.length} toolEvents=${toolEvents.length} flush=${!!event._flush}`);
             const batch = [...toolEvents];
             if (assistantText) batch.push({ role: "assistant", content: assistantText });
             if (batch.length > 0) backendModule.pushHistoryBatch(workspace, batch);
@@ -704,7 +711,7 @@ wss.on("connection", (ws) => {
             toolEvents.length = 0;
             eventsSent = 0;
             workspaceState.setPendingPermission(workspace, null);
-            // _flush = synthetic turn-end from appendMessage — don't broadcast "done"
+            // _flush = synthetic turn-end from sendMessage — don't broadcast "done"
             // or clear streaming, since a new message is about to start immediately.
             if (!event._flush) {
               // Forward result event with stats so client can show cost/token footer
@@ -721,7 +728,7 @@ wss.on("connection", (ws) => {
         });
 
         handle.onDone(({ code, stderr }) => {
-          console.log(`[gemini-ws] relay exited workspace=${workspace} cli=${backend} code=${code}`);
+          console.log(`[chat-ws] relay exited workspace=${workspace} cli=${backend} code=${code}`);
           // Relay died — flush any incomplete turn and clean up
           workspaceState.setStreaming(workspace, false);
           workspaceState.setPendingPermission(workspace, null);
@@ -739,7 +746,7 @@ wss.on("connection", (ws) => {
         });
 
         handle.onError((err) => {
-          console.error(`[gemini-ws] error workspace=${workspace}: ${err.message}`);
+          console.error(`[chat-ws] error workspace=${workspace}: ${err.message}`);
           // Clear streaming flag on error
           workspaceState.setStreaming(workspace, false);
           pendingWorkspaces.delete(workspace);
@@ -750,14 +757,14 @@ wss.on("connection", (ws) => {
           });
         });
       } catch (err) {
-        console.error(`[gemini-ws] catch workspace=${workspace}: ${err.message}`);
+        console.error(`[chat-ws] catch workspace=${workspace}: ${err.message}`);
         workspaceState.setStreaming(workspace, false);
         pendingWorkspaces.delete(workspace);
         ws.send(JSON.stringify({ type: "error", workspace, message: err.message }));
       }
     } else if (type === "stop") {
       const stopSession = msg.sessionNum !== undefined ? Number(msg.sessionNum) : undefined;
-      console.log(`[gemini-ws] stop workspace=${workspace} cli=${backend} session=${stopSession ?? "all"}`);
+      console.log(`[chat-ws] stop workspace=${workspace} cli=${backend} session=${stopSession ?? "all"}`);
       if (workspace) {
         backendModule.stopProcess(workspace, stopSession);
         // Only clear streaming if no relays remain
@@ -785,7 +792,7 @@ wss.on("connection", (ws) => {
       if (workspace && request_id && behavior) {
         const pending = workspaceState.getPendingPermission(workspace);
         if (!pending || pending.request_id !== request_id) {
-          console.log(`[gemini-ws] permission_response IGNORED (already resolved) workspace=${workspace} request_id=${request_id}`);
+          console.log(`[chat-ws] permission_response IGNORED (already resolved) workspace=${workspace} request_id=${request_id}`);
         } else if (
           behavior === "allow" &&
           /ask.*question/i.test(pending.tool_name) &&
@@ -794,9 +801,9 @@ wss.on("connection", (ws) => {
           // AskUserQuestion requires answers in updatedInput.answers. Reject empty
           // responses — these come from stale clients that auto-approve without the
           // AskUserQuestion special-casing.
-          console.log(`[gemini-ws] permission_response REJECTED (AskUserQuestion with no answers) workspace=${workspace} request_id=${request_id} client=#${clientId}`);
+          console.log(`[chat-ws] permission_response REJECTED (AskUserQuestion with no answers) workspace=${workspace} request_id=${request_id} client=#${clientId}`);
         } else {
-          console.log(`[gemini-ws] permission_response workspace=${workspace} request_id=${request_id} behavior=${behavior} client=#${clientId}`);
+          console.log(`[chat-ws] permission_response workspace=${workspace} request_id=${request_id} behavior=${behavior} client=#${clientId}`);
           workspaceState.setPendingPermission(workspace, null);
           claudeChat.sendControlResponse(workspace, request_id, behavior, updatedInput);
           // Notify all other clients that this permission was resolved so they can
@@ -815,27 +822,27 @@ wss.on("connection", (ws) => {
       // User answered a question tool (AskUserQuestion/ask_followup_question)
       const { tool_id, content } = msg;
       if (workspace && tool_id) {
-        console.log(`[gemini-ws] tool_result_response workspace=${workspace} tool_id=${tool_id}`);
+        console.log(`[chat-ws] tool_result_response workspace=${workspace} tool_id=${tool_id}`);
         claudeChat.sendToolResult(workspace, tool_id, content);
       }
     } else if (type === "set_model") {
       // Runtime model switch — send control_request to Claude relay
       const { model: newModel } = msg;
       if (workspace && newModel) {
-        console.log(`[gemini-ws] set_model workspace=${workspace} model=${newModel}`);
+        console.log(`[chat-ws] set_model workspace=${workspace} model=${newModel}`);
         claudeChat.sendControlRequest(workspace, "set_model", { model: newModel });
       }
     } else if (type === "set_permission_mode") {
       // Runtime permission mode switch
       const { mode: newMode } = msg;
       if (workspace && newMode) {
-        console.log(`[gemini-ws] set_permission_mode workspace=${workspace} mode=${newMode}`);
+        console.log(`[chat-ws] set_permission_mode workspace=${workspace} mode=${newMode}`);
         claudeChat.sendControlRequest(workspace, "set_permission_mode", { permissionMode: newMode });
       }
     } else if (type === "interrupt") {
       // Soft interrupt — tell Claude to stop current turn gracefully
       if (workspace) {
-        console.log(`[gemini-ws] interrupt workspace=${workspace}`);
+        console.log(`[chat-ws] interrupt workspace=${workspace}`);
         claudeChat.sendControlRequest(workspace, "interrupt");
       }
     }
@@ -847,11 +854,9 @@ wss.on("connection", (ws) => {
 gemini.recoverStreams();
 claudeChat.recoverStreams();
 
-// --- Reconnect to any Claude relay daemons that survived a server restart ---
+// --- Wire up event routing for a Claude relay handle ---
 
-claudeChat.reconnectActiveRelays(config, (workspace, handle) => {
-  console.log(`[server] reconnected to relay workspace=${workspace}`);
-  // Don't assume streaming=true — relay may be idle between turns
+function wireRelayEvents(workspace, handle) {
   workspaceState.setStreaming(workspace, false);
 
   let assistantText = "";
@@ -869,8 +874,11 @@ claudeChat.reconnectActiveRelays(config, (workspace, handle) => {
     if (event.type === "permission_request") {
       workspaceState.setPendingPermission(workspace, event);
     }
-    // Don't broadcast raw result events — handled below with curated stats + "done"
-    if (event.type !== "result") {
+    // Don't broadcast raw result/usage events — handled below with curated stats
+    if (event.type !== "result" && event.type !== "usage") {
+      if (event.type === "tool_use" || event.type === "tool_result" || event.type === "message") {
+        console.log(`[server] reconnect-broadcast workspace=${workspace} type=${event.type}${event.role ? " role=" + event.role : ""}${event.tool_name ? " tool=" + event.tool_name : ""}`);
+      }
       broadcastToWorkspace(workspace, { ...event, workspace });
     }
     if (event.type === "message" && (event.role === "assistant" || !event.role)) {
@@ -882,7 +890,14 @@ claudeChat.reconnectActiveRelays(config, (workspace, handle) => {
     } else if (event.type === "tool_result") {
       const out = event.output || "";
       toolEvents.push({ role: "tool_result", content: JSON.stringify({ tool_id: event.tool_id, status: event.status || "success", output: out.length > 3000 ? out.slice(0, 3000) + "\n...(truncated)" : out }) });
+    } else if (event.type === "usage") {
+      if (event.stats) {
+        workspaceState.addTurnStats(workspace, event.stats);
+        const cumulative = workspaceState.getCumulativeStats(workspace);
+        broadcastToWorkspace(workspace, { type: "usage", workspace, stats: event.stats, cumulative });
+      }
     } else if (event.type === "result") {
+      console.log(`[server] reconnect-handler result workspace=${workspace} flush=${!!event._flush} statsKeys=${Object.keys(event.stats || {}).join(",")} assistantLen=${assistantText.length} toolEvents=${toolEvents.length}`);
       const batch = [...toolEvents];
       if (assistantText) batch.push({ role: "assistant", content: assistantText });
       if (batch.length > 0) claudeChat.pushHistoryBatch(workspace, batch);
@@ -897,7 +912,37 @@ claudeChat.reconnectActiveRelays(config, (workspace, handle) => {
         }
         workspaceState.setStreaming(workspace, false);
         workspaceState.touchChatActivity(workspace);
-        broadcastToWorkspace(workspace, { type: "done", workspace, exitCode: 0 });
+
+        // --- Auto-handoff: check if context is running low ---
+        const cumStats = workspaceState.getCumulativeStats(workspace);
+        const usedPct = cumStats.context_used_pct || 0;
+        if (usedPct >= 75) {
+          console.log(`[server] AUTO-HANDOFF triggered workspace=${workspace} usedPct=${usedPct}%`);
+          broadcastToWorkspace(workspace, { type: "context_reload", workspace, reason: "auto", usedPct });
+          const proj = getProject(workspace);
+          if (proj) {
+            workspaceState.resetCumulativeStats(workspace);
+            claudeChat.performHandoff(workspace, proj.path, config, { permissionMode: "bypassPermissions" })
+              .then((result) => {
+                if (result) {
+                  console.log(`[server] handoff complete workspace=${workspace} newSession=${result.sessionNum}`);
+                  // Wire up the new relay's events
+                  wireRelayEvents(workspace, result.handle);
+                } else {
+                  console.log(`[server] handoff returned null workspace=${workspace}`);
+                  broadcastToWorkspace(workspace, { type: "done", workspace, exitCode: 0 });
+                }
+              })
+              .catch((err) => {
+                console.error(`[server] handoff failed workspace=${workspace}: ${err.message}`);
+                broadcastToWorkspace(workspace, { type: "done", workspace, exitCode: 0 });
+              });
+          } else {
+            broadcastToWorkspace(workspace, { type: "done", workspace, exitCode: 0 });
+          }
+        } else {
+          broadcastToWorkspace(workspace, { type: "done", workspace, exitCode: 0 });
+        }
       }
     }
   });
@@ -918,6 +963,15 @@ claudeChat.reconnectActiveRelays(config, (workspace, handle) => {
     workspaceState.setStreaming(workspace, false);
     broadcastToWorkspace(workspace, { type: "error", workspace, message: err.message });
   });
+}
+
+// --- Reconnect to any Claude relay daemons that survived a server restart ---
+
+claudeChat.reconnectActiveRelays(config, (workspace, handle) => {
+  console.log(`[server] reconnected to relay workspace=${workspace}`);
+  // Don't assume streaming=true — relay may be idle between turns
+  workspaceState.setStreaming(workspace, false);
+  wireRelayEvents(workspace, handle);
 });
 
 // --- Graceful shutdown: flush partial streams before exit ---

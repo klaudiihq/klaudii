@@ -50,7 +50,7 @@ const mockSessions = [
   },
 ];
 
-const mockBeads = [
+const mockTasks = [
   { id: "klaudii-abc", title: "Fix login button", status: "open", priority: 1, type: "bug", assignee: null, created: "2026-03-01", updated: "2026-03-01" },
   { id: "klaudii-def", title: "Add dark mode", status: "in_progress", priority: 2, type: "feature", assignee: "Alice", created: "2026-03-02", updated: "2026-03-05" },
   { id: "klaudii-ghi", title: "Update docs", status: "blocked", priority: 3, type: "task", assignee: null, created: "2026-03-03", updated: "2026-03-04" },
@@ -164,19 +164,19 @@ function createTestServer() {
   app.post("/api/scheduler/:name/resume", (req, res) => res.json({ ok: true }));
   app.post("/api/scheduler/:name/trigger", (req, res) => res.json({ ok: true }));
 
-  // Beads
-  app.get("/api/beads", (_req, res) => res.json([...mockBeads]));
+  // Tasks
+  app.get("/api/tasks", (_req, res) => res.json([...mockTasks]));
 
-  app.get("/api/beads/:id", (req, res) => {
-    const bead = mockBeads.find((b) => b.id === req.params.id);
-    if (!bead) return res.status(404).json({ error: "not found" });
-    res.json(bead);
+  app.get("/api/tasks/:id", (req, res) => {
+    const task = mockTasks.find((b) => b.id === req.params.id);
+    if (!task) return res.status(404).json({ error: "not found" });
+    res.json(task);
   });
 
-  app.post("/api/beads", (req, res) => {
+  app.post("/api/tasks", (req, res) => {
     const { title, description, priority, type } = req.body;
     if (!title) return res.status(400).json({ error: "title required" });
-    const bead = {
+    const task = {
       id: `klaudii-${Math.random().toString(36).slice(2, 5)}`,
       title,
       description: description || "",
@@ -187,29 +187,29 @@ function createTestServer() {
       created: new Date().toISOString().slice(0, 10),
       updated: new Date().toISOString().slice(0, 10),
     };
-    mockBeads.push(bead);
-    res.status(201).json(bead);
+    mockTasks.push(task);
+    res.status(201).json(task);
   });
 
-  app.patch("/api/beads/:id", (req, res) => {
-    const bead = mockBeads.find((b) => b.id === req.params.id);
-    if (!bead) return res.status(404).json({ error: "not found" });
+  app.patch("/api/tasks/:id", (req, res) => {
+    const task = mockTasks.find((b) => b.id === req.params.id);
+    if (!task) return res.status(404).json({ error: "not found" });
     // Support comment field — append to description for mock
     if (req.body.comment) {
-      bead.description = (bead.description || "") + "\n---\n" + req.body.comment;
+      task.description = (task.description || "") + "\n---\n" + req.body.comment;
       delete req.body.comment;
     }
-    Object.assign(bead, req.body);
-    res.json(bead);
+    Object.assign(task, req.body);
+    res.json(task);
   });
 
-  // Bead sessions (workers assigned to bead)
-  app.get("/api/beads/:id/sessions", (req, res) => {
-    const bead = mockBeads.find((b) => b.id === req.params.id);
-    if (!bead) return res.status(404).json({ error: "not found" });
-    // Return mock sessions for in_progress beads
-    if (bead.status === "in_progress" && bead.assignee) {
-      res.json([{ workspace: `bead-${bead.id}`, status: "running", assignee: bead.assignee }]);
+  // Task sessions (workers assigned to task)
+  app.get("/api/tasks/:id/sessions", (req, res) => {
+    const task = mockTasks.find((b) => b.id === req.params.id);
+    if (!task) return res.status(404).json({ error: "not found" });
+    // Return mock sessions for in_progress tasks
+    if (task.status === "in_progress" && task.assignee) {
+      res.json([{ workspace: `task-${task.id}`, status: "running", assignee: task.assignee }]);
     } else {
       res.json([]);
     }
@@ -290,11 +290,11 @@ function createTestServer() {
   app.get("/api/setup/status", (_req, res) => res.json({ ready: true, limpMode: false, deps: {} }));
   app.post("/api/repos/create", (req, res) => res.json({ ok: true, name: req.body.name }));
 
-  return { app, mockSessions, mockBeads, mockSchedulerTasks, mockChatHistory, mockSettings };
+  return { app, mockSessions, mockTasks, mockSchedulerTasks, mockChatHistory, mockSettings };
 }
 
 function attachWebSocket(server) {
-  const wss = new WebSocketServer({ server, path: "/ws/gemini" });
+  const wss = new WebSocketServer({ server, path: "/ws/chat" });
 
   wss.on("connection", (ws) => {
     // Send a mock response when a message is sent

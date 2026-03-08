@@ -1,6 +1,6 @@
 # Klaudii MCP Server
 
-MCP server that exposes Klaudii workspace and bead management as native tool calls for Claude Code CLI instances.
+MCP server that exposes Klaudii workspace and task management as native tool calls for Claude Code CLI instances.
 
 ## SSE Transport (Recommended)
 
@@ -60,9 +60,9 @@ npm install
 | `klaudii_create_workspace` | Create a new workspace (clone + worktree + start) |
 | `klaudii_send_message` | Send a chat message to a workspace Claude session |
 | `klaudii_get_status` | Get workspace status including chat state |
-| `klaudii_read_beads` | Read beads with optional status/priority filters |
-| `klaudii_create_bead` | Create a new bead (task/issue) |
-| `klaudii_update_bead` | Update bead status, assignee, or add comments |
+| `klaudii_read_tasks` | Read tasks with optional status/priority filters |
+| `klaudii_create_task` | Create a new task (task/issue) |
+| `klaudii_update_task` | Update task status, assignee, or add comments |
 
 ## Requirements
 

@@ -2,7 +2,7 @@
    Gemini Chat Panel (flex child of .app-layout)
    ========================================================= */
 
-.gemini-panel {
+.chat-panel {
   display: none;
   flex-direction: column;
   background: var(--bg-card);
@@ -12,13 +12,13 @@
   position: relative;
 }
 
-.gemini-panel:not(.hidden) {
+.chat-panel:not(.hidden) {
   display: flex;
 }
 
 /* --- Top bar --- */
 
-.gemini-bar {
+.chat-bar {
   display: flex;
   justify-content: space-between;
   align-items: center;
@@ -30,7 +30,7 @@
   border-bottom: 1px solid var(--border);
 }
 
-.gemini-bar-title {
+.chat-bar-title {
   font-size: 0.9rem;
   font-weight: 600;
   color: var(--text-strong);
@@ -39,7 +39,7 @@
   gap: 0.5rem;
 }
 
-.gemini-bar-title .branch {
+.chat-bar-title .branch {
   font-weight: 400;
   color: var(--text-faint);
 }
@@ -60,7 +60,7 @@
   color: #fff;
 }
 
-.gemini-bar-status {
+.chat-bar-status {
   font-size: 0.65rem;
   padding: 0.1rem 0.4rem;
   border-radius: 999px;
@@ -68,12 +68,12 @@
   color: var(--text-muted);
 }
 
-.gemini-bar-status.connected {
+.chat-bar-status.connected {
   background: var(--s-green-bg);
   color: var(--s-green);
 }
 
-.gemini-bar-quota {
+.chat-bar-quota {
   font-size: 0.65rem;
   padding: 0.1rem 0.4rem;
   border-radius: 999px;
@@ -81,26 +81,26 @@
   cursor: default;
 }
 
-.gemini-bar-quota:empty {
+.chat-bar-quota:empty {
   display: none;
 }
 
-.gemini-bar-quota.warn {
+.chat-bar-quota.warn {
   color: var(--s-yellow);
 }
 
-.gemini-bar-quota.low {
+.chat-bar-quota.low {
   color: var(--s-red);
   font-weight: 600;
 }
 
-.gemini-bar-actions {
+.chat-bar-actions {
   display: flex;
   gap: 0.5rem;
   align-items: center;
 }
 
-.gemini-session-select {
+.chat-session-select {
   background: var(--bg-btn);
   color: var(--text);
   border: 1px solid var(--border-btn);
@@ -115,17 +115,17 @@
   background-position: right 0.35rem center;
 }
 
-.gemini-session-select:hover {
+.chat-session-select:hover {
   background-color: var(--bg-btn-hover);
 }
 
-.gemini-session-select.hidden {
+.chat-session-select.hidden {
   display: none;
 }
 
 /* --- Messages area --- */
 
-.gemini-messages {
+.chat-messages {
   flex: 1;
   overflow-y: auto;
   padding: 1rem;
@@ -137,7 +137,7 @@
   margin: 0 auto;
 }
 
-.gemini-messages:empty::after {
+.chat-messages:empty::after {
   content: "Start a conversation";
   color: var(--text-faint);
   text-align: center;
@@ -147,13 +147,13 @@
 
 /* --- Message bubbles --- */
 
-.gemini-msg {
+.chat-msg {
   max-width: 85%;
   line-height: 1.5;
   font-size: 0.9rem;
 }
 
-.gemini-msg.user {
+.chat-msg.user {
   max-width: 70%;
   margin-left: auto;
   display: flex;
@@ -161,7 +161,7 @@
   align-items: flex-end;
 }
 
-.gemini-msg.user .user-bubble {
+.chat-msg.user .user-bubble {
   background: var(--btn-primary);
   color: #fff;
   padding: 0.6rem 1rem;
@@ -170,11 +170,11 @@
   word-break: break-word;
 }
 
-.gemini-msg.user .user-bubble.bubble-architect {
+.chat-msg.user .user-bubble.bubble-architect {
   background: #166534;
 }
 
-.gemini-msg.user .user-bubble.bubble-shepherd {
+.chat-msg.user .user-bubble.bubble-shepherd {
   background: #92400e;
 }
 
@@ -185,118 +185,112 @@
   margin-bottom: 0.15rem;
 }
 
-/* Message delivery status checkmarks (WhatsApp-style) — fixed bottom-right of chat area */
-.msg-status-float {
-  position: absolute;
-  bottom: 5.5rem;
-  right: 1.5rem;
-  font-size: 1.1rem;
-  font-weight: 900;
+/* Message delivery status checkmarks — beside timestamp on user messages */
+.msg-delivery-status {
+  display: inline;
+  font-size: 0.6rem;
   line-height: 1;
-  opacity: 0;
-  transition: opacity 0.25s ease;
-  pointer-events: none;
-  z-index: 5;
-  -webkit-text-stroke: 1px currentColor;
+  margin-left: 0.25rem;
+  white-space: nowrap;
+  letter-spacing: -0.15em;
 }
-.msg-status-float[data-status="received"],
-.msg-status-float[data-status="delivered"],
-.msg-status-float[data-status="processing"] {
+.msg-delivery-status .check {
+  color: var(--text-muted);
+  opacity: 0.5;
+  transition: color 0.2s ease, opacity 0.2s ease;
+}
+/* First check green = received by server */
+.msg-delivery-status[data-status="received"] .check-1,
+.msg-delivery-status[data-status="delivered"] .check-1,
+.msg-delivery-status[data-status="processing"] .check-1 {
+  color: var(--s-green);
   opacity: 1;
 }
-/* Single grey check — received by server */
-.msg-status-float[data-status="received"]::after {
-  content: "\2713"; /* ✓ */
-  color: rgba(255,255,255,0.55);
-}
-/* Double grey checks — delivered to CLI */
-.msg-status-float[data-status="delivered"]::after {
-  content: "\2713\2713"; /* ✓✓ */
-  color: rgba(255,255,255,0.55);
-  letter-spacing: -0.15em;
-}
-/* Double green checks — agent processing */
-.msg-status-float[data-status="processing"]::after {
-  content: "\2713\2713"; /* ✓✓ */
-  color: #4ade80;
-  letter-spacing: -0.15em;
+/* Second check green = written to CLI stdin */
+.msg-delivery-status[data-status="delivered"] .check-2,
+.msg-delivery-status[data-status="processing"] .check-2 {
+  color: var(--s-green);
+  opacity: 1;
 }
 
-.gemini-msg.assistant {
+/* Legacy float element — hidden */
+.msg-status-float { display: none; }
+
+.chat-msg.assistant {
   max-width: 100%;
   color: var(--text-dim);
   padding: 0.4rem 0;
 }
 
-.gemini-msg-ts {
+.chat-msg-ts {
   font-size: 0.7rem;
   color: var(--text-fainter);
   margin-top: 0.2rem;
 }
 
-.gemini-msg.user .gemini-msg-ts {
+.chat-msg.user .chat-msg-ts {
   text-align: right;
   margin-right: 2px;
 }
 
-.gemini-msg.assistant .gemini-msg-ts {
+.chat-msg.assistant .chat-msg-ts {
   text-align: left;
 }
 
 /* Markdown content inside assistant messages */
-.gemini-msg.assistant .md-content {
+.chat-msg.assistant .md-content {
   line-height: 1.6;
 }
 
-.gemini-msg.assistant .md-content p {
+.chat-msg.assistant .md-content p {
   margin: 0.4rem 0;
 }
 
-.gemini-msg.assistant .md-content p:first-child {
+.chat-msg.assistant .md-content p:first-child {
   margin-top: 0;
 }
 
-.gemini-msg.assistant .md-content p:last-child {
+.chat-msg.assistant .md-content p:last-child {
   margin-bottom: 0;
 }
 
-.gemini-msg.assistant .md-content h1,
-.gemini-msg.assistant .md-content h2,
-.gemini-msg.assistant .md-content h3,
-.gemini-msg.assistant .md-content h4 {
+.chat-msg.assistant .md-content h1,
+.chat-msg.assistant .md-content h2,
+.chat-msg.assistant .md-content h3,
+.chat-msg.assistant .md-content h4 {
   color: var(--text);
   margin: 0.75rem 0 0.35rem;
 }
 
-.gemini-msg.assistant .md-content h1 { font-size: 1.2rem; }
-.gemini-msg.assistant .md-content h2 { font-size: 1.1rem; }
-.gemini-msg.assistant .md-content h3 { font-size: 1rem; }
+.chat-msg.assistant .md-content h1 { font-size: 1.2rem; }
+.chat-msg.assistant .md-content h2 { font-size: 1.1rem; }
+.chat-msg.assistant .md-content h3 { font-size: 1rem; }
 
-.gemini-msg.assistant .md-content ul,
-.gemini-msg.assistant .md-content ol {
+.chat-msg.assistant .md-content ul,
+.chat-msg.assistant .md-content ol {
   padding-left: 1.5rem;
   margin: 0.4rem 0;
 }
 
-.gemini-msg.assistant .md-content li {
+.chat-msg.assistant .md-content li {
   margin: 0.2rem 0;
 }
 
-.gemini-msg.assistant .md-content a {
+.chat-msg.assistant .md-content a {
   color: var(--s-blue-text);
   text-decoration: none;
 }
 
-.gemini-msg.assistant .md-content a:hover {
+.chat-msg.assistant .md-content a:hover {
   text-decoration: underline;
 }
 
-.gemini-msg.assistant .md-content strong {
+.chat-msg.assistant .md-content strong {
   color: var(--text);
 }
 
 /* Inline code */
-.gemini-msg.assistant .md-content code {
+.chat-msg.assistant .md-content code {
   background: var(--bg-hover);
   padding: 0.1rem 0.35rem;
   border-radius: 4px;
@@ -306,7 +300,7 @@
 }
 
 /* Code blocks */
-.gemini-msg.assistant .md-content pre {
+.chat-msg.assistant .md-content pre {
   background: var(--bg-card);
   border: 1px solid var(--border);
   border-radius: 6px;
@@ -315,7 +309,7 @@
   margin: 0.5rem 0;
 }
 
-.gemini-msg.assistant .md-content pre code {
+.chat-msg.assistant .md-content pre code {
   background: none;
   padding: 0;
   border-radius: 0;
@@ -324,34 +318,34 @@
   line-height: 1.5;
 }
 
-.gemini-msg.assistant .md-content hr {
+.chat-msg.assistant .md-content hr {
   border: none;
   border-top: 1px solid var(--border);
   margin: 0.6rem 0;
 }
 
-.gemini-msg.assistant .md-content blockquote {
+.chat-msg.assistant .md-content blockquote {
   border-left: 3px solid var(--border-active);
   padding-left: 0.75rem;
   margin: 0.5rem 0;
   color: var(--text-dim);
 }
 
-.gemini-msg.assistant .md-content table {
+.chat-msg.assistant .md-content table {
   border-collapse: collapse;
   margin: 0.5rem 0;
   font-size: 0.85rem;
   width: 100%;
 }
 
-.gemini-msg.assistant .md-content th,
-.gemini-msg.assistant .md-content td {
+.chat-msg.assistant .md-content th,
+.chat-msg.assistant .md-content td {
   border: 1px solid var(--border);
   padding: 0.35rem 0.6rem;
   text-align: left;
 }
 
-.gemini-msg.assistant .md-content th {
+.chat-msg.assistant .md-content th {
   background: var(--bg-hover);
   color: var(--text-strong);
   font-weight: 600;
@@ -359,7 +353,7 @@
 
 /* --- Tool use pills --- */
 
-.gemini-tool {
+.chat-tool {
   display: block;
   font-size: 0.8rem;
   border: 1px solid var(--border);
@@ -372,11 +366,11 @@
 
 /* Safari/WebKit collapses <details> to 0px when overflow:hidden is set on it.
    Override to visible so the open pill body renders correctly. */
-details.gemini-tool {
+details.chat-tool {
   overflow: visible;
 }
 
-.gemini-tool-summary {
+.chat-tool-summary {
   display: flex;
   align-items: center;
   gap: 0.5rem;
@@ -388,16 +382,21 @@ details.gemini-tool {
 }
 
 /* Hide the native <details> disclosure triangle */
-summary.gemini-tool-summary::-webkit-details-marker { display: none; }
-summary.gemini-tool-summary::marker { display: none; }
+summary.chat-tool-summary::-webkit-details-marker { display: none; }
+summary.chat-tool-summary::marker { display: none; }
 
-.gemini-tool:not(.running) .gemini-tool-summary {
+/* Only show border-bottom when pill is expanded (open) and not running */
+.chat-tool[open]:not(.running) .chat-tool-summary {
   background: var(--bg-active);
   border-bottom: 1px solid var(--border);
 }
+.chat-tool:not([open]):not(.running) .chat-tool-summary {
+  background: var(--bg-active);
+  cursor: pointer;
+}
 
 /* Tool name (bold, mono) */
-.gemini-tool-name {
+.chat-tool-name {
   font-family: ui-monospace, monospace;
   font-size: 0.78rem;
   font-weight: 600;
@@ -406,7 +405,7 @@ summary.gemini-tool-summary::marker { display: none; }
 }
 
 /* Short description next to name */
-.gemini-tool-desc {
+.chat-tool-desc {
   font-size: 0.78rem;
   color: var(--text-dim);
   overflow: hidden;
@@ -416,7 +415,7 @@ summary.gemini-tool-summary::marker { display: none; }
 }
 
 /* Tool body — always visible, never hidden */
-.gemini-tool-body {
+.chat-tool-body {
   display: block !important;
   font-family: ui-monospace, monospace;
   font-size: 0.7rem;
@@ -426,7 +425,7 @@ summary.gemini-tool-summary::marker { display: none; }
 }
 
 /* Sections (Parameters / Output) inside body */
-.gemini-tool-section {
+.chat-tool-section {
   padding: 0.4rem 0.65rem;
   max-height: 200px;
   overflow-y: auto;
@@ -435,11 +434,11 @@ summary.gemini-tool-summary::marker { display: none; }
   color: var(--text-dim);
 }
 
-.gemini-tool-section + .gemini-tool-section {
+.chat-tool-section + .chat-tool-section {
   border-top: 1px solid var(--border);
 }
 
-.gemini-tool-section-label {
+.chat-tool-section-label {
   font-size: 0.65rem;
   font-weight: 600;
   text-transform: uppercase;
@@ -448,7 +447,7 @@ summary.gemini-tool-summary::marker { display: none; }
   margin-bottom: 0.25rem;
 }
 
-.gemini-tool-section pre {
+.chat-tool-section pre {
   margin: 0;
   white-space: pre-wrap;
   word-break: break-word;
@@ -458,7 +457,7 @@ summary.gemini-tool-summary::marker { display: none; }
 }
 
 /* Spinner inside running tool pill */
-.gemini-tool-spinner {
+.chat-tool-spinner {
   display: inline-block;
   width: 10px;
   height: 10px;
@@ -470,28 +469,28 @@ summary.gemini-tool-summary::marker { display: none; }
 }
 
 /* Status icons (checkmark / x) */
-.gemini-tool-icon {
+.chat-tool-icon {
   font-size: 0.8rem;
   flex-shrink: 0;
   line-height: 1;
 }
 
-.gemini-tool-icon.success {
+.chat-tool-icon.success {
   color: var(--s-green);
 }
 
-.gemini-tool-icon.error {
+.chat-tool-icon.error {
   color: var(--s-red);
 }
 
 /* Completed tool accent */
-.gemini-tool.success {
+.chat-tool.success {
   border-left-color: var(--s-green);
   border-color: color-mix(in srgb, var(--s-green) 20%, var(--border));
   border-left: 3px solid var(--s-green);
 }
 
-.gemini-tool.error {
+.chat-tool.error {
   border-left-color: var(--s-red);
   border-color: color-mix(in srgb, var(--s-red) 20%, var(--border));
   border-left: 3px solid var(--s-red);
@@ -499,23 +498,23 @@ summary.gemini-tool-summary::marker { display: none; }
 
 /* --- Grouped tool pills --- */
 
-.gemini-tool-group-count {
+.chat-tool-group-count {
   font-size: 0.78rem;
   color: var(--text-dim);
 }
 
-.gemini-tool-group-items {
+.chat-tool-group-items {
   padding: 0.15rem 0.5rem 0.3rem;
 }
 
-.gemini-tool-sub {
+.chat-tool-sub {
   border: 1px solid var(--border);
   border-radius: 4px;
   margin: 0.15rem 0;
   font-size: 0.75rem;
 }
 
-.gemini-tool-sub-summary {
+.chat-tool-sub-summary {
   display: flex;
   align-items: center;
   gap: 0.35rem;
@@ -526,10 +525,10 @@ summary.gemini-tool-summary::marker { display: none; }
   min-height: 22px;
 }
 
-.gemini-tool-sub-summary::-webkit-details-marker { display: none; }
-.gemini-tool-sub-summary::marker { display: none; }
+.chat-tool-sub-summary::-webkit-details-marker { display: none; }
+.chat-tool-sub-summary::marker { display: none; }
 
-.gemini-tool-sub-summary::before {
+.chat-tool-sub-summary::before {
   content: "\25b8";
   font-size: 0.6rem;
   color: var(--text-faint);
@@ -537,15 +536,15 @@ summary.gemini-tool-summary::marker { display: none; }
   transition: transform 0.15s;
 }
 
-.gemini-tool-sub[open] > .gemini-tool-sub-summary::before {
+.chat-tool-sub[open] > .chat-tool-sub-summary::before {
   transform: rotate(90deg);
 }
 
-.gemini-tool-sub.running > .gemini-tool-sub-summary::before {
+.chat-tool-sub.running > .chat-tool-sub-summary::before {
   display: none;
 }
 
-.gemini-tool-sub-desc {
+.chat-tool-sub-desc {
   font-family: ui-monospace, monospace;
   font-size: 0.72rem;
   color: var(--text-dim);
@@ -555,24 +554,24 @@ summary.gemini-tool-summary::marker { display: none; }
   min-width: 0;
 }
 
-.gemini-tool-sub .gemini-tool-section {
+.chat-tool-sub .chat-tool-section {
   border-top: 1px solid var(--border);
   padding: 0.25rem 0.45rem;
   max-height: 150px;
 }
 
-.gemini-tool-sub .gemini-tool-spinner {
+.chat-tool-sub .chat-tool-spinner {
   width: 8px;
   height: 8px;
 }
 
-.gemini-tool-sub .gemini-tool-icon {
+.chat-tool-sub .chat-tool-icon {
   font-size: 0.7rem;
 }
 
 /* --- Error messages --- */
 
-.gemini-msg.error {
+.chat-msg.error {
   color: var(--s-red);
   background: var(--s-red-bg);
   padding: 0.5rem 0.75rem;
@@ -582,7 +581,7 @@ summary.gemini-tool-summary::marker { display: none; }
 
 /* --- Disconnect banner --- */
 
-.gemini-disconnect-banner {
+.chat-disconnect-banner {
   color: var(--s-red);
   background: var(--s-red-bg);
   padding: 0.6rem 1rem;
@@ -599,7 +598,7 @@ summary.gemini-tool-summary::marker { display: none; }
   50% { opacity: 0.7; }
 }
 
-.gemini-reconnected-toast {
+.chat-reconnected-toast {
   color: var(--s-green);
   background: var(--s-green-bg);
   padding: 0.4rem 0.75rem;
@@ -620,7 +619,7 @@ summary.gemini-tool-summary::marker { display: none; }
 
 /* --- Input area --- */
 
-.gemini-input-area {
+.chat-input-area {
   padding: 0.65rem 1rem 0.75rem;
   background: var(--bg-card);
   flex-shrink: 0;
@@ -630,7 +629,7 @@ summary.gemini-tool-summary::marker { display: none; }
 }
 
 /* Unified card container */
-.gemini-input-card {
+.chat-input-card {
   display: flex;
   flex-direction: column;
   background: var(--bg-input);
@@ -640,17 +639,17 @@ summary.gemini-tool-summary::marker { display: none; }
   transition: border-color 0.15s, box-shadow 0.15s;
 }
 
-.gemini-input-card:focus-within {
+.chat-input-card:focus-within {
   border-color: var(--btn-primary);
   box-shadow: 0 0 0 3px color-mix(in srgb, var(--btn-primary) 14%, transparent);
 }
 
-.gemini-input-card.disconnected {
+.chat-input-card.disconnected {
   border-color: color-mix(in srgb, var(--s-red) 40%, transparent);
   opacity: 0.6;
 }
 
-.gemini-input-area textarea {
+.chat-input-area textarea {
   width: 100%;
   background: transparent;
   color: var(--text);
@@ -667,16 +666,16 @@ summary.gemini-tool-summary::marker { display: none; }
   box-sizing: border-box;
 }
 
-.gemini-input-area textarea:focus {
+.chat-input-area textarea:focus {
   outline: none;
 }
 
-.gemini-input-area textarea:disabled {
+.chat-input-area textarea:disabled {
   opacity: 0.5;
 }
 
 /* Bottom toolbar inside the card */
-.gemini-input-footer {
+.chat-input-footer {
   display: flex;
   align-items: center;
   gap: 4px;
@@ -684,19 +683,19 @@ summary.gemini-tool-summary::marker { display: none; }
   border-top: 1px solid color-mix(in srgb, var(--border) 60%, transparent);
 }
 
-.gemini-footer-spacer { flex: 1; }
+.chat-footer-spacer { flex: 1; }
 
-.gemini-cumulative-stats {
+.chat-cumulative-stats {
   font-size: 11px;
   color: var(--text-muted, #888);
   white-space: nowrap;
   user-select: none;
   opacity: 0.8;
 }
-.gemini-cumulative-stats:empty { display: none; }
+.chat-cumulative-stats:empty { display: none; }
 
 /* Paperclip attach button */
-.gemini-attach-btn {
+.chat-attach-btn {
   width: 28px;
   height: 28px;
   border: none;
@@ -712,17 +711,17 @@ summary.gemini-tool-summary::marker { display: none; }
   padding: 0;
 }
 
-.gemini-attach-btn:hover {
+.chat-attach-btn:hover {
   color: var(--text);
   background: var(--bg-btn-hover);
 }
 
-.gemini-attach-btn.has-images {
+.chat-attach-btn.has-images {
   color: var(--btn-primary);
 }
 
 /* Pill-style chip selects */
-.gemini-chip-select {
+.chat-chip-select {
   appearance: none;
   -webkit-appearance: none;
   background: var(--bg-btn);
@@ -743,25 +742,25 @@ summary.gemini-tool-summary::marker { display: none; }
   line-height: 1.4;
 }
 
-.gemini-chip-select:hover {
+.chat-chip-select:hover {
   background-color: var(--bg-btn-hover);
   color: var(--text);
   border-color: var(--border-btn);
 }
 
-.gemini-chip-select:focus {
+.chat-chip-select:focus {
   outline: none;
   border-color: var(--btn-primary);
   color: var(--text);
 }
 
-.gemini-chip-select:disabled {
+.chat-chip-select:disabled {
   opacity: 0.4;
   cursor: not-allowed;
 }
 
 /* Extended thinking toggle */
-.gemini-thinking-toggle {
+.chat-thinking-toggle {
   appearance: none;
   -webkit-appearance: none;
   background: var(--bg-btn);
@@ -777,23 +776,23 @@ summary.gemini-tool-summary::marker { display: none; }
   flex-shrink: 0;
   line-height: 1.4;
 }
-.gemini-thinking-toggle:hover {
+.chat-thinking-toggle:hover {
   background-color: var(--bg-btn-hover);
   color: var(--text);
   border-color: var(--border-btn);
 }
-.gemini-thinking-toggle.active {
+.chat-thinking-toggle.active {
   background: var(--s-blue-bg);
   color: var(--s-blue-text);
   border-color: var(--s-blue-text);
 }
-.gemini-thinking-toggle:disabled {
+.chat-thinking-toggle:disabled {
   opacity: 0.4;
   cursor: not-allowed;
 }
 
 /* Send / Stop button */
-.gemini-send-btn {
+.chat-send-btn {
   background: var(--btn-primary);
   color: #fff;
   border: none;
@@ -811,18 +810,18 @@ summary.gemini-tool-summary::marker { display: none; }
   line-height: 1.6;
 }
 
-.gemini-send-btn:hover {
+.chat-send-btn:hover {
   background: var(--btn-primary-hover);
   transform: translateY(-1px);
   box-shadow: 0 3px 10px color-mix(in srgb, var(--btn-primary) 40%, transparent);
 }
 
-.gemini-send-btn:active {
+.chat-send-btn:active {
   transform: translateY(0);
   box-shadow: none;
 }
 
-.gemini-send-btn::after {
+.chat-send-btn::after {
   content: "↑";
   font-size: 0.85em;
   opacity: 0.85;
@@ -830,7 +829,7 @@ summary.gemini-tool-summary::marker { display: none; }
 }
 
 /* Stop button — small red square icon, appears next to Send during generation */
-.gemini-stop-btn {
+.chat-stop-btn {
   background: transparent;
   color: #ef4444;
   border: 1.5px solid #ef4444;
@@ -845,61 +844,61 @@ summary.gemini-tool-summary::marker { display: none; }
   transition: background 0.15s, transform 0.1s;
   flex-shrink: 0;
 }
-.gemini-stop-btn:hover {
+.chat-stop-btn:hover {
   background: color-mix(in srgb, #ef4444 15%, transparent);
   transform: translateY(-1px);
 }
-.gemini-stop-btn:active {
+.chat-stop-btn:active {
   transform: translateY(0);
 }
 
 /* --- Auth panel --- */
 
-.gemini-auth-panel {
+.chat-auth-panel {
   max-width: 500px;
   margin: 2rem auto;
   padding: 1.5rem;
 }
 
-.gemini-auth-panel h3 {
+.chat-auth-panel h3 {
   color: var(--text-strong);
   margin: 0 0 0.5rem;
   font-size: 1.1rem;
 }
 
-.gemini-auth-panel > p {
+.chat-auth-panel > p {
   color: var(--text-muted);
   margin: 0 0 1.5rem;
   font-size: 0.9rem;
 }
 
-.gemini-auth-options {
+.chat-auth-options {
   display: flex;
   flex-direction: column;
   gap: 1.25rem;
 }
 
-.gemini-auth-option {
+.chat-auth-option {
   border: 1px solid var(--border);
   border-radius: 8px;
   padding: 1rem 1.25rem;
   background: var(--bg-card);
 }
 
-.gemini-auth-option h4 {
+.chat-auth-option h4 {
   color: var(--text-strong);
   margin: 0 0 0.35rem;
   font-size: 0.95rem;
 }
 
-.gemini-auth-option > p {
+.chat-auth-option > p {
   color: var(--text-dim);
   margin: 0 0 0.75rem;
   font-size: 0.85rem;
   line-height: 1.4;
 }
 
-.gemini-auth-option code {
+.chat-auth-option code {
   background: var(--bg-hover);
   padding: 0.1rem 0.3rem;
   border-radius: 3px;
@@ -907,17 +906,17 @@ summary.gemini-tool-summary::marker { display: none; }
   color: var(--s-yellow);
 }
 
-.gemini-auth-option a {
+.chat-auth-option a {
   color: var(--s-blue-text);
 }
 
-.gemini-auth-key-form {
+.chat-auth-key-form {
   display: flex;
   flex-direction: column;
   gap: 0.5rem;
 }
 
-.gemini-auth-key-form input[type="password"] {
+.chat-auth-key-form input[type="password"] {
   background: var(--bg-input);
   color: var(--text);
   border: 1px solid var(--border-btn);
@@ -927,19 +926,19 @@ summary.gemini-tool-summary::marker { display: none; }
   font-family: ui-monospace, monospace;
 }
 
-.gemini-auth-key-form input[type="password"]:focus {
+.chat-auth-key-form input[type="password"]:focus {
   outline: none;
   border-color: var(--btn-primary);
 }
 
-.gemini-auth-key-scope {
+.chat-auth-key-scope {
   display: flex;
   gap: 1rem;
   font-size: 0.8rem;
   color: var(--text-muted);
 }
 
-.gemini-auth-key-scope label {
+.chat-auth-key-scope label {
   display: flex;
   align-items: center;
   gap: 0.3rem;
@@ -948,7 +947,7 @@ summary.gemini-tool-summary::marker { display: none; }
 
 /* --- Permission request card --- */
 
-.gemini-permission-request {
+.chat-permission-request {
   background: var(--bg-card);
   border: 1px solid var(--border);
   border-left: 3px solid var(--s-yellow, #f5a623);
@@ -960,7 +959,7 @@ summary.gemini-tool-summary::marker { display: none; }
   gap: 0.5rem;
 }
 
-.gemini-permission-header {
+.chat-permission-header {
   font-size: 0.8rem;
   font-weight: 600;
   color: var(--text-muted);
@@ -968,29 +967,29 @@ summary.gemini-tool-summary::marker { display: none; }
   letter-spacing: 0.04em;
 }
 
-.gemini-permission-question {
+.chat-permission-question {
   font-size: 0.9rem;
   color: var(--text);
   line-height: 1.4;
 }
 
-.gemini-permission-buttons {
+.chat-permission-buttons {
   display: flex;
   gap: 0.5rem;
   flex-wrap: wrap;
   margin-top: 0.25rem;
 }
-.gemini-permission-buttons button.selected {
+.chat-permission-buttons button.selected {
   opacity: 1;
   font-weight: 600;
 }
-.gemini-permission-buttons button.greyed {
+.chat-permission-buttons button.greyed {
   opacity: 0.4;
 }
 
 /* --- Plan approval card --- */
 
-.gemini-plan-approval {
+.chat-plan-approval {
   background: var(--bg-card);
   border: 1px solid var(--border);
   border-left: 3px solid var(--s-blue, #4a90d9);
@@ -1002,16 +1001,16 @@ summary.gemini-tool-summary::marker { display: none; }
   gap: 0.5rem;
 }
 
-.gemini-plan-approval.approved {
+.chat-plan-approval.approved {
   border-left-color: var(--s-green, #27ae60);
 }
 
-.gemini-plan-approval.rejected {
+.chat-plan-approval.rejected {
   border-left-color: var(--s-red, #e74c3c);
   opacity: 0.7;
 }
 
-.gemini-plan-header {
+.chat-plan-header {
   font-size: 0.8rem;
   font-weight: 600;
   color: var(--text-muted);
@@ -1019,7 +1018,7 @@ summary.gemini-tool-summary::marker { display: none; }
   letter-spacing: 0.04em;
 }
 
-.gemini-plan-content {
+.chat-plan-content {
   max-height: 400px;
   overflow-y: auto;
   border: 1px solid var(--border);
@@ -1029,24 +1028,24 @@ summary.gemini-tool-summary::marker { display: none; }
   font-size: 0.85rem;
 }
 
-.gemini-question-section--subsequent {
+.chat-question-section--subsequent {
   padding-top: 0.5rem;
   border-top: 1px solid var(--border);
 }
 
 /* --- Thinking indicator (orbital canvas) --- */
 
-.gemini-thinking {
+.chat-thinking {
   padding: 0.4rem 0;
 }
 
-.gemini-thinking canvas {
+.chat-thinking canvas {
   display: block;
 }
 
 /* --- Auth status / spinner --- */
 
-.gemini-auth-status {
+.chat-auth-status {
   margin-top: 0.75rem;
   font-size: 0.85rem;
   color: var(--text-muted);
@@ -1055,11 +1054,11 @@ summary.gemini-tool-summary::marker { display: none; }
   gap: 0.5rem;
 }
 
-.gemini-auth-status.hidden {
+.chat-auth-status.hidden {
   display: none;
 }
 
-.gemini-auth-spinner {
+.chat-auth-spinner {
   display: inline-block;
   width: 14px;
   height: 14px;
@@ -1077,15 +1076,15 @@ summary.gemini-tool-summary::marker { display: none; }
 /* --- Responsive --- */
 
 @media (max-width: 600px) {
-  .gemini-msg.user {
+  .chat-msg.user {
     max-width: 90%;
   }
 
-  .gemini-input-area {
+  .chat-input-area {
     padding: 0.5rem;
   }
 
-  .gemini-auth-panel {
+  .chat-auth-panel {
     margin: 1rem;
     padding: 1rem;
   }
@@ -1093,7 +1092,7 @@ summary.gemini-tool-summary::marker { display: none; }
 
 /* --- Image attachments --- */
 
-.gemini-image-strip {
+.chat-image-strip {
   display: flex;
   gap: 0.5rem;
   padding: 0.5rem 1rem 0;
@@ -1103,11 +1102,11 @@ summary.gemini-tool-summary::marker { display: none; }
   flex-shrink: 0;
 }
 
-.gemini-image-strip.hidden {
+.chat-image-strip.hidden {
   display: none;
 }
 
-.gemini-img-thumb {
+.chat-img-thumb {
   position: relative;
   width: 64px;
   height: 64px;
@@ -1117,14 +1116,14 @@ summary.gemini-tool-summary::marker { display: none; }
   flex-shrink: 0;
 }
 
-.gemini-img-thumb img {
+.chat-img-thumb img {
   width: 100%;
   height: 100%;
   object-fit: cover;
   display: block;
 }
 
-.gemini-img-remove {
+.chat-img-remove {
   position: absolute;
   top: 2px;
   right: 2px;
@@ -1145,26 +1144,26 @@ summary.gemini-tool-summary::marker { display: none; }
   transition: opacity 0.15s;
 }
 
-.gemini-img-thumb:hover .gemini-img-remove {
+.chat-img-thumb:hover .chat-img-remove {
   opacity: 1;
 }
 
 
 /* Drag-over state */
-.gemini-panel.drag-over {
+.chat-panel.drag-over {
   outline: 2px dashed var(--btn-primary);
   outline-offset: -4px;
 }
 
 /* Images inside sent user messages */
-.gemini-msg-images {
+.chat-msg-images {
   display: flex;
   flex-wrap: wrap;
   gap: 0.35rem;
   margin-bottom: 0.4rem;
 }
 
-.gemini-msg-img {
+.chat-msg-img {
   max-width: 180px;
   max-height: 180px;
   border-radius: 6px;
@@ -1175,7 +1174,7 @@ summary.gemini-tool-summary::marker { display: none; }
 /* Chatonly layout rules live in style.css */
 
 /* ── Gemini tool approval prompt ────────────────────────────────── */
-.gemini-approval-prompt {
+.chat-approval-prompt {
   background: var(--bg-secondary, #1a1a1a);
   border: 1px solid var(--warning, #f59e0b);
   border-left: 3px solid var(--warning, #f59e0b);
@@ -1184,7 +1183,7 @@ summary.gemini-tool-summary::marker { display: none; }
   margin: 0.5rem 0;
 }
 
-.gemini-approval-header {
+.chat-approval-header {
   display: flex;
   align-items: center;
   gap: 0.5rem;
@@ -1193,12 +1192,12 @@ summary.gemini-tool-summary::marker { display: none; }
   font-size: 0.85rem;
 }
 
-.gemini-approval-tool {
+.chat-approval-tool {
   font-family: var(--font-mono, monospace);
   color: var(--warning, #f59e0b);
 }
 
-.gemini-approval-params {
+.chat-approval-params {
   font-family: var(--font-mono, monospace);
   font-size: 0.75rem;
   background: var(--bg-tertiary, #111);
@@ -1212,23 +1211,23 @@ summary.gemini-tool-summary::marker { display: none; }
   word-break: break-all;
 }
 
-.gemini-approval-buttons {
+.chat-approval-buttons {
   display: flex;
   gap: 0.5rem;
   margin-top: 0.5rem;
 }
 
-.gemini-approval-resolved {
+.chat-approval-resolved {
   font-size: 0.8rem;
   opacity: 0.7;
 }
-.gemini-approval-resolved.denied {
+.chat-approval-resolved.denied {
   color: var(--error, #ef4444);
 }
 
 /* --- Color diffs for Edit tool --- */
 
-.gemini-diff {
+.chat-diff {
   font-family: "SF Mono", "Menlo", "Monaco", monospace;
   font-size: 0.78rem;
   line-height: 1.5;
@@ -1250,17 +1249,17 @@ summary.gemini-tool-summary::marker { display: none; }
 
 /* --- Thinking blocks --- */
 
-.gemini-thinking-block {
+.chat-thinking-block {
   margin: 0.25rem 0;
   font-size: 0.8rem;
   opacity: 0.7;
 }
-.gemini-thinking-block summary {
+.chat-thinking-block summary {
   cursor: pointer;
   font-style: italic;
   color: var(--text-muted, #888);
 }
-.gemini-thinking-body {
+.chat-thinking-body {
   font-family: "SF Mono", "Menlo", monospace;
   font-size: 0.75rem;
   white-space: pre-wrap;
@@ -1275,7 +1274,7 @@ summary.gemini-tool-summary::marker { display: none; }
 
 /* --- System notes (compaction, permission mode changes) --- */
 
-.gemini-system-note {
+.chat-system-note {
   font-size: 0.72rem;
   color: var(--text-muted, #888);
   text-align: center;
@@ -1285,7 +1284,7 @@ summary.gemini-tool-summary::marker { display: none; }
 
 /* --- Background task cards --- */
 
-.gemini-task-card {
+.chat-task-card {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
@@ -1297,16 +1296,16 @@ summary.gemini-tool-summary::marker { display: none; }
   background: var(--bg-card, #232339);
   border-left: 3px solid var(--accent, #6d6dff);
 }
-.gemini-task-card.running .gemini-task-status { color: var(--accent, #6d6dff); }
-.gemini-task-card.success .gemini-task-status { color: #3fb950; }
-.gemini-task-card.error .gemini-task-status { color: #f85149; }
-.gemini-task-desc { font-weight: 500; }
-.gemini-task-detail {
+.chat-task-card.running .chat-task-status { color: var(--accent, #6d6dff); }
+.chat-task-card.success .chat-task-status { color: #3fb950; }
+.chat-task-card.error .chat-task-status { color: #f85149; }
+.chat-task-desc { font-weight: 500; }
+.chat-task-detail {
   width: 100%;
   font-size: 0.72rem;
   color: var(--text-muted, #888);
 }
-.gemini-task-summary {
+.chat-task-summary {
   width: 100%;
   font-size: 0.75rem;
   margin-top: 0.25rem;
@@ -1314,14 +1313,14 @@ summary.gemini-tool-summary::marker { display: none; }
 
 /* --- Result footer (cost / tokens / duration) --- */
 
-.gemini-result-footer {
+.chat-result-footer {
   font-size: 0.68rem;
   color: var(--text-muted, #888);
   text-align: right;
   padding: 0.15rem 0.5rem;
   opacity: 0.6;
 }
-.gemini-result-error {
+.chat-result-error {
   font-size: 0.8rem;
   color: #f85149;
   padding: 0.35rem 0.75rem;
@@ -1333,11 +1332,11 @@ summary.gemini-tool-summary::marker { display: none; }
 
 /* --- Permission description/reason --- */
 
-.gemini-permission-desc {
+.chat-permission-desc {
   font-size: 0.82rem;
   margin-bottom: 0.25rem;
 }
-.gemini-permission-reason {
+.chat-permission-reason {
   font-size: 0.75rem;
   color: var(--text-muted, #888);
   font-style: italic;
@@ -1346,7 +1345,7 @@ summary.gemini-tool-summary::marker { display: none; }
 
 /* --- Tool elapsed time --- */
 
-.gemini-tool-timer {
+.chat-tool-timer {
   font-size: 0.72rem;
   color: var(--text-muted, #888);
   margin-left: 0.5rem;

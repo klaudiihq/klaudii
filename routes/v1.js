@@ -213,7 +213,7 @@ module.exports = function createV1Router(deps) {
       // Relay details: array of active relays for this workspace (one per session)
       result.activeRelays = claudeChat ? claudeChat.getActiveRelayInfo(project.name) : [];
       result.relays = result.activeRelays.map((r, i) => ({ id: `relay-${i}`, ...r }));
-      if (wsState.beadId) result.beadId = wsState.beadId;
+      if (wsState.taskId) result.taskId = wsState.taskId;
       return result;
     });
 
@@ -657,10 +657,10 @@ module.exports = function createV1Router(deps) {
       const currentSNum = chatSessions.current || 1;
       if (claudeChat.isSessionActive(workspace, currentSNum)) {
         claudeChat.pushHistory(workspace, "user", message, { sender: senderField });
-        claudeChat.appendMessage(workspace, message);
+        claudeChat.sendMessage(workspace, message);
       } else {
         claudeChat.pushHistory(workspace, "user", message, { sender: senderField });
-        await claudeChat.sendMessage(workspace, proj.path, message, config);
+        await claudeChat.startChat(workspace, proj.path, message, config);
       }
       res.json({ ok: true, workspace });
     } catch (err) {
@@ -751,11 +751,11 @@ module.exports = function createV1Router(deps) {
     res.json(current);
   });
 
-  // --- Beads CRUD ---
+  // --- Tasks CRUD ---
   // Task routes — backed by SQLite (replaced bd/Dolt)
   const tasks = require("../lib/tasks");
 
-  router.get("/beads", (_req, res) => {
+  router.get("/tasks", (_req, res) => {
     try {
       const list = tasks.list();
       res.json(list);
@@ -764,7 +764,7 @@ module.exports = function createV1Router(deps) {
     }
   });
 
-  router.get("/beads/:id", (req, res) => {
+  router.get("/tasks/:id", (req, res) => {
     const id = req.params.id;
     try {
       const task = tasks.get(id);
@@ -775,17 +775,17 @@ module.exports = function createV1Router(deps) {
     }
   });
 
-  // --- Bead worker sessions ---
+  // --- Task worker sessions ---
 
-  router.get("/beads/:id/sessions", (req, res) => {
+  router.get("/tasks/:id/sessions", (req, res) => {
     const id = req.params.id;
-    if (!/^[a-zA-Z0-9-]+$/.test(id)) return res.status(400).json({ error: "invalid bead ID" });
+    if (!/^[a-zA-Z0-9-]+$/.test(id)) return res.status(400).json({ error: "invalid task ID" });
 
-    // Collect sessions from claude-chat that are tagged with this bead
-    const chatSessions = claudeChat ? claudeChat.getSessionsForBead(id) : [];
+    // Collect sessions from claude-chat that are tagged with this task
+    const chatSessions = claudeChat ? claudeChat.getSessionsForTask(id) : [];
 
-    // Collect workspaces associated with this bead
-    const workspaces = workspaceState ? workspaceState.getWorkspacesForBead(id) : [];
+    // Collect workspaces associated with this task
+    const workspaces = workspaceState ? workspaceState.getWorkspacesForTask(id) : [];
 
     // Enrich with live status
     const allProjects = projects.getProjects();
@@ -824,10 +824,10 @@ module.exports = function createV1Router(deps) {
       }
     }
 
-    res.json({ beadId: id, sessions: workerSessions });
+    res.json({ taskId: id, sessions: workerSessions });
   });
 
-  router.post("/beads", (req, res) => {
+  router.post("/tasks", (req, res) => {
     const { title, description, priority, type, deps } = req.body;
     if (!title) return res.status(400).json({ error: "title required" });
 
@@ -839,7 +839,7 @@ module.exports = function createV1Router(deps) {
     }
   });
 
-  router.patch("/beads/:id", (req, res) => {
+  router.patch("/tasks/:id", (req, res) => {
     const id = req.params.id;
     const { status, comment, assignee, priority } = req.body;
 
@@ -940,11 +940,11 @@ module.exports = function createV1Router(deps) {
     res.json({ sessionId, messages });
   });
 
-  // --- Bead Completion Pipeline ---
+  // --- Task Completion Pipeline ---
 
-  router.post("/beads/:id/complete", async (req, res) => {
+  router.post("/tasks/:id/complete", async (req, res) => {
     const id = req.params.id;
-    if (!/^[a-zA-Z0-9-]+$/.test(id)) return res.status(400).json({ error: "invalid bead ID" });
+    if (!/^[a-zA-Z0-9-]+$/.test(id)) return res.status(400).json({ error: "invalid task ID" });
 
     const { workspace } = req.body;
     if (!workspace) return res.status(400).json({ error: "workspace required" });
@@ -1030,7 +1030,8 @@ module.exports = function createV1Router(deps) {
     try {
       if (role === "architect") {
         const startup = fs.readFileSync(path.join(klaudiiRoot, "ARCHITECT_STARTUP.md"), "utf-8");
-        const system = fs.readFileSync(path.join(klaudiiRoot, "planning", "architect-system.md"), "utf-8");
+        const planningDir = path.join(klaudiiRoot, "..", "klaudii-planning");
+        const system = fs.readFileSync(path.join(planningDir, "architect-system.md"), "utf-8");
         systemPrompt = `${startup}\n\n---\n\n${system}`;
       } else {
         const prompt = fs.readFileSync(path.join(klaudiiRoot, "lib", "shepherd-prompt.md"), "utf-8");

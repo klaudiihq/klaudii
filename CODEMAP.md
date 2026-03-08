@@ -89,7 +89,8 @@ Claude CLI subprocess relay manager. Spawns `relay-daemon.js` per workspace.
 
 Key functions:
 - `startRelay(workspace, opts)` — spawn relay daemon (detached, survives server restart)
-- `sendMessage(workspace, text, sessionNum, opts)` — send via Unix socket
+- `startChat(workspace, text, sessionNum, opts)` — spawn new CLI process
+- `sendMessage(workspace, message)` — send to active relay via Unix socket
 - `stopProcess(workspace)` — kill relay
 - `getHistory(workspace, sessionNum)` — load persisted messages
 - `_normalizeEvent(raw)` — **CRITICAL**: converts Claude JSONL → Gemini-compatible format
@@ -115,7 +116,7 @@ Gemini CLI subprocess manager (print-mode or A2A backend).
 
 Key functions:
 - `startProcess(workspace, sessionNum, opts)` — spawn gemini subprocess
-- `sendMessage(workspace, text, opts)` — send user message
+- `startChat(workspace, text, opts)` — start new chat session
 - `fetchModels(config)`, `fetchQuota()` — model list & token quota
 - `getHistory(workspace, sessionNum)` — session messages
 - `newSession(workspace)`, `getSessions(workspace)` — session management
@@ -146,7 +147,7 @@ Process discovery for Claude/Gemini instances.
 - Returns: `[{pid, cwd, project, type, managed, uptime, cpu, memMB, launchedBy}, ...]`
 
 ### tasks.js (~457 lines)
-SQLite task backend (replaces Dolt/beads).
+SQLite task backend (replaces Dolt/tasks).
 
 - DB location: `~/Library/Application Support/com.klaudii/tasks.db`
 - Schema: `tasks` table + `task_comments` table
@@ -210,15 +211,15 @@ Key functions:
 - `openGeminiChat()` — open right-side chat panel
 - `pollHealth()` — 3-second interval
 
-### gemini.js (~2721 lines) — **Largest frontend file**
-Gemini/Claude chat UI and WebSocket streaming.
+### chat.js (~2721 lines) — **Largest frontend file**
+Chat UI and WebSocket streaming (backend-agnostic).
 
 Key functions:
-- `openGeminiChat(project)` — init chat panel
-- `geminiConnect(project, mode)` — WebSocket to backend
-- `geminiSendMessage(text)` — send user input
-- `renderGeminiMessage(event)` — render streamed chunks, tool calls
-- `geminiHandleToolApproval(callId, approved)` — tool approval UI
+- `openChat(project)` — init chat panel
+- `chatConnect(project, mode)` — WebSocket to backend
+- `chatSendMessage(text)` — send user input
+- `chatAppendMessage(role, content, ...)` — render streamed chunks, tool calls
+- `chatConfirmTool(callId, outcome)` — tool approval UI
 
 WebSocket message types:
 - `{type:"message", role, content, delta:true}` — streamed text
@@ -227,9 +228,9 @@ WebSocket message types:
 - `{type:"status", message}`, `{type:"error", message}`
 
 ### index.html (~240 lines)
-Dashboard layout: header, sessions grid, gemini chat panel, modals.
+Dashboard layout: header, sessions grid, chat panel, modals.
 
-### style.css (~1211 lines) + gemini.css (~725 lines)
+### style.css (~1211 lines) + chat.css (~725 lines)
 Styling with CSS variables, light/dark theme, responsive layout.
 
 ---

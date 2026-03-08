@@ -133,7 +133,7 @@ function switchProject(repo) {
     localStorage.removeItem("klaudii-current-project");
   }
   refresh();
-  refreshBeads();
+  refreshTasks();
 }
 
 function matchesCurrentProject(projectName) {
@@ -864,7 +864,7 @@ async function refresh() {
         const geminiTitle = health.geminiAuth.email ? esc(health.geminiAuth.email) : (health.geminiAuth.method === "api_key" ? "API key" : "OAuth");
         authRows.push(`<span class="auth-row ok" title="${geminiTitle}"><span class="auth-dot ok"></span>Gemini</span>`);
       } else {
-        authRows.push('<span class="auth-row error clickable" title="Click to authenticate" onclick="openGeminiChat(null, null)"><span class="auth-dot error"></span>Gemini</span>');
+        authRows.push('<span class="auth-row error clickable" title="Click to authenticate" onclick="openChat(null, null)"><span class="auth-dot error"></span>Gemini</span>');
       }
     }
     authEl.innerHTML = (authRows.length ? '<span class="auth-title">auth</span>' : '') + authRows.join("");
@@ -878,7 +878,7 @@ async function refresh() {
     // Health succeeded — reset failure count and notify chat panel
     if (healthFailCount > 0) {
       healthFailCount = 0;
-      if (typeof geminiUpdateStatus === "function") geminiUpdateStatus(true);
+      if (typeof chatUpdateStatus === "function") chatUpdateStatus(true);
     }
   } catch (err) {
     const badge = document.getElementById("status-badge");
@@ -887,7 +887,7 @@ async function refresh() {
 
     // Notify chat panel of server disconnect
     healthFailCount++;
-    if (typeof geminiUpdateStatus === "function") geminiUpdateStatus(false);
+    if (typeof chatUpdateStatus === "function") chatUpdateStatus(false);
   }
 }
 
@@ -908,7 +908,7 @@ async function openAgentChat(role) {
     window._agentSystemPrompt = data.systemPrompt;
     window._agentRole = role;
     // Open the chat panel using the agent workspace
-    openGeminiChat(data.workspace, data.workspacePath, "claude");
+    openChat(data.workspace, data.workspacePath, "claude");
   } catch (err) {
     alert("Failed to start agent chat: " + err.message);
   }
@@ -1512,60 +1512,60 @@ async function schedulerTrigger(name) {
   setTimeout(refreshScheduler, 1000);
 }
 
-// --- Beads ---
+// --- Tasks ---
 
-let beadsCollapsed = localStorage.getItem("klaudii-beads-collapsed") === "1";
-let beadFilter = "all";
-let beadsData = [];
-let expandedBeadId = null;
-let beadSessionsCache = {}; // beadId → { sessions: [...], fetchedAt }
+let tasksCollapsed = localStorage.getItem("klaudii-tasks-collapsed") === "1";
+let taskFilter = "all";
+let tasksData = [];
+let expandedTaskId = null;
+let taskSessionsCache = {}; // taskId → { sessions: [...], fetchedAt }
 
 const PRIORITY_LABELS = ["P0", "P1", "P2", "P3", "P4"];
 
-async function refreshBeads() {
+async function refreshTasks() {
   try {
-    beadsData = await api("/api/beads");
-    if (!Array.isArray(beadsData)) beadsData = [];
-    renderBeads();
+    tasksData = await api("/api/tasks");
+    if (!Array.isArray(tasksData)) tasksData = [];
+    renderTasks();
     renderSidebar();
   } catch {
-    // Beads endpoint not available
+    // Tasks endpoint not available
   }
 }
 
-function renderBeads() {
-  const section = document.getElementById("beads-section");
-  const container = document.getElementById("beads-list");
+function renderTasks() {
+  const section = document.getElementById("tasks-section");
+  const container = document.getElementById("tasks-list");
   if (!section || !container) return;
 
-  if (!beadsData.length) {
+  if (!tasksData.length) {
     section.classList.add("hidden");
     return;
   }
 
-  let visibleBeads = beadsData;
+  let visibleTasks = tasksData;
   if (currentProject) {
-    visibleBeads = beadsData.filter(b => b.id.startsWith(currentProject + "-"));
+    visibleTasks = tasksData.filter(b => b.id.startsWith(currentProject + "-"));
   }
-  if (!visibleBeads.length) {
+  if (!visibleTasks.length) {
     section.classList.add("hidden");
     return;
   }
 
   section.classList.remove("hidden");
-  const toggle = document.getElementById("beads-toggle");
-  if (toggle) toggle.textContent = beadsCollapsed ? "Show" : "Hide";
-  document.getElementById("beads-toolbar").style.display = beadsCollapsed ? "none" : "";
-  document.getElementById("beads-list").style.display = beadsCollapsed ? "none" : "";
-  const form = document.getElementById("bead-form");
-  if (beadsCollapsed && form) form.classList.add("hidden");
+  const toggle = document.getElementById("tasks-toggle");
+  if (toggle) toggle.textContent = tasksCollapsed ? "Show" : "Hide";
+  document.getElementById("tasks-toolbar").style.display = tasksCollapsed ? "none" : "";
+  document.getElementById("tasks-list").style.display = tasksCollapsed ? "none" : "";
+  const form = document.getElementById("task-form");
+  if (tasksCollapsed && form) form.classList.add("hidden");
 
-  const filtered = beadFilter === "all"
-    ? visibleBeads
-    : visibleBeads.filter(b => b.status === beadFilter);
+  const filtered = taskFilter === "all"
+    ? visibleTasks
+    : visibleTasks.filter(b => b.status === taskFilter);
 
   if (!filtered.length) {
-    container.innerHTML = `<div style="padding:12px;color:var(--text-faint);font-size:12px;text-align:center">No beads matching "${beadFilter}"</div>`;
+    container.innerHTML = `<div style="padding:12px;color:var(--text-faint);font-size:12px;text-align:center">No tasks matching "${taskFilter}"</div>`;
     return;
   }
 
@@ -1573,39 +1573,39 @@ function renderBeads() {
     const statusLabel = (b.status || "open").replace(/_/g, " ");
     const priority = PRIORITY_LABELS[b.priority] || `P${b.priority}`;
     const shortId = b.id.includes("-") ? b.id.split("-").pop() : b.id;
-    const isExpanded = expandedBeadId === b.id;
+    const isExpanded = expandedTaskId === b.id;
     const descHtml = isExpanded && b.description
-      ? `<div class="bead-desc-expanded">${esc(b.description)}</div>`
+      ? `<div class="task-desc-expanded">${esc(b.description)}</div>`
       : "";
 
     // Worker sessions section (shown when expanded)
     let sessionsHtml = "";
     if (isExpanded) {
-      const cached = beadSessionsCache[b.id];
+      const cached = taskSessionsCache[b.id];
       if (cached && cached.sessions.length > 0) {
         const rows = cached.sessions.map(s => {
           const statusCls = s.status === "running" ? "running" : s.status === "exited" ? "exited" : "stopped";
-          return `<div class="bead-session-row">
-            <span class="bead-session-workspace">${esc(s.workspace)}</span>
-            <span class="bead-session-num">${s.sessionNum != null ? `#${s.sessionNum}` : ""}</span>
-            <span class="bead-session-status ${statusCls}">${esc(s.status)}</span>
+          return `<div class="task-session-row">
+            <span class="task-session-workspace">${esc(s.workspace)}</span>
+            <span class="task-session-num">${s.sessionNum != null ? `#${s.sessionNum}` : ""}</span>
+            <span class="task-session-status ${statusCls}">${esc(s.status)}</span>
             ${s.status === "running" ? `<button class="btn btn-xs danger" onclick="stopSession('${esc(s.workspace)}')">Stop</button>` : ""}
           </div>`;
         }).join("");
-        sessionsHtml = `<div class="bead-sessions"><div class="bead-sessions-label">Worker Sessions</div>${rows}</div>`;
+        sessionsHtml = `<div class="task-sessions"><div class="task-sessions-label">Worker Sessions</div>${rows}</div>`;
       } else if (cached) {
-        sessionsHtml = `<div class="bead-sessions"><div class="bead-sessions-label" style="color:var(--text-faint)">No worker sessions</div></div>`;
+        sessionsHtml = `<div class="task-sessions"><div class="task-sessions-label" style="color:var(--text-faint)">No worker sessions</div></div>`;
       } else {
-        sessionsHtml = `<div class="bead-sessions"><div class="bead-sessions-label" style="color:var(--text-faint)">Loading sessions...</div></div>`;
+        sessionsHtml = `<div class="task-sessions"><div class="task-sessions-label" style="color:var(--text-faint)">Loading sessions...</div></div>`;
       }
     }
 
-    return `<div class="bead-row">
-      <div class="bead-row-top">
-        <span class="bead-short-id" title="${esc(b.id)}">${esc(shortId)}</span>
-        <span class="bead-title" onclick="openBeadDetail('${esc(b.id)}')">${esc(b.title)}</span>
-        <span class="bead-status ${esc(b.status || "open")}">${esc(statusLabel)}</span>
-        <span class="bead-priority">${esc(priority)}</span>
+    return `<div class="task-row">
+      <div class="task-row-top">
+        <span class="task-short-id" title="${esc(b.id)}">${esc(shortId)}</span>
+        <span class="task-title" onclick="openTaskDetail('${esc(b.id)}')">${esc(b.title)}</span>
+        <span class="task-status ${esc(b.status || "open")}">${esc(statusLabel)}</span>
+        <span class="task-priority">${esc(priority)}</span>
       </div>
       ${descHtml}
       ${sessionsHtml}
@@ -1613,96 +1613,96 @@ function renderBeads() {
   }).join("");
 }
 
-function setBeadFilter(f) {
-  beadFilter = f;
-  document.querySelectorAll(".beads-filter").forEach(btn => {
+function setTaskFilter(f) {
+  taskFilter = f;
+  document.querySelectorAll(".tasks-filter").forEach(btn => {
     btn.classList.toggle("active", btn.dataset.filter === f);
   });
-  renderBeads();
+  renderTasks();
 }
 
-function toggleBeadsSection() {
-  beadsCollapsed = !beadsCollapsed;
-  localStorage.setItem("klaudii-beads-collapsed", beadsCollapsed ? "1" : "0");
-  renderBeads();
+function toggleTasksSection() {
+  tasksCollapsed = !tasksCollapsed;
+  localStorage.setItem("klaudii-tasks-collapsed", tasksCollapsed ? "1" : "0");
+  renderTasks();
 }
 
-async function toggleBeadDesc(id) {
-  expandedBeadId = expandedBeadId === id ? null : id;
-  renderBeads();
+async function toggleTaskDesc(id) {
+  expandedTaskId = expandedTaskId === id ? null : id;
+  renderTasks();
   // Fetch worker sessions when expanding
-  if (expandedBeadId === id) {
+  if (expandedTaskId === id) {
     try {
-      const data = await api(`/api/beads/${encodeURIComponent(id)}/sessions`);
-      beadSessionsCache[id] = { sessions: data.sessions || [], fetchedAt: Date.now() };
+      const data = await api(`/api/tasks/${encodeURIComponent(id)}/sessions`);
+      taskSessionsCache[id] = { sessions: data.sessions || [], fetchedAt: Date.now() };
     } catch {
-      beadSessionsCache[id] = { sessions: [], fetchedAt: Date.now() };
+      taskSessionsCache[id] = { sessions: [], fetchedAt: Date.now() };
     }
-    renderBeads();
+    renderTasks();
   }
 }
 
-function openBeadForm() {
-  document.getElementById("bead-form").classList.remove("hidden");
-  document.getElementById("bead-title").focus();
+function openTaskForm() {
+  document.getElementById("task-form").classList.remove("hidden");
+  document.getElementById("task-title").focus();
 }
 
-function closeBeadForm() {
-  document.getElementById("bead-form").classList.add("hidden");
-  document.getElementById("bead-title").value = "";
-  document.getElementById("bead-desc").value = "";
-  document.getElementById("bead-priority").value = "2";
-  document.getElementById("bead-type").value = "task";
+function closeTaskForm() {
+  document.getElementById("task-form").classList.add("hidden");
+  document.getElementById("task-title").value = "";
+  document.getElementById("task-desc").value = "";
+  document.getElementById("task-priority").value = "2";
+  document.getElementById("task-type").value = "task";
 }
 
-async function submitBead() {
-  const title = document.getElementById("bead-title").value.trim();
-  if (!title) { document.getElementById("bead-title").focus(); return; }
-  const description = document.getElementById("bead-desc").value.trim();
-  const priority = Number(document.getElementById("bead-priority").value);
-  const type = document.getElementById("bead-type").value;
+async function submitTask() {
+  const title = document.getElementById("task-title").value.trim();
+  if (!title) { document.getElementById("task-title").focus(); return; }
+  const description = document.getElementById("task-desc").value.trim();
+  const priority = Number(document.getElementById("task-priority").value);
+  const type = document.getElementById("task-type").value;
   try {
-    await api("/api/beads", { method: "POST", body: { title, description, priority, type } });
-    closeBeadForm();
-    refreshBeads();
+    await api("/api/tasks", { method: "POST", body: { title, description, priority, type } });
+    closeTaskForm();
+    refreshTasks();
   } catch (err) {
-    alert("Failed to create bead: " + err.message);
+    alert("Failed to create task: " + err.message);
   }
 }
 
-async function beadSetStatus(id, status) {
+async function taskSetStatus(id, status) {
   try {
-    await api(`/api/beads/${encodeURIComponent(id)}`, { method: "PATCH", body: { status } });
-    refreshBeads();
-    if (currentDetailBeadId === id) openBeadDetail(id);
+    await api(`/api/tasks/${encodeURIComponent(id)}`, { method: "PATCH", body: { status } });
+    refreshTasks();
+    if (currentDetailTaskId === id) openTaskDetail(id);
   } catch (err) {
-    alert("Failed to update bead: " + err.message);
+    alert("Failed to update task: " + err.message);
   }
 }
 
-// --- Bead Detail Panel ---
+// --- Task Detail Panel ---
 
-let currentDetailBeadId = null;
+let currentDetailTaskId = null;
 
-async function openBeadDetail(beadId) {
-  currentDetailBeadId = beadId;
-  const overlay = document.getElementById("bead-detail-overlay");
-  const idEl = document.getElementById("bead-detail-id");
-  const bodyEl = document.getElementById("bead-detail-body");
+async function openTaskDetail(taskId) {
+  currentDetailTaskId = taskId;
+  const overlay = document.getElementById("task-detail-overlay");
+  const idEl = document.getElementById("task-detail-id");
+  const bodyEl = document.getElementById("task-detail-body");
 
   overlay.classList.remove("hidden");
-  idEl.textContent = beadId;
-  bodyEl.innerHTML = '<div class="bead-detail-loading">Loading...</div>';
+  idEl.textContent = taskId;
+  bodyEl.innerHTML = '<div class="task-detail-loading">Loading...</div>';
 
   try {
-    const [bead, sessionsData] = await Promise.all([
-      api(`/api/beads/${encodeURIComponent(beadId)}`),
-      api(`/api/beads/${encodeURIComponent(beadId)}/sessions`),
+    const [task, sessionsData] = await Promise.all([
+      api(`/api/tasks/${encodeURIComponent(taskId)}`),
+      api(`/api/tasks/${encodeURIComponent(taskId)}/sessions`),
     ]);
 
-    const b = Array.isArray(bead) ? bead[0] : bead;
+    const b = Array.isArray(task) ? task[0] : task;
     if (!b || b.error) {
-      bodyEl.innerHTML = `<div class="bead-detail-loading">${esc(b?.error || "Bead not found")}</div>`;
+      bodyEl.innerHTML = `<div class="task-detail-loading">${esc(b?.error || "Task not found")}</div>`;
       return;
     }
 
@@ -1739,16 +1739,16 @@ async function openBeadDetail(beadId) {
     let depsHtml = "";
     if (deps.length) {
       const depRows = deps.map(d => `
-        <div class="bead-detail-dep" onclick="openBeadDetail('${esc(d.id)}')" style="cursor:pointer">
-          <span class="bead-detail-dep-id">${esc(d.id)}</span>
-          <span class="bead-detail-dep-title">${esc(d.title)}</span>
-          <span class="bead-status ${esc(d.status || "open")}" style="font-size:9px;padding:1px 5px">${esc((d.status || "open").replace(/_/g, " "))}</span>
-          <span class="bead-detail-dep-type">${esc(d.dependency_type || "related")}</span>
+        <div class="task-detail-dep" onclick="openTaskDetail('${esc(d.id)}')" style="cursor:pointer">
+          <span class="task-detail-dep-id">${esc(d.id)}</span>
+          <span class="task-detail-dep-title">${esc(d.title)}</span>
+          <span class="task-status ${esc(d.status || "open")}" style="font-size:9px;padding:1px 5px">${esc((d.status || "open").replace(/_/g, " "))}</span>
+          <span class="task-detail-dep-type">${esc(d.dependency_type || "related")}</span>
         </div>`).join("");
       depsHtml = `
-        <div class="bead-detail-section">
-          <div class="bead-detail-section-title">Dependencies</div>
-          <div class="bead-detail-deps">${depRows}</div>
+        <div class="task-detail-section">
+          <div class="task-detail-section-title">Dependencies</div>
+          <div class="task-detail-deps">${depRows}</div>
         </div>`;
     }
 
@@ -1757,16 +1757,16 @@ async function openBeadDetail(beadId) {
     if (sessions.length) {
       const rows = sessions.map(s => {
         const statusCls = s.status === "running" ? "running" : s.status === "exited" ? "exited" : "stopped";
-        return `<div class="bead-session-row">
-          <span class="bead-session-workspace">${esc(s.workspace)}</span>
-          <span class="bead-session-num">${s.sessionNum != null ? `#${s.sessionNum}` : ""}</span>
-          <span class="bead-session-status ${statusCls}">${esc(s.status)}</span>
+        return `<div class="task-session-row">
+          <span class="task-session-workspace">${esc(s.workspace)}</span>
+          <span class="task-session-num">${s.sessionNum != null ? `#${s.sessionNum}` : ""}</span>
+          <span class="task-session-status ${statusCls}">${esc(s.status)}</span>
           ${s.status === "running" ? `<button class="btn btn-xs danger" onclick="event.stopPropagation();stopSession('${esc(s.workspace)}')">Stop</button>` : ""}
         </div>`;
       }).join("");
       sessionsHtml = `
-        <div class="bead-detail-section">
-          <div class="bead-detail-section-title">Worker Sessions</div>
+        <div class="task-detail-section">
+          <div class="task-detail-section-title">Worker Sessions</div>
           ${rows}
         </div>`;
     }
@@ -1774,83 +1774,83 @@ async function openBeadDetail(beadId) {
     // Comments
     const commentsListHtml = comments.length
       ? comments.map(c => `
-          <div class="bead-comment">
-            <div class="bead-comment-header">
-              <span class="bead-comment-author">${esc(c.author || "unknown")}</span>
-              <span class="bead-comment-time">${c.created_at ? new Date(c.created_at).toLocaleString() : ""}</span>
+          <div class="task-comment">
+            <div class="task-comment-header">
+              <span class="task-comment-author">${esc(c.author || "unknown")}</span>
+              <span class="task-comment-time">${c.created_at ? new Date(c.created_at).toLocaleString() : ""}</span>
             </div>
-            <div class="bead-comment-text">${esc(c.text || c.content || "")}</div>
+            <div class="task-comment-text">${esc(c.text || c.content || "")}</div>
           </div>`).join("")
-      : '<div class="bead-comments-empty">No comments yet</div>';
+      : '<div class="task-comments-empty">No comments yet</div>';
 
     bodyEl.innerHTML = `
-      <div class="bead-detail-title">${esc(b.title)}</div>
+      <div class="task-detail-title">${esc(b.title)}</div>
 
-      <div class="bead-detail-meta">
-        <span class="bead-detail-meta-label">Status</span>
-        <select onchange="beadDetailUpdate('${esc(b.id)}',{status:this.value})">${statusOpts}</select>
-        <span class="bead-detail-meta-label">Priority</span>
-        <select onchange="beadDetailUpdate('${esc(b.id)}',{priority:Number(this.value)})">${priorityOpts}</select>
-        <span class="bead-detail-meta-label">Assignee</span>
-        <input class="bead-detail-assignee-input" value="${esc(b.assignee || "")}" placeholder="unassigned"
-          onchange="beadDetailUpdate('${esc(b.id)}',{assignee:this.value})" />
+      <div class="task-detail-meta">
+        <span class="task-detail-meta-label">Status</span>
+        <select onchange="taskDetailUpdate('${esc(b.id)}',{status:this.value})">${statusOpts}</select>
+        <span class="task-detail-meta-label">Priority</span>
+        <select onchange="taskDetailUpdate('${esc(b.id)}',{priority:Number(this.value)})">${priorityOpts}</select>
+        <span class="task-detail-meta-label">Assignee</span>
+        <input class="task-detail-assignee-input" value="${esc(b.assignee || "")}" placeholder="unassigned"
+          onchange="taskDetailUpdate('${esc(b.id)}',{assignee:this.value})" />
       </div>
 
-      <div class="bead-detail-timestamps">
+      <div class="task-detail-timestamps">
         <span>Created: ${esc(created)}</span>
         <span>Updated: ${esc(updated)}</span>
       </div>
 
       ${b.description ? `
-        <div class="bead-detail-section">
-          <div class="bead-detail-section-title">Description</div>
-          <div class="bead-detail-desc">${descHtml}</div>
+        <div class="task-detail-section">
+          <div class="task-detail-section-title">Description</div>
+          <div class="task-detail-desc">${descHtml}</div>
         </div>` : ""}
 
       ${depsHtml}
       ${sessionsHtml}
 
-      <div class="bead-detail-section">
-        <div class="bead-detail-section-title">Comments (${comments.length})</div>
-        <div class="bead-comments-list">${commentsListHtml}</div>
-        <div class="bead-comment-form">
-          <textarea id="bead-comment-input" placeholder="Add a comment..." onkeydown="if(event.key==='Enter'&&event.metaKey){event.preventDefault();submitBeadComment('${esc(b.id)}')}"></textarea>
-          <button class="btn btn-sm primary" onclick="submitBeadComment('${esc(b.id)}')">Post</button>
+      <div class="task-detail-section">
+        <div class="task-detail-section-title">Comments (${comments.length})</div>
+        <div class="task-comments-list">${commentsListHtml}</div>
+        <div class="task-comment-form">
+          <textarea id="task-comment-input" placeholder="Add a comment..." onkeydown="if(event.key==='Enter'&&event.metaKey){event.preventDefault();submitTaskComment('${esc(b.id)}')}"></textarea>
+          <button class="btn btn-sm primary" onclick="submitTaskComment('${esc(b.id)}')">Post</button>
         </div>
       </div>
     `;
   } catch (err) {
-    bodyEl.innerHTML = `<div class="bead-detail-loading">Error: ${esc(err.message)}</div>`;
+    bodyEl.innerHTML = `<div class="task-detail-loading">Error: ${esc(err.message)}</div>`;
   }
 }
 
-function closeBeadDetail() {
-  currentDetailBeadId = null;
-  document.getElementById("bead-detail-overlay").classList.add("hidden");
+function closeTaskDetail() {
+  currentDetailTaskId = null;
+  document.getElementById("task-detail-overlay").classList.add("hidden");
 }
 
-function closeBeadDetailBackdrop(e) {
-  if (e.target === e.currentTarget) closeBeadDetail();
+function closeTaskDetailBackdrop(e) {
+  if (e.target === e.currentTarget) closeTaskDetail();
 }
 
-async function beadDetailUpdate(id, fields) {
+async function taskDetailUpdate(id, fields) {
   try {
-    await api(`/api/beads/${encodeURIComponent(id)}`, { method: "PATCH", body: fields });
-    refreshBeads();
-    openBeadDetail(id);
+    await api(`/api/tasks/${encodeURIComponent(id)}`, { method: "PATCH", body: fields });
+    refreshTasks();
+    openTaskDetail(id);
   } catch (err) {
-    alert("Failed to update bead: " + err.message);
+    alert("Failed to update task: " + err.message);
   }
 }
 
-async function submitBeadComment(id) {
-  const input = document.getElementById("bead-comment-input");
+async function submitTaskComment(id) {
+  const input = document.getElementById("task-comment-input");
   const text = input.value.trim();
   if (!text) { input.focus(); return; }
   try {
-    await api(`/api/beads/${encodeURIComponent(id)}`, { method: "PATCH", body: { comment: text } });
-    refreshBeads();
-    openBeadDetail(id);
+    await api(`/api/tasks/${encodeURIComponent(id)}`, { method: "PATCH", body: { comment: text } });
+    refreshTasks();
+    openTaskDetail(id);
   } catch (err) {
     alert("Failed to add comment: " + err.message);
   }
@@ -1981,30 +1981,30 @@ async function renderWorkerTask(project) {
   const bodyEl = document.getElementById("worker-detail-body");
   if (!bodyEl || workerActiveTab !== "task") return;
 
-  // Find the bead ID for this worker from session data
+  // Find the task ID for this worker from session data
   try {
     const sessions = await api("/api/sessions");
     const session = sessions.find(s => s.project === project);
-    const beadId = session?.beadId;
+    const taskId = session?.taskId;
 
-    if (!beadId) {
-      bodyEl.innerHTML = '<div class="worker-detail-empty">No bead assigned to this worker</div>';
+    if (!taskId) {
+      bodyEl.innerHTML = '<div class="worker-detail-empty">No task assigned to this worker</div>';
       return;
     }
 
-    const bead = await api(`/api/beads/${encodeURIComponent(beadId)}`);
-    if (!bead || bead.error) {
-      bodyEl.innerHTML = `<div class="worker-detail-empty">Bead ${esc(beadId)} not found</div>`;
+    const task = await api(`/api/tasks/${encodeURIComponent(taskId)}`);
+    if (!task || task.error) {
+      bodyEl.innerHTML = `<div class="worker-detail-empty">Task ${esc(taskId)} not found</div>`;
       return;
     }
 
     // Parse description into sections (Goal, Specs, Verification, Safety)
-    const desc = bead.description || "";
-    const sections = parseBeadSections(desc);
+    const desc = task.description || "";
+    const sections = parseTaskSections(desc);
 
     let html = `<div class="worker-task">
-      <div class="worker-task-title">${esc(bead.title)}</div>
-      <div class="worker-task-id">${esc(bead.id)} · P${bead.priority || 2} · ${esc((bead.status || "open").replace(/_/g, " "))}</div>`;
+      <div class="worker-task-title">${esc(task.title)}</div>
+      <div class="worker-task-id">${esc(task.id)} · P${task.priority || 2} · ${esc((task.status || "open").replace(/_/g, " "))}</div>`;
 
     for (const [heading, content] of sections) {
       html += `<div class="worker-task-section">
@@ -2020,7 +2020,7 @@ async function renderWorkerTask(project) {
   }
 }
 
-function parseBeadSections(desc) {
+function parseTaskSections(desc) {
   // Split description by known headings (Goal, Specs, Verification, Safety)
   // or by markdown-style headers
   const lines = desc.split("\n");
@@ -2244,7 +2244,7 @@ function renderSidebar() {
   updateSidebarBadges();
 
   if (sidebarTab === "workers") renderSidebarWorkers();
-  else if (sidebarTab === "beads") renderSidebarBeads();
+  else if (sidebarTab === "tasks") renderSidebarTasks();
   else renderSidebarWorkspaces();
 }
 
@@ -2261,23 +2261,23 @@ function updateSidebarBadges() {
     const st = s.status || (s.running ? "running" : "stopped");
     return st === "running" || s.relayActive;
   });
-  const openBeads = beadsData.filter(b => b.status !== "closed");
+  const openTasks = tasksData.filter(b => b.status !== "closed");
 
   const wb = document.getElementById("sidebar-badge-workers");
-  const bb = document.getElementById("sidebar-badge-beads");
+  const bb = document.getElementById("sidebar-badge-tasks");
   const wsb = document.getElementById("sidebar-badge-workspaces");
   if (wb) {
     wb.textContent = runningWorkers.length;
     wb.classList.toggle("has-activity", runningWorkers.length > 0);
   }
-  if (bb) bb.textContent = openBeads.length;
+  if (bb) bb.textContent = openTasks.length;
   if (wsb) wsb.textContent = runningWorkspaces.length;
 }
 
-function findBeadForWorker(session) {
-  if (!beadsData.length) return null;
+function findTaskForWorker(session) {
+  if (!tasksData.length) return null;
   const branch = session.git?.branch || session.project.split("--").slice(1).join("--") || "";
-  return beadsData.find(b => branch.includes(b.id)) || null;
+  return tasksData.find(b => branch.includes(b.id)) || null;
 }
 
 function renderSidebarWorkers() {
@@ -2302,9 +2302,9 @@ function renderSidebarWorkers() {
     const isActive = status === "running";
     const proc = procByProject[s.project];
     const uptime = proc?.uptime || "";
-    const bead = findBeadForWorker(s);
-    const beadTitle = bead ? bead.title : "";
-    const metaParts = [uptime, beadTitle].filter(Boolean);
+    const task = findTaskForWorker(s);
+    const taskTitle = task ? task.title : "";
+    const metaParts = [uptime, taskTitle].filter(Boolean);
 
     return `<div class="sidebar-card" onclick="sidebarWorkerClick('${esc(s.project)}')">
       <div class="sidebar-card-accent ${status}"></div>
@@ -2319,15 +2319,15 @@ function renderSidebarWorkers() {
   }).join("");
 }
 
-function renderSidebarBeads() {
+function renderSidebarTasks() {
   const container = document.getElementById("sidebar-content");
 
-  if (!beadsData.length) {
-    container.innerHTML = '<div class="sidebar-empty">No beads</div>';
+  if (!tasksData.length) {
+    container.innerHTML = '<div class="sidebar-empty">No tasks</div>';
     return;
   }
 
-  const sorted = [...beadsData].sort((a, b) => {
+  const sorted = [...tasksData].sort((a, b) => {
     const statusOrder = { open: 0, in_progress: 1, blocked: 2, closed: 3 };
     const sa = statusOrder[a.status] ?? 99;
     const sb2 = statusOrder[b.status] ?? 99;
@@ -2340,13 +2340,13 @@ function renderSidebarBeads() {
     const priority = PRIORITY_LABELS[b.priority] || `P${b.priority}`;
     const shortId = b.id.includes("-") ? b.id.split("-").pop() : b.id;
 
-    return `<div class="sidebar-bead" onclick="openBeadDetail('${esc(b.id)}')">
-      <span class="sidebar-bead-priority p${b.priority || 2}">${esc(priority)}</span>
-      <div class="sidebar-bead-info">
+    return `<div class="sidebar-task" onclick="openTaskDetail('${esc(b.id)}')">
+      <span class="sidebar-task-priority p${b.priority || 2}">${esc(priority)}</span>
+      <div class="sidebar-task-info">
         <span class="sidebar-card-title">${esc(b.title)}</span>
         <span class="sidebar-card-meta">${esc(shortId)} \u00b7 ${esc(statusLabel)}</span>
       </div>
-      <span class="bead-status ${esc(b.status || "open")}" style="font-size:9px;padding:1px 5px">${esc(statusLabel)}</span>
+      <span class="task-status ${esc(b.status || "open")}" style="font-size:9px;padding:1px 5px">${esc(statusLabel)}</span>
     </div>`;
   }).join("");
 }
@@ -2404,7 +2404,7 @@ function sidebarWorkspaceClick(el) {
   }
 
   const cli = chatMode === "gemini" ? "gemini" : "claude";
-  openGeminiChat(project, projectPath, cli);
+  openChat(project, projectPath, cli);
 }
 
 function sidebarWorkerClick(project) {
@@ -2455,9 +2455,9 @@ document.getElementById("sessions-list").addEventListener("click", (e) => {
     return;
   }
 
-  // Map stored mode to cli param expected by openGeminiChat
+  // Map stored mode to cli param expected by openChat
   const cli = chatMode === "gemini" ? "gemini" : "claude";
-  openGeminiChat(project, projectPath, cli);
+  openChat(project, projectPath, cli);
 });
 
 // --- Settings ---
@@ -2547,21 +2547,21 @@ if (localStorage.getItem("klaudii-theme") === "light") {
 
 // Skip all dashboard polling in chatonly mode — only chat overlay is visible
 if (new URLSearchParams(window.location.search).get("mode") === "chatonly") {
-  // Fetch health once (for auth status used by gemini.js)
+  // Fetch health once (for auth status used by chat.js)
   api("/api/health").then(h => { lastHealthData = h; }).catch(() => {});
 } else {
   refreshProjectSwitcher();
   refresh();
   refreshCloudStatus();
   refreshScheduler();
-  refreshBeads();
+  refreshTasks();
   refreshTimer = setInterval(() => {
     refresh();
     refreshCloudStatus();
   }, 10000);
   refreshUsage();
   setInterval(refreshUsage, 60000);
-  setInterval(() => { refreshScheduler(); refreshBeads(); }, 30000);
+  setInterval(() => { refreshScheduler(); refreshTasks(); }, 30000);
   // Refresh project list periodically (new projects may be added)
   setInterval(refreshProjectSwitcher, 30000);
 }

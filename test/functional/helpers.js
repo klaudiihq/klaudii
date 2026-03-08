@@ -185,7 +185,7 @@ function createClaudeChatMock() {
       const msgs = ensureHistory(ws, s.current);
       for (const entry of batch) msgs.push({ ...entry, ts: Date.now() });
     },
-    sendMessage: async (ws, projPath, message, config, opts) => {
+    startChat: async (ws, projPath, message, config, opts) => {
       active.add(ws);
       const eventHandlers = [];
       const doneHandlers = [];
@@ -207,7 +207,7 @@ function createClaudeChatMock() {
         onError: (fn) => errorHandlers.push(fn),
       };
     },
-    appendMessage: (ws, message) => {},
+    sendMessage: (ws, message) => {},
     stopProcess: (ws, sessionNum) => { active.delete(ws); },
     getStreamPartial: (ws) => streamPartials[ws] || null,
     getModels: () => [{ id: "claude-sonnet-4-6", name: "Claude Sonnet 4.6" }],

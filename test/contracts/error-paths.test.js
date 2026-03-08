@@ -154,26 +154,26 @@ describe("error paths: repos", () => {
   });
 });
 
-describe("error paths: beads", () => {
-  it("GET /beads/:id returns 400 for SQL injection attempt", async () => {
+describe("error paths: tasks", () => {
+  it("GET /tasks/:id returns 400 for SQL injection attempt", async () => {
     const { app } = createTestApp();
     await request(app)
-      .get("/api/beads/'; DROP TABLE beads;--")
+      .get("/api/tasks/'; DROP TABLE tasks;--")
       .expect(400);
   });
 
-  it("POST /beads returns 400 when title is missing", async () => {
+  it("POST /tasks returns 400 when title is missing", async () => {
     const { app } = createTestApp();
     await request(app)
-      .post("/api/beads")
+      .post("/api/tasks")
       .send({ description: "no title" })
       .expect(400);
   });
 
-  it("PATCH /beads/:id returns 400 for invalid ID characters", async () => {
+  it("PATCH /tasks/:id returns 400 for invalid ID characters", async () => {
     const { app } = createTestApp();
     await request(app)
-      .patch("/api/beads/bad<>id")
+      .patch("/api/tasks/bad<>id")
       .send({ status: "closed" })
       .expect(400);
   });

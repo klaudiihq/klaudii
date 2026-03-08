@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Klaudii — Session Manager</title>
   <link rel="stylesheet" href="/style.css">
-  <link rel="stylesheet" href="/gemini.css?v=7">
+  <link rel="stylesheet" href="/chat.css?v=7">
 </head>
 <body>
   <header>
@@ -28,7 +28,7 @@
     <aside id="sidebar" class="sidebar">
       <div class="sidebar-tabs">
         <button class="sidebar-tab" data-tab="workers" onclick="switchSidebarTab('workers')">Workers <span class="sidebar-badge" id="sidebar-badge-workers">0</span></button>
-        <button class="sidebar-tab" data-tab="beads" onclick="switchSidebarTab('beads')">Beads <span class="sidebar-badge" id="sidebar-badge-beads">0</span></button>
+        <button class="sidebar-tab" data-tab="tasks" onclick="switchSidebarTab('tasks')">Tasks <span class="sidebar-badge" id="sidebar-badge-tasks">0</span></button>
         <button class="sidebar-tab active" data-tab="workspaces" onclick="switchSidebarTab('workspaces')">Workspaces <span class="sidebar-badge" id="sidebar-badge-workspaces">0</span></button>
       </div>
       <div class="sidebar-content" id="sidebar-content"></div>
@@ -67,34 +67,34 @@
         <div id="scheduler-list" class="card-grid"></div>
       </section>
 
-      <section id="beads-section" class="hidden">
-        <h2 class="beads-heading">
-          Beads
-          <button class="btn btn-sm" id="beads-toggle" onclick="toggleBeadsSection()">Hide</button>
+      <section id="tasks-section" class="hidden">
+        <h2 class="tasks-heading">
+          Tasks
+          <button class="btn btn-sm" id="tasks-toggle" onclick="toggleTasksSection()">Hide</button>
         </h2>
-        <div id="beads-toolbar" class="beads-toolbar">
-          <div class="beads-filters">
-            <button class="beads-filter active" data-filter="all" onclick="setBeadFilter('all')">All</button>
-            <button class="beads-filter" data-filter="open" onclick="setBeadFilter('open')">Open</button>
-            <button class="beads-filter" data-filter="in_progress" onclick="setBeadFilter('in_progress')">In Progress</button>
-            <button class="beads-filter" data-filter="blocked" onclick="setBeadFilter('blocked')">Blocked</button>
-            <button class="beads-filter" data-filter="closed" onclick="setBeadFilter('closed')">Closed</button>
+        <div id="tasks-toolbar" class="tasks-toolbar">
+          <div class="tasks-filters">
+            <button class="tasks-filter active" data-filter="all" onclick="setTaskFilter('all')">All</button>
+            <button class="tasks-filter" data-filter="open" onclick="setTaskFilter('open')">Open</button>
+            <button class="tasks-filter" data-filter="in_progress" onclick="setTaskFilter('in_progress')">In Progress</button>
+            <button class="tasks-filter" data-filter="blocked" onclick="setTaskFilter('blocked')">Blocked</button>
+            <button class="tasks-filter" data-filter="closed" onclick="setTaskFilter('closed')">Closed</button>
           </div>
-          <button class="btn btn-sm primary" onclick="openBeadForm()">+ New Bead</button>
+          <button class="btn btn-sm primary" onclick="openTaskForm()">+ New Task</button>
         </div>
-        <div id="bead-form" class="bead-form hidden">
+        <div id="task-form" class="task-form hidden">
           <div class="form-group">
             <label>Title</label>
-            <input id="bead-title" type="text" placeholder="Bead title" />
+            <input id="task-title" type="text" placeholder="Task title" />
           </div>
           <div class="form-group">
             <label>Description</label>
-            <textarea id="bead-desc" rows="3" placeholder="Details..." style="width:100%;background:var(--bg-input);color:var(--text);border:1px solid var(--border-btn);border-radius:6px;padding:0.5rem 0.75rem;font-size:0.9rem;font-family:inherit;resize:vertical"></textarea>
+            <textarea id="task-desc" rows="3" placeholder="Details..." style="width:100%;background:var(--bg-input);color:var(--text);border:1px solid var(--border-btn);border-radius:6px;padding:0.5rem 0.75rem;font-size:0.9rem;font-family:inherit;resize:vertical"></textarea>
           </div>
           <div style="display:flex;gap:0.5rem;align-items:flex-end">
             <div class="form-group" style="margin-bottom:0">
               <label>Priority</label>
-              <select id="bead-priority" style="background:var(--bg-input);color:var(--text);border:1px solid var(--border-btn);border-radius:6px;padding:0.4rem 0.5rem;font-size:0.85rem">
+              <select id="task-priority" style="background:var(--bg-input);color:var(--text);border:1px solid var(--border-btn);border-radius:6px;padding:0.4rem 0.5rem;font-size:0.85rem">
                 <option value="0">0 — Critical</option>
                 <option value="1">1 — High</option>
                 <option value="2" selected>2 — Medium</option>
@@ -104,18 +104,18 @@
             </div>
             <div class="form-group" style="margin-bottom:0">
               <label>Type</label>
-              <select id="bead-type" style="background:var(--bg-input);color:var(--text);border:1px solid var(--border-btn);border-radius:6px;padding:0.4rem 0.5rem;font-size:0.85rem">
+              <select id="task-type" style="background:var(--bg-input);color:var(--text);border:1px solid var(--border-btn);border-radius:6px;padding:0.4rem 0.5rem;font-size:0.85rem">
                 <option value="task">Task</option>
                 <option value="bug">Bug</option>
                 <option value="feature">Feature</option>
                 <option value="epic">Epic</option>
               </select>
             </div>
-            <button class="btn btn-sm primary" onclick="submitBead()">Create</button>
-            <button class="btn btn-sm" onclick="closeBeadForm()">Cancel</button>
+            <button class="btn btn-sm primary" onclick="submitTask()">Create</button>
+            <button class="btn btn-sm" onclick="closeTaskForm()">Cancel</button>
           </div>
         </div>
-        <div id="beads-list" class="beads-list"></div>
+        <div id="tasks-list" class="tasks-list"></div>
       </section>
 
       <section id="unmanaged-section" class="hidden">
@@ -126,47 +126,47 @@
     </main>
 
     <!-- Gemini / Claude Chat Panel -->
-    <div id="gemini-overlay" class="gemini-panel hidden">
-      <div class="gemini-bar">
-        <span id="gemini-title" class="gemini-bar-title"></span>
-        <div class="gemini-bar-actions">
-          <span id="gemini-quota" class="gemini-bar-quota"></span>
-          <span id="gemini-status" class="gemini-bar-status"></span>
-          <select id="gemini-tool-display" class="gemini-chip-select" title="Tool display mode" onchange="geminiSetToolDisplayMode(this.value)">
-            <option value="minimal">Minimal</option>
-            <option value="normal" selected>Normal</option>
-            <option value="full">Full</option>
+    <div id="chat-overlay" class="chat-panel hidden">
+      <div class="chat-bar">
+        <span id="chat-title" class="chat-bar-title"></span>
+        <div class="chat-bar-actions">
+          <span id="chat-quota" class="chat-bar-quota"></span>
+          <span id="chat-status" class="chat-bar-status"></span>
+          <select id="chat-tool-display" class="chat-chip-select" title="Tool display mode" onchange="chatSetToolDisplayMode(this.value)">
+            <option value="collapsed" selected>Collapsed</option>
+            <option value="expanded">Expanded</option>
+            <option value="hidden">Hidden</option>
           </select>
-          <select id="gemini-session" class="gemini-session-select hidden" title="Session" onchange="geminiSwitchSession(Number(this.value))"></select>
+          <select id="chat-session" class="chat-session-select hidden" title="Session" onchange="chatSwitchSession(Number(this.value))"></select>
           <button class="btn btn-sm" onclick="clearGeminiSession()">New Chat</button>
           <button class="btn btn-sm" onclick="closeGeminiChat()">Close</button>
         </div>
       </div>
-      <div id="gemini-messages" class="gemini-messages"></div>
-      <div id="gemini-image-strip" class="gemini-image-strip hidden"></div>
-      <div class="gemini-input-area">
-        <div class="gemini-input-card">
-          <textarea id="gemini-input" rows="3" placeholder="Message Gemini..." onkeydown="geminiInputKeydown(event)"></textarea>
-          <input type="file" id="gemini-file-input" accept="image/*" multiple style="display:none" onchange="geminiHandleFileInput(event)">
-          <div class="gemini-input-footer">
-            <button id="gemini-attach" class="gemini-attach-btn" onclick="document.getElementById('gemini-file-input').click()" title="Attach image">
+      <div id="chat-messages" class="chat-messages"></div>
+      <div id="chat-image-strip" class="chat-image-strip hidden"></div>
+      <div class="chat-input-area">
+        <div class="chat-input-card">
+          <textarea id="chat-input" rows="3" placeholder="Message..." onkeydown="chatInputKeydown(event)"></textarea>
+          <input type="file" id="chat-file-input" accept="image/*" multiple style="display:none" onchange="chatHandleFileInput(event)">
+          <div class="chat-input-footer">
+            <button id="chat-attach" class="chat-attach-btn" onclick="document.getElementById('chat-file-input').click()" title="Attach image">
               <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21.44 11.05l-9.19 9.19a6 6 0 01-8.49-8.49l9.19-9.19a4 4 0 015.66 5.66l-9.2 9.19a2 2 0 01-2.83-2.83l8.49-8.48"/></svg>
             </button>
-            <select id="gemini-model" class="gemini-chip-select" title="Model">
+            <select id="chat-model" class="chat-chip-select" title="Model">
               <option value="">Auto</option>
             </select>
-            <select id="gemini-permission-mode" class="gemini-chip-select" title="Permission Mode" style="display:none">
+            <select id="chat-permission-mode" class="chat-chip-select" title="Permission Mode" style="display:none">
               <option value="bypassPermissions">Yolo</option>
               <option value="plan">Plan</option>
               <option value="allowEdits">Auto Accept Edits</option>
             </select>
-            <button id="gemini-thinking-toggle" class="gemini-thinking-toggle" title="Extended Thinking" style="display:none" onclick="geminiToggleThinking()">Thinking</button>
-            <span id="gemini-cumulative-stats" class="gemini-cumulative-stats"></span>
-            <div class="gemini-footer-spacer"></div>
-            <button id="gemini-stop" class="gemini-stop-btn" onclick="geminiStopStreaming()" title="Stop generation" style="display:none">
+            <button id="chat-thinking-toggle" class="chat-thinking-toggle" title="Extended Thinking" style="display:none" onclick="chatToggleThinking()">Thinking</button>
+            <span id="chat-cumulative-stats" class="chat-cumulative-stats"></span>
+            <div class="chat-footer-spacer"></div>
+            <button id="chat-stop" class="chat-stop-btn" onclick="chatStopStreaming()" title="Stop generation" style="display:none">
               <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><rect x="4" y="4" width="16" height="16" rx="2"/></svg>
             </button>
-            <button id="gemini-send" class="gemini-send-btn" onclick="sendGeminiMessage()">Send</button>
+            <button id="chat-send" class="chat-send-btn" onclick="sendGeminiMessage()">Send</button>
           </div>
         </div>
       </div>
@@ -191,15 +191,15 @@
     </div>
   </div>
 
-  <!-- Bead Detail Panel (slide-out) -->
-  <div id="bead-detail-overlay" class="bead-detail-overlay hidden" onclick="closeBeadDetailBackdrop(event)">
-    <div class="bead-detail-panel" id="bead-detail-panel">
-      <div class="bead-detail-header">
-        <div class="bead-detail-id" id="bead-detail-id"></div>
-        <button class="btn btn-sm" onclick="closeBeadDetail()">X</button>
+  <!-- Task Detail Panel (slide-out) -->
+  <div id="task-detail-overlay" class="task-detail-overlay hidden" onclick="closeTaskDetailBackdrop(event)">
+    <div class="task-detail-panel" id="task-detail-panel">
+      <div class="task-detail-header">
+        <div class="task-detail-id" id="task-detail-id"></div>
+        <button class="btn btn-sm" onclick="closeTaskDetail()">X</button>
       </div>
-      <div class="bead-detail-body" id="bead-detail-body">
-        <div class="bead-detail-loading">Loading...</div>
+      <div class="task-detail-body" id="task-detail-body">
+        <div class="task-detail-loading">Loading...</div>
       </div>
     </div>
   </div>
@@ -295,6 +295,6 @@
 
   <script src="/app.js"></script>
   <script src="/vendor/marked.min.js"></script>
-  <script src="/gemini.js?v=28"></script>
+  <script src="/chat.js?v=28"></script>
 </body>
 </html>
