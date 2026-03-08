@@ -5,6 +5,7 @@ struct DashboardView: View {
     @StateObject private var sessionsVM: SessionsViewModel
     @State private var showingAddWorkspace = false
     @State private var hasAppeared = false
+    @State private var path = NavigationPath()
     @Environment(\.colorScheme) private var colorScheme
 
     init(appVM: AppViewModel) {
@@ -13,7 +14,7 @@ struct DashboardView: View {
     }
 
     var body: some View {
-        NavigationStack {
+        NavigationStack(path: $path) {
             VStack(spacing: 0) {
                 // Header: server name + connection pill + sort
                 header
@@ -34,7 +35,8 @@ struct DashboardView: View {
                             SessionCardView(
                                 session: session,
                                 process: proc,
-                                sessionsVM: sessionsVM
+                                sessionsVM: sessionsVM,
+                                onChat: { path.append(session) }
                             )
                             .transition(.move(edge: .bottom).combined(with: .opacity))
                             .animation(
@@ -76,6 +78,9 @@ struct DashboardView: View {
                 bottomBar
             }
             .navigationBarHidden(true)
+            .navigationDestination(for: Session.self) { session in
+                ChatView(session: session, relay: appVM.relay)
+            }
         }
         .background(backgroundGradient.ignoresSafeArea())
         .onAppear {
@@ -100,9 +105,6 @@ struct DashboardView: View {
         }
         .sheet(isPresented: $showingAddWorkspace) {
             AddWorkspaceView(sessionsVM: sessionsVM)
-        }
-        .navigationDestination(for: Session.self) { session in
-            ChatView(session: session, relay: appVM.relay)
         }
     }
 

@@ -4,6 +4,7 @@ struct SessionCardView: View {
     let session: Session
     let process: ProcessInfo?
     @ObservedObject var sessionsVM: SessionsViewModel
+    var onChat: (() -> Void)? = nil
     @AppStorage("branchFirst") private var branchFirst = false
     @State private var showHistory = false
     @State private var isPressed = false
@@ -228,6 +229,15 @@ struct SessionCardView: View {
 
     @ViewBuilder
     private var contextMenuItems: some View {
+        Button {
+            Haptics.light()
+            onChat?()
+        } label: {
+            Label("Chat", systemImage: "bubble.left.and.bubble.right")
+        }
+
+        Divider()
+
         if session.isStopped {
             Button {
                 Task { await sessionsVM.start(project: session.project) }
