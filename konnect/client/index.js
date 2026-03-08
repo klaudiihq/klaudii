@@ -219,7 +219,8 @@ function setupRoutes(app) {
     if (!key) {
       return res.status(404).json({ error: "Not paired" });
     }
-    const qr = await pairing.getConnectionKeyQR().catch(() => null);
+    let qr = null;
+    try { qr = pairing.getConnectionKeyQR(); } catch (_) {}
     res.json({ connectionKey: key, qrSvg: qr });
   });
 
