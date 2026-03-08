@@ -418,13 +418,12 @@ function toSVG(matrix, options = {}) {
   const version = (size - 17) / 4;
   const fullSize = (size + margin * 2) * moduleSize;
   const m = moduleSize;
-  const r = m * 0.45; // dot radius (slightly less than half for gaps)
+  const dotR = Math.round(m * 0.32); // corner radius for rounded-square data modules
 
   let svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${fullSize} ${fullSize}" width="${fullSize}" height="${fullSize}">`;
-  svg += `<rect width="${fullSize}" height="${fullSize}" fill="${lightColor}" rx="${m * 0.5}"/>`;
+  svg += `<rect width="${fullSize}" height="${fullSize}" fill="${lightColor}"/>`;
 
   if (!round) {
-    // Fallback: square modules
     for (let row = 0; row < size; row++) {
       for (let col = 0; col < size; col++) {
         if (matrix[row][col] === 1) {
@@ -438,25 +437,23 @@ function toSVG(matrix, options = {}) {
     return svg;
   }
 
-  // Render finder patterns as rounded shapes
   const finderPositions = [
     { row: 0, col: 0 },
     { row: 0, col: size - 7 },
     { row: size - 7, col: 0 },
   ];
 
+  // Render finder patterns as rounded shapes
   for (const fp of finderPositions) {
     const fx = (fp.col + margin) * m;
     const fy = (fp.row + margin) * m;
     const outerSize = 7 * m;
-    const outerR = m * 1.4; // corner radius for outer ring
-
-    // Outer ring (rounded rect outline)
+    const outerR = m * 1.4;
     const ringWidth = m;
+
     svg += `<rect x="${fx}" y="${fy}" width="${outerSize}" height="${outerSize}" rx="${outerR}" ry="${outerR}" fill="${finderColor}"/>`;
     svg += `<rect x="${fx + ringWidth}" y="${fy + ringWidth}" width="${outerSize - ringWidth * 2}" height="${outerSize - ringWidth * 2}" rx="${outerR * 0.6}" ry="${outerR * 0.6}" fill="${lightColor}"/>`;
 
-    // Inner filled rounded rect (3x3 center)
     const innerOff = 2 * m;
     const innerSize = 3 * m;
     const innerR = m * 0.8;
@@ -468,7 +465,6 @@ function toSVG(matrix, options = {}) {
     const positions = ALIGNMENT_POSITIONS[version];
     for (const ar of positions) {
       for (const ac of positions) {
-        // Skip if overlapping finder
         const overlaps = finderPositions.some(
           (fp) => ar >= fp.row && ar < fp.row + 7 && ac >= fp.col && ac < fp.col + 7
         );
@@ -479,26 +475,22 @@ function toSVG(matrix, options = {}) {
         const aSize = 5 * m;
         const aR = m * 0.8;
 
-        // Outer ring
         svg += `<rect x="${ax}" y="${ay}" width="${aSize}" height="${aSize}" rx="${aR}" ry="${aR}" fill="${darkColor}"/>`;
         svg += `<rect x="${ax + m}" y="${ay + m}" width="${3 * m}" height="${3 * m}" rx="${aR * 0.5}" ry="${aR * 0.5}" fill="${lightColor}"/>`;
-        // Center dot
-        const cx = (ac + margin) * m + m * 0.5;
-        const cy = (ar + margin) * m + m * 0.5;
-        svg += `<circle cx="${cx}" cy="${cy}" r="${r}" fill="${darkColor}"/>`;
+        // Center rounded square
+        const cx = (ac - 0 + margin) * m;
+        const cy = (ar - 0 + margin) * m;
+        svg += `<rect x="${cx}" y="${cy}" width="${m}" height="${m}" rx="${dotR}" ry="${dotR}" fill="${darkColor}"/>`;
       }
     }
   }
 
-  // Render all other dark modules as round dots
+  // Render all other dark modules as rounded squares (full module size, scannable)
   for (let row = 0; row < size; row++) {
     for (let col = 0; col < size; col++) {
       if (matrix[row][col] !== 1) continue;
 
-      // Skip finder pattern cells (already drawn)
-      const finder = isFinderCenter(row, col, size);
-      if (finder) continue;
-      // Skip finder separators (white border around finders)
+      // Skip finder pattern + separator cells (already drawn)
       if (row <= 7 && col <= 7) continue;
       if (row <= 7 && col >= size - 8) continue;
       if (row >= size - 8 && col <= 7) continue;
@@ -523,10 +515,10 @@ function toSVG(matrix, options = {}) {
         if (isAlign) continue;
       }
 
-      // Draw round dot
-      const cx = (col + margin) * m + m * 0.5;
-      const cy = (row + margin) * m + m * 0.5;
-      svg += `<circle cx="${cx}" cy="${cy}" r="${r}" fill="${darkColor}"/>`;
+      // Draw rounded square — fills full module cell for reliable scanning
+      const x = (col + margin) * m;
+      const y = (row + margin) * m;
+      svg += `<rect x="${x}" y="${y}" width="${m}" height="${m}" rx="${dotR}" ry="${dotR}" fill="${darkColor}"/>`;
     }
   }
 
