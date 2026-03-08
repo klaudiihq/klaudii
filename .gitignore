@@ -19,6 +19,7 @@ metadata.json
 planning/
 ARCHITECT_STARTUP.md
 lib/shepherd-prompt.md
+bin/shepherd.sh
 
 # Playwright
 test-results/
