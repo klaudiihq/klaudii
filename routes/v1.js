@@ -752,31 +752,26 @@ module.exports = function createV1Router(deps) {
   });
 
   // --- Beads CRUD ---
-  // bd commands run in the main repo directory (where .beads/ lives)
-
-  const bdCwd = path.resolve(__dirname, "..");
+  // Task routes — backed by SQLite (replaced bd/Dolt)
+  const tasks = require("../lib/tasks");
 
   router.get("/beads", (_req, res) => {
     try {
-      const { execSync } = require("child_process");
-      const out = execSync("bd list --json --allow-stale --all", { encoding: "utf-8", cwd: bdCwd, timeout: 10000 });
-      res.json(JSON.parse(out));
+      const list = tasks.list();
+      res.json(list);
     } catch (err) {
-      res.status(500).json({ error: `bd list failed: ${err.message}` });
+      res.status(500).json({ error: `tasks list failed: ${err.message}` });
     }
   });
 
   router.get("/beads/:id", (req, res) => {
     const id = req.params.id;
-    if (!/^[a-zA-Z0-9-]+$/.test(id)) return res.status(400).json({ error: "invalid bead ID" });
-
     try {
-      const { execSync } = require("child_process");
-      const out = execSync(`bd show ${id} --json --allow-stale`, { encoding: "utf-8", cwd: bdCwd, timeout: 10000 });
-      const parsed = JSON.parse(out);
-      res.json(Array.isArray(parsed) ? parsed[0] : parsed);
+      const task = tasks.get(id);
+      if (!task) return res.status(404).json({ error: "task not found" });
+      res.json(task);
     } catch (err) {
-      res.status(err.message.includes("not found") ? 404 : 500).json({ error: `bd show failed: ${err.message}` });
+      res.status(500).json({ error: `tasks get failed: ${err.message}` });
     }
   });
 
@@ -837,47 +832,35 @@ module.exports = function createV1Router(deps) {
     if (!title) return res.status(400).json({ error: "title required" });
 
     try {
-      const { execSync } = require("child_process");
-      let cmd = `bd create ${JSON.stringify(title)}`;
-      if (description) cmd += ` --description=${JSON.stringify(description)}`;
-      if (priority !== undefined) cmd += ` -p ${Number(priority)}`;
-      if (type) cmd += ` -t ${type}`;
-      if (deps) cmd += ` --deps ${deps}`;
-      cmd += " --json --allow-stale";
-
-      const out = execSync(cmd, { encoding: "utf-8", cwd: bdCwd, timeout: 10000 });
-      res.status(201).json(JSON.parse(out));
+      const task = tasks.create({ title, description, priority, type });
+      res.status(201).json(task);
     } catch (err) {
-      res.status(500).json({ error: `bd create failed: ${err.message}` });
+      res.status(500).json({ error: `tasks create failed: ${err.message}` });
     }
   });
 
   router.patch("/beads/:id", (req, res) => {
     const id = req.params.id;
-    if (!/^[a-zA-Z0-9-]+$/.test(id)) return res.status(400).json({ error: "invalid bead ID" });
-
     const { status, comment, assignee, priority } = req.body;
 
     try {
-      const { execSync } = require("child_process");
-
       if (status || assignee !== undefined || priority !== undefined) {
-        let cmd = `bd update ${id}`;
-        if (status) cmd += ` --status ${status}`;
-        if (assignee !== undefined) cmd += ` --assignee ${JSON.stringify(assignee)}`;
-        if (priority !== undefined) cmd += ` -p ${Number(priority)}`;
-        cmd += " --json --allow-stale";
-        execSync(cmd, { encoding: "utf-8", cwd: bdCwd, timeout: 10000 });
+        const updates = {};
+        if (status) updates.status = status;
+        if (assignee !== undefined) updates.assignee = assignee;
+        if (priority !== undefined) updates.priority = Number(priority);
+        tasks.update(id, updates);
       }
 
       if (comment) {
-        execSync(`bd comments add ${id} ${JSON.stringify(comment)} --allow-stale`, { encoding: "utf-8", cwd: bdCwd, timeout: 10000 });
+        tasks.addComment(id, { author: "user", body: comment });
       }
 
-      const out = execSync(`bd show ${id} --json --allow-stale`, { encoding: "utf-8", cwd: bdCwd, timeout: 10000 });
-      res.json(JSON.parse(out));
+      const task = tasks.get(id);
+      if (!task) return res.status(404).json({ error: "task not found" });
+      res.json(task);
     } catch (err) {
-      res.status(500).json({ error: `bd update failed: ${err.message}` });
+      res.status(500).json({ error: `tasks update failed: ${err.message}` });
     }
   });
 
