@@ -17,6 +17,7 @@ metadata.json
 # Internal / private — do not sync to public repo
 .beads/
 planning/
+AGENTS.md
 ARCHITECT_STARTUP.md
 lib/shepherd-prompt.md
 bin/shepherd.sh
