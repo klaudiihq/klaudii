@@ -203,6 +203,63 @@ describe("normalizeEvent", () => {
   });
 
   // =========================================================================
+  // Synthetic vs real result detection (isSyntheticFlush contract)
+  // =========================================================================
+
+  describe("synthetic flush detection (CRITICAL)", () => {
+    // The server distinguishes synthetic results (from user events / flushTurn)
+    // from real results (from Claude finishing) by checking whether stats is
+    // empty. This contract is load-bearing: if broken, either every tool-call
+    // turn broadcasts a premature "done", or real turn-ends are silently ignored.
+
+    it("synthetic result from user event has empty stats (server detects as flush)", () => {
+      const raw = { type: "user", message: { role: "user", content: [] } };
+      const events = normalizeEvent(raw);
+      const result = events.find(e => e.type === "result");
+      expect(result, "user event must produce a result").toBeTruthy();
+      expect(Object.keys(result.stats).length).toBe(0);
+    });
+
+    it("real result from Claude has non-empty stats (server broadcasts done)", () => {
+      const raw = {
+        type: "result",
+        total_cost_usd: 0.01,
+        duration_ms: 500,
+        num_turns: 1,
+        usage: { input_tokens: 100, output_tokens: 50 },
+      };
+      const events = normalizeEvent(raw);
+      const result = events.find(e => e.type === "result");
+      expect(result, "result event must be passed through").toBeTruthy();
+      expect(Object.keys(result.stats).length).toBeGreaterThan(0);
+    });
+
+    it("synthetic result must NOT carry _flush or any extra properties", () => {
+      const raw = { type: "user", message: { role: "user", content: [] } };
+      const events = normalizeEvent(raw);
+      const result = events.find(e => e.type === "result");
+      expect(result).toEqual({ type: "result", stats: {} });
+    });
+
+    it("user event with tool_results: synthetic result still has empty stats", () => {
+      const raw = {
+        type: "user",
+        message: {
+          role: "user",
+          content: [
+            { type: "tool_result", tool_use_id: "t1", content: "ok" },
+            { type: "tool_result", tool_use_id: "t2", content: "ok" },
+          ],
+        },
+      };
+      const events = normalizeEvent(raw);
+      const result = events[events.length - 1];
+      expect(result.type).toBe("result");
+      expect(Object.keys(result.stats).length).toBe(0);
+    });
+  });
+
+  // =========================================================================
   // tool_result extraction from user events
   // =========================================================================
 

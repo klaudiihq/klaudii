@@ -138,16 +138,16 @@ function getChatParams() {
     mode: p.get("mode"),
     workspace: p.get("workspace"),
     tool: p.get("tool"),
-    session: p.get("session"),
+    chat: p.get("chat"),
   };
 }
 
-function setChatParams({ mode, workspace, tool, session }) {
+function setChatParams({ mode, workspace, tool, chat }) {
   const p = new URLSearchParams();
   if (mode) p.set("mode", mode);
   if (workspace) p.set("workspace", workspace);
   if (tool) p.set("tool", tool);
-  if (session) p.set("session", session);
+  if (chat) p.set("chat", chat);
   const qs = p.toString();
   window.history.replaceState(null, "", qs ? `${window.location.pathname}?${qs}` : window.location.pathname);
 }
@@ -198,40 +198,110 @@ async function chatFetchCumulativeStats(workspace) {
 }
 
 /**
- * Fetch session list for a workspace and populate the session selector.
- * Returns { current, sessions: [1,2,3], active }.
+ * Terse relative time: "just now", "3s ago", "2m ago", "2h ago",
+ * "yesterday", day-of-week, "Jan 3", or "Jan 3, 2025".
+ */
+function chatTerseTime(ts) {
+  if (!ts) return "";
+  const now = Date.now();
+  const diff = Math.floor((now - ts) / 1000);
+  if (diff < 5) return "just now";
+  if (diff < 60) return `${diff}s ago`;
+  if (diff < 3600) return `${Math.floor(diff / 60)}m ago`;
+  if (diff < 86400) return `${Math.floor(diff / 3600)}h ago`;
+
+  const d = new Date(ts);
+  const today = new Date(now);
+  const yesterday = new Date(now); yesterday.setDate(yesterday.getDate() - 1);
+
+  if (d.toDateString() === yesterday.toDateString()) return "yesterday";
+
+  // Within this week (< 7 days): show day name
+  if (diff < 604800) return d.toLocaleDateString([], { weekday: "long" });
+
+  // Same year: "Jan 3"
+  if (d.getFullYear() === today.getFullYear()) {
+    return d.toLocaleDateString([], { month: "short", day: "numeric" });
+  }
+
+  // Different year: "Jan 3, 2025"
+  return d.toLocaleDateString([], { month: "short", day: "numeric", year: "numeric" });
+}
+
+/**
+ * Fetch session list for a workspace and populate the custom session dropdown.
+ * Sessions now include { num, lastActivity, active } and arrive sorted by activity desc.
  */
 async function chatFetchSessions(workspace) {
-  const select = document.getElementById("chat-session");
-  if (!select) return null;
+  const dropdown = document.getElementById("chat-session-dropdown");
+  if (!dropdown) return null;
 
   try {
     const base = chatActiveCli === "claude" ? "/api/claude-chat" : "/api/gemini";
     const res = await fetch(`${base}/sessions/${encodeURIComponent(workspace)}`);
     const data = await res.json();
 
-    chatSessionNum = data.current;
     const sessions = data.sessions || [];
+    // Don't override chatSessionNum — it was already set by openChat (URL param, workspace-state, or MRU)
+    if (chatSessionNum == null) {
+      chatSessionNum = sessions.length ? sessions[0].num : (data.current || 1);
+    }
+    const currentNum = chatSessionNum;
 
-    // Populate dropdown
-    select.innerHTML = "";
-    for (const num of sessions) {
-      const opt = document.createElement("option");
-      opt.value = num;
-      opt.textContent = `Chat ${num}`;
-      if (num === data.current) opt.selected = true;
-      select.appendChild(opt);
+    // Update the button label + dot for the current session
+    const currentSess = sessions.find(s => s.num === currentNum);
+    const dot = document.getElementById("chat-session-dot");
+    const label = document.getElementById("chat-session-label");
+    if (dot) dot.classList.toggle("active", !!(currentSess && currentSess.active));
+    if (label) label.textContent = `Chat ${currentNum}`;
+
+    // Build menu items (already sorted by activity desc from server)
+    const menu = document.getElementById("chat-session-menu");
+    if (menu) {
+      menu.innerHTML = "";
+      for (const s of sessions) {
+        const item = document.createElement("div");
+        item.className = "chat-session-item" + (s.num === currentNum ? " selected" : "");
+        item.onclick = () => { chatCloseSessionMenu(); chatSwitchSession(s.num); };
+        const dotEl = document.createElement("span");
+        dotEl.className = "session-dot" + (s.active ? " active" : "");
+        const nameEl = document.createElement("span");
+        nameEl.textContent = `Chat ${s.num}`;
+        const timeEl = document.createElement("span");
+        timeEl.className = "session-time";
+        timeEl.textContent = chatTerseTime(s.lastActivity);
+        item.appendChild(dotEl);
+        item.appendChild(nameEl);
+        item.appendChild(timeEl);
+        menu.appendChild(item);
+      }
     }
 
-    // Show selector only when there are 2+ sessions (nothing to switch with just 1)
-    select.classList.toggle("hidden", sessions.length < 2);
+    // Show dropdown only when there are 2+ sessions
+    dropdown.classList.toggle("hidden", sessions.length < 2);
 
     return data;
   } catch {
-    select.classList.add("hidden");
+    dropdown.classList.add("hidden");
     return null;
   }
 }
+
+function chatToggleSessionMenu() {
+  const menu = document.getElementById("chat-session-menu");
+  if (menu) menu.classList.toggle("hidden");
+}
+
+function chatCloseSessionMenu() {
+  const menu = document.getElementById("chat-session-menu");
+  if (menu) menu.classList.add("hidden");
+}
+
+// Close session menu on outside click
+document.addEventListener("click", (e) => {
+  const dropdown = document.getElementById("chat-session-dropdown");
+  if (dropdown && !dropdown.contains(e.target)) chatCloseSessionMenu();
+});
 
 /**
  * Switch to a different session number.
@@ -277,7 +347,7 @@ async function chatSwitchSession(num) {
 
   // Update URL
   const cur = getChatParams();
-  setChatParams({ ...cur, session: num });
+  setChatParams({ ...cur, chat: num });
 
   // Reload history for the new session (chatShowChat calls chatRestoreDraft)
   chatShowChat();
@@ -725,7 +795,7 @@ function handleGeminiEvent(event) {
       // Update URL with session number (not CLI session ID)
       if (chatSessionNum) {
         const cur = getChatParams();
-        setChatParams({ ...cur, session: chatSessionNum });
+        setChatParams({ ...cur, chat: chatSessionNum });
       }
       break;
     }
@@ -2893,6 +2963,20 @@ async function openChat(project, projectPath, cli) {
     } catch { /* non-fatal */ }
   }
 
+  // If no explicit session (no URL param, no workspace-state), pick the most recently modified one
+  if (chatSessionNum == null && project) {
+    try {
+      const base = chatActiveCli === "claude" ? "/api/claude-chat" : "/api/gemini";
+      const sessRes = await fetch(`${base}/sessions/${encodeURIComponent(project)}`);
+      const sessData = await sessRes.json();
+      const sessions = sessData.sessions || [];
+      if (sessions.length) {
+        chatSessionNum = sessions[0].num; // sorted by lastActivity desc
+        glog(`openChat: picked MRU session#${chatSessionNum}`);
+      }
+    } catch { /* non-fatal */ }
+  }
+
   // Force model list refresh for the new CLI backend
   chatModelsFetched = false;
 
@@ -3027,7 +3111,7 @@ async function clearGeminiSession() {
 
   // Update URL with new session number
   const cur = getChatParams();
-  setChatParams({ ...cur, session: chatSessionNum || undefined });
+  setChatParams({ ...cur, chat: chatSessionNum || undefined });
 
   // Refresh session selector
   await chatFetchSessions(chatWorkspace);
@@ -3278,16 +3362,16 @@ async function initFromUrlParams() {
     const wsPath = await resolveWorkspacePath(params.workspace);
 
     if (wsPath) {
-      // If session param specified, switch to that session first
-      if (params.session) {
+      // If chat param specified, switch to that session first
+      if (params.chat) {
         const base = tool === "claude" ? "/api/claude-chat" : "/api/gemini";
         try {
           await fetch(`${base}/sessions/${encodeURIComponent(params.workspace)}/switch`, {
             method: "POST",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ session: Number(params.session) }),
+            body: JSON.stringify({ session: Number(params.chat) }),
           });
-          chatSessionNum = Number(params.session);
+          chatSessionNum = Number(params.chat);
         } catch {
           // Session switch failed — will load current session
         }

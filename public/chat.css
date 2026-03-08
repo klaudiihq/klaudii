@@ -100,27 +100,74 @@
   align-items: center;
 }
 
-.chat-session-select {
+/* --- Session dropdown (custom) --- */
+.chat-session-dropdown {
+  position: relative;
+}
+.chat-session-dropdown.hidden { display: none; }
+
+.chat-session-btn {
+  display: flex;
+  align-items: center;
+  gap: 5px;
   background: var(--bg-btn);
   color: var(--text);
   border: 1px solid var(--border-btn);
   border-radius: 6px;
-  padding: 0.2rem 1.2rem 0.2rem 0.4rem;
+  padding: 0.2rem 0.5rem;
   font-size: 0.7rem;
   font-family: inherit;
   cursor: pointer;
-  appearance: none;
-  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6'%3E%3Cpath d='M0 0l5 6 5-6z' fill='%23888'/%3E%3C/svg%3E");
-  background-repeat: no-repeat;
-  background-position: right 0.35rem center;
+  white-space: nowrap;
+}
+.chat-session-btn:hover { background: var(--bg-btn-hover); }
+
+.chat-session-chevron { flex-shrink: 0; }
+
+.session-dot {
+  width: 6px; height: 6px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  background: var(--text-faint);
+}
+.session-dot.active {
+  background: var(--s-green);
+  box-shadow: 0 0 4px var(--s-green);
 }
 
-.chat-session-select:hover {
-  background-color: var(--bg-btn-hover);
+.chat-session-menu {
+  position: absolute;
+  top: calc(100% + 4px);
+  right: 0;
+  min-width: 160px;
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+  z-index: 100;
+  padding: 4px 0;
+  max-height: 280px;
+  overflow-y: auto;
 }
+.chat-session-menu.hidden { display: none; }
 
-.chat-session-select.hidden {
-  display: none;
+.chat-session-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 10px;
+  cursor: pointer;
+  font-size: 0.7rem;
+  color: var(--text);
+  white-space: nowrap;
+}
+.chat-session-item:hover { background: var(--bg-btn-hover); }
+.chat-session-item.selected { background: var(--bg-btn); font-weight: 500; }
+
+.chat-session-item .session-time {
+  margin-left: auto;
+  color: var(--text-faint);
+  font-size: 0.6rem;
 }
 
 /* --- Messages area --- */

@@ -2248,6 +2248,21 @@ body.chatonly .chat-panel {
 .sidebar-card-accent.exited  { background: var(--s-yellow); }
 .sidebar-card-accent.stopped { background: var(--border); }
 
+.sidebar-card-pinned {
+  border-style: dashed;
+}
+
+.agent-role-dot {
+  display: inline-block;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  margin-right: 5px;
+  vertical-align: middle;
+}
+.agent-role-dot.architect { background: #166534; }
+.agent-role-dot.shepherd  { background: #92400e; }
+
 .sidebar-card-body {
   flex: 1;
   min-width: 0;
