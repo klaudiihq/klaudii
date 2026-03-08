@@ -1,6 +1,8 @@
 .DS_Store
 node_modules/
 mac/menubar/KlaudiiMenu
+menubar/KlaudiiMenu
+mcp/package-lock.json
 *.log
 config.json
 workspace-state.json
