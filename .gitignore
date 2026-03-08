@@ -12,6 +12,13 @@ connect/server/relay.db-shm
 connect/server/relay.db-wal
 .klaudii-tmux.sock
 .scrubbed-backups/
+metadata.json
+
+# Internal / private — do not sync to public repo
+.beads/
+planning/
+ARCHITECT_STARTUP.md
+lib/shepherd-prompt.md
 
 # Playwright
 test-results/
