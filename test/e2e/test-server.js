@@ -52,9 +52,9 @@ const mockSessions = [
 
 const mockBeads = [
   { id: "klaudii-abc", title: "Fix login button", status: "open", priority: 1, type: "bug", assignee: null, created: "2026-03-01", updated: "2026-03-01" },
-  { id: "klaudii-def", title: "Add dark mode", status: "in_progress", priority: 2, type: "feature", assignee: "Bryan", created: "2026-03-02", updated: "2026-03-05" },
+  { id: "klaudii-def", title: "Add dark mode", status: "in_progress", priority: 2, type: "feature", assignee: "Alice", created: "2026-03-02", updated: "2026-03-05" },
   { id: "klaudii-ghi", title: "Update docs", status: "blocked", priority: 3, type: "task", assignee: null, created: "2026-03-03", updated: "2026-03-04" },
-  { id: "klaudii-jkl", title: "Refactor CSS", status: "closed", priority: 2, type: "chore", assignee: "Bryan", created: "2026-02-28", updated: "2026-03-06" },
+  { id: "klaudii-jkl", title: "Refactor CSS", status: "closed", priority: 2, type: "chore", assignee: "Alice", created: "2026-02-28", updated: "2026-03-06" },
 ];
 
 const mockSchedulerTasks = [

@@ -116,6 +116,11 @@ jobs:
           echo "$REVIEW" >> "$GITHUB_STEP_SUMMARY"
           echo '```' >> "$GITHUB_STEP_SUMMARY"
 
+          # Also print to log so we can debug without visiting the web UI
+          echo "--- LLM Review Output ---"
+          echo "$REVIEW"
+          echo "--- End Review ---"
+
           if echo "$REVIEW" | head -1 | grep -q "^APPROVED"; then
             echo "verdict=approved" >> "$GITHUB_OUTPUT"
           else
