@@ -971,7 +971,8 @@ server.listen(PORT, "0.0.0.0", () => {
   claudeChat.startAuthCheck(config);
 
   // Start the task scheduler (shepherd, etc.)
-  scheduler.start();
+  // DISABLED: shepherd burns quota unsupervised. Re-enable when completion pipeline is in place.
+  // scheduler.start();
 });
 
 server.on('error', (err) => {
