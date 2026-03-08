@@ -109,7 +109,9 @@ if [ -f "$INSTALL_DIR/mac/install.sh" ]; then
   bash "$INSTALL_DIR/mac/install.sh"
 else
   echo -e "  ${DIM}Creating config...${NC}"
-  cat > "$INSTALL_DIR/config.json" <<CONF
+  SETUP_CONFIG_DIR="$HOME/Library/Application Support/com.klaudii"
+  mkdir -p "$SETUP_CONFIG_DIR"
+  cat > "$SETUP_CONFIG_DIR/config.json" <<CONF
 {
   "port": 9876,
   "ttydBasePort": 9877,
