@@ -1,0 +1,3418 @@
+/**
+ * Gemini Chat UI — WebSocket client, message rendering, markdown.
+ *
+ * Loaded after app.js and marked.min.js.
+ */
+
+// --- Logging ---
+const G = "[chat-ui]";
+function glog(...args) { console.log(G, new Date().toISOString(), ...args); }
+
+// --- Helpers ---
+function chatMsgTime(ts) {
+  if (!ts) return null;
+  const d = new Date(ts);
+  const now = new Date();
+  const time = d.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
+  if (d.toDateString() === now.toDateString()) return time;
+  const date = d.toLocaleDateString([], { month: "short", day: "numeric", ...(d.getFullYear() !== now.getFullYear() && { year: "numeric" }) });
+  return `${date}, ${time}`;
+}
+
+// --- State ---
+
+let chatWs = null;
+let chatWorkspace = null;
+let chatWorkspacePath = null;
+let chatStreaming = false;
+let chatOpenedWhileStreaming = false; // true when chat opened mid-stream
+let chatStreamPollTimer = null;       // setInterval handle for polling in-flight reply
+let chatActiveCli = "gemini"; // "gemini" or "claude"
+let chatSessionNum = null; // current session number (1, 2, 3...)
+let chatLocalDraftActive = false; // true when user is actively typing — blocks incoming draft events
+let chatLocalDraftTimeout = null;
+const chatPageSessionDrafts = new Set(); // workspaces whose drafts were saved this page session
+let chatWasStreamingAtDisconnect = false; // set in onclose, cleared in onopen after recovery check
+let chatHistoryFetchFailed = false;        // set when history fetch fails (server not ready); triggers re-fetch on reconnect
+let chatAgentRole = null;          // "architect" | "shepherd" | null — set when in agent chat mode
+let chatThinkingEnabled = false;           // extended thinking toggle state
+let chatToolDisplayMode = "collapsed";      // "collapsed" | "expanded" | "hidden"
+
+// Per-workspace message history (in-memory cache, server is source of truth)
+// workspace → [ { role, content } ]  (for current session)
+const chatHistory = {};
+const chatAskToolIds = new Set(); // tool_ids for AskUserQuestion — suppress their tool_result pills
+
+// --- Tool display mode helpers ---
+
+const READONLY_TOOLS = new Set([
+  "read", "readfile", "glob", "listfiles", "grep", "search", "searchfiles",
+  "webfetch", "websearch", "toolsearch", "lsp", "agent",
+]);
+
+const READONLY_BASH_PATTERNS = /^\s*(ls|pwd|echo|cat|head|tail|wc|find|grep|rg|git\s+(status|log|diff|show|branch|remote|tag)|which|whoami|date|env|printenv|uname|file|stat|du|df|tree|type|readlink|bd\s+(show|ready|list|export))\b/;
+
+function isReadOnlyTool(toolName, params) {
+  const n = (toolName || "").toLowerCase().replace(/_/g, "");
+  if (READONLY_TOOLS.has(n)) return true;
+  if (n === "bash" || n === "shell" || n === "runcommand") {
+    const cmd = (params && (params.command || params.cmd)) || "";
+    return READONLY_BASH_PATTERNS.test(cmd);
+  }
+  return false;
+}
+
+function chatGetToolDisplayMode() {
+  if (chatWorkspace) {
+    const stored = localStorage.getItem(`klaudii-tool-display-${chatWorkspace}`);
+    // Migrate old values
+    if (stored === "minimal" || stored === "normal") return "collapsed";
+    if (stored === "full") return "expanded";
+    return stored || "collapsed";
+  }
+  return "collapsed";
+}
+
+function chatSetToolDisplayMode(mode) {
+  if (!["collapsed", "expanded", "hidden"].includes(mode)) return;
+  chatToolDisplayMode = mode;
+  if (chatWorkspace) {
+    localStorage.setItem(`klaudii-tool-display-${chatWorkspace}`, mode);
+  }
+  const sel = document.getElementById("chat-tool-display");
+  if (sel && sel.value !== mode) sel.value = mode;
+  chatApplyToolDisplayMode();
+}
+
+function chatRestoreToolDisplayMode() {
+  chatToolDisplayMode = chatGetToolDisplayMode();
+  const sel = document.getElementById("chat-tool-display");
+  if (sel) sel.value = chatToolDisplayMode;
+}
+
+function chatApplyToolDisplayMode() {
+  const container = document.getElementById("chat-messages");
+  if (!container) return;
+  container.dataset.toolDisplay = chatToolDisplayMode;
+
+  // Retroactively apply to all existing tool pills
+  const pills = container.querySelectorAll(".chat-tool");
+  for (const pill of pills) {
+    if (chatToolDisplayMode === "hidden") {
+      pill.style.display = "none";
+    } else {
+      pill.style.display = "";
+    }
+
+    if (pill.tagName === "DETAILS") {
+      if (chatToolDisplayMode === "expanded") {
+        pill.open = true;
+      } else if (chatToolDisplayMode === "collapsed") {
+        pill.open = false;
+      }
+    }
+  }
+
+  // Also handle sub-items in groups
+  const subs = container.querySelectorAll(".chat-tool-sub");
+  for (const sub of subs) {
+    if (sub.tagName === "DETAILS") {
+      sub.open = chatToolDisplayMode === "expanded";
+    }
+  }
+}
+
+function chatShouldShowTool(toolName, params) {
+  return chatToolDisplayMode !== "hidden";
+}
+
+function chatInitialPillOpen() {
+  return chatToolDisplayMode === "expanded";
+}
+
+// --- URL query parameter support ---
+
+function getChatParams() {
+  const p = new URLSearchParams(window.location.search);
+  return {
+    mode: p.get("mode"),
+    workspace: p.get("workspace"),
+    tool: p.get("tool"),
+    session: p.get("session"),
+  };
+}
+
+function setChatParams({ mode, workspace, tool, session }) {
+  const p = new URLSearchParams();
+  if (mode) p.set("mode", mode);
+  if (workspace) p.set("workspace", workspace);
+  if (tool) p.set("tool", tool);
+  if (session) p.set("session", session);
+  const qs = p.toString();
+  window.history.replaceState(null, "", qs ? `${window.location.pathname}?${qs}` : window.location.pathname);
+}
+
+function clearChatParams() {
+  window.history.replaceState(null, "", window.location.pathname);
+}
+
+async function resolveWorkspacePath(name) {
+  try {
+    const projects = await (await fetch("/api/projects")).json();
+    const proj = projects.find(p => p.name === name);
+    return proj ? proj.path : null;
+  } catch { return null; }
+}
+
+/**
+ * Fetch history for a workspace from the server and cache it locally.
+ * @param {string} workspace
+ * @param {number} [sessionNum] — session number (default: current)
+ */
+async function chatFetchHistory(workspace, sessionNum) {
+  try {
+    const base = chatActiveCli === "claude" ? "/api/claude-chat" : "/api/gemini";
+    const qs = sessionNum ? `?session=${sessionNum}` : "";
+    const res = await fetch(`${base}/history/${encodeURIComponent(workspace)}${qs}`);
+    const data = await res.json();
+    chatHistory[workspace] = Array.isArray(data) ? data : [];
+  } catch {
+    chatHistoryFetchFailed = true;
+    chatHistory[workspace] = chatHistory[workspace] || [];
+  }
+  return chatHistory[workspace];
+}
+
+/**
+ * Fetch cumulative cost/token stats for a workspace and update the display.
+ */
+async function chatFetchCumulativeStats(workspace) {
+  try {
+    const base = chatActiveCli === "claude" ? "/api/claude-chat" : "/api/gemini";
+    const res = await fetch(`${base}/stats/${encodeURIComponent(workspace)}`);
+    const data = await res.json();
+    chatUpdateCumulativeStats(data);
+  } catch {
+    chatUpdateCumulativeStats({});
+  }
+}
+
+/**
+ * Fetch session list for a workspace and populate the session selector.
+ * Returns { current, sessions: [1,2,3], active }.
+ */
+async function chatFetchSessions(workspace) {
+  const select = document.getElementById("chat-session");
+  if (!select) return null;
+
+  try {
+    const base = chatActiveCli === "claude" ? "/api/claude-chat" : "/api/gemini";
+    const res = await fetch(`${base}/sessions/${encodeURIComponent(workspace)}`);
+    const data = await res.json();
+
+    chatSessionNum = data.current;
+    const sessions = data.sessions || [];
+
+    // Populate dropdown
+    select.innerHTML = "";
+    for (const num of sessions) {
+      const opt = document.createElement("option");
+      opt.value = num;
+      opt.textContent = `Chat ${num}`;
+      if (num === data.current) opt.selected = true;
+      select.appendChild(opt);
+    }
+
+    // Show selector only when there are 2+ sessions (nothing to switch with just 1)
+    select.classList.toggle("hidden", sessions.length < 2);
+
+    return data;
+  } catch {
+    select.classList.add("hidden");
+    return null;
+  }
+}
+
+/**
+ * Switch to a different session number.
+ */
+async function chatSwitchSession(num) {
+  if (!chatWorkspace || num === chatSessionNum) return;
+  glog(`switchSession: workspace=${chatWorkspace} from=${chatSessionNum} to=${num}`);
+
+  // Flush current input draft for the old session before switching
+  const input = document.getElementById("chat-input");
+  if (input) chatSaveDraft(input.value);
+
+  // Stop any running process
+  if (chatStreaming) chatStopStreaming();
+
+  // Tell server to switch
+  const base = chatActiveCli === "claude" ? "/api/claude-chat" : "/api/gemini";
+  try {
+    const res = await fetch(`${base}/sessions/${encodeURIComponent(chatWorkspace)}/switch`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ session: num }),
+    });
+    if (!res.ok) throw new Error("switch failed");
+  } catch (err) {
+    glog("switchSession: error", err.message);
+    return;
+  }
+
+  chatSessionNum = num;
+
+  // Persist session number server-side (must complete before showChat fetches the draft)
+  if (chatWorkspace) {
+    await fetch(`/api/workspace-state/${encodeURIComponent(chatWorkspace)}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        sessionNum: num,
+        draftMode: chatActiveCli === "claude" ? "claude-local" : "gemini",
+      }),
+    }).catch(() => {});
+  }
+
+  // Update URL
+  const cur = getChatParams();
+  setChatParams({ ...cur, session: num });
+
+  // Reload history for the new session (chatShowChat calls chatRestoreDraft)
+  chatShowChat();
+}
+
+// Cached model list (fetched from server)
+let chatModelsFetched = false;
+
+/**
+ * Fetch available models from the server and populate the model selector.
+ * Only fetches once per page load; call chatRefreshModels() to force refresh.
+ */
+async function chatFetchModels() {
+  if (chatModelsFetched) return;
+  try {
+    const endpoint = chatActiveCli === "claude" ? "/api/claude-chat/models" : "/api/gemini/models";
+    const res = await fetch(endpoint);
+    const models = await res.json();
+    if (!Array.isArray(models) || !models.length) return;
+
+    const select = document.getElementById("chat-model");
+    if (!select) return;
+
+    // Preserve current selection
+    const prev = select.value;
+
+    // Clear all options
+    select.innerHTML = "";
+
+    // Gemini has a real "Auto" mode (classifier-routed); Claude does not
+    if (chatActiveCli !== "claude") {
+      const autoOpt = document.createElement("option");
+      autoOpt.value = "";
+      autoOpt.textContent = "Auto";
+      select.appendChild(autoOpt);
+    }
+
+    // Add fetched models
+    for (const m of models) {
+      const opt = document.createElement("option");
+      opt.value = m.id;
+      opt.textContent = m.name;
+      select.appendChild(opt);
+    }
+
+    // Restore previous selection: prefer in-memory, then localStorage
+    const savedModel = chatWorkspace ? localStorage.getItem(`klaudii-model-${chatWorkspace}`) : null;
+    const preferred = prev || savedModel;
+    if (preferred && [...select.options].some((o) => o.value === preferred)) {
+      select.value = preferred;
+    }
+
+    chatModelsFetched = true;
+  } catch {
+    // Keep whatever is in the select
+  }
+}
+
+/**
+ * Force a model list refresh (e.g. after saving an API key).
+ */
+function chatRefreshModels() {
+  chatModelsFetched = false;
+  chatFetchModels();
+}
+
+/**
+ * Fetch and display quota info in the top bar.
+ * Shows remaining fraction as a compact badge (e.g. "87% quota").
+ */
+async function chatFetchQuota() {
+  const el = document.getElementById("chat-quota");
+  if (!el) return;
+
+  try {
+    const res = await fetch("/api/gemini/quota");
+    const data = await res.json();
+    if (!data.buckets || !data.buckets.length) {
+      el.textContent = "";
+      el.title = "";
+      return;
+    }
+
+    // Find the most constrained bucket (lowest remaining fraction)
+    const withFraction = data.buckets.filter((b) => b.remainingFraction !== null);
+    if (!withFraction.length) {
+      el.textContent = "";
+      return;
+    }
+
+    const worst = withFraction.reduce((min, b) =>
+      b.remainingFraction < min.remainingFraction ? b : min
+    );
+    const pct = Math.round(worst.remainingFraction * 100);
+
+    el.textContent = `${pct}% quota`;
+    el.className = "chat-bar-quota" + (pct <= 10 ? " low" : pct <= 30 ? " warn" : "");
+
+    // Build tooltip with per-bucket detail
+    const lines = data.buckets
+      .filter((b) => b.remainingFraction !== null)
+      .map((b) => {
+        const rpct = Math.round(b.remainingFraction * 100);
+        const model = b.modelId || "all";
+        const type = b.tokenType || "";
+        const reset = b.resetTime ? ` resets ${new Date(b.resetTime).toLocaleTimeString()}` : "";
+        return `${model} ${type}: ${rpct}%${reset}`;
+      });
+    el.title = lines.join("\n");
+  } catch {
+    // Quota not available — hide
+    if (el) el.textContent = "";
+  }
+}
+
+// Current streaming assistant message element
+let chatCurrentMsgEl = null;
+let chatCurrentMsgText = "";
+// Partial assistant bubble shown while polling mid-stream (opened while away)
+let chatPartialMsgEl = null;
+
+// --- Image attachments ---
+
+let chatPendingImages = []; // [{ id, dataUrl, name }]
+let chatImageIdCounter = 0;
+
+function chatAddImage(dataUrl, name) {
+  const id = ++chatImageIdCounter;
+  chatPendingImages.push({ id, dataUrl, name: name || `image${id}` });
+  chatRenderImageStrip();
+}
+
+function chatRemoveImage(id) {
+  chatPendingImages = chatPendingImages.filter((i) => i.id !== id);
+  chatRenderImageStrip();
+}
+
+function chatClearImages() {
+  chatPendingImages = [];
+  chatRenderImageStrip();
+}
+
+function chatRenderImageStrip() {
+  const strip = document.getElementById("chat-image-strip");
+  const attachBtn = document.getElementById("chat-attach");
+  if (!strip) return;
+  if (chatPendingImages.length === 0) {
+    strip.classList.add("hidden");
+    strip.innerHTML = "";
+    if (attachBtn) attachBtn.classList.remove("has-images");
+    return;
+  }
+  strip.classList.remove("hidden");
+  if (attachBtn) attachBtn.classList.add("has-images");
+  strip.innerHTML = chatPendingImages.map((img) =>
+    `<div class="chat-img-thumb" title="${esc(img.name)}">
+      <img src="${img.dataUrl}" alt="${esc(img.name)}">
+      <button class="chat-img-remove" onclick="chatRemoveImage(${img.id})" title="Remove">×</button>
+    </div>`
+  ).join("");
+}
+
+function chatHandleFileInput(event) {
+  const files = Array.from(event.target.files || []);
+  files.forEach((file) => chatLoadImageFile(file));
+  event.target.value = ""; // reset so same file can be re-added
+}
+
+function chatLoadImageFile(file) {
+  if (!file.type.startsWith("image/")) return;
+  const reader = new FileReader();
+  reader.onload = (e) => chatAddImage(e.target.result, file.name);
+  reader.readAsDataURL(file);
+}
+
+// Only show attach button when in claude-local mode (direct API supports images)
+function chatUpdateAttachVisibility() {
+  const btn = document.getElementById("chat-attach");
+  const fileInput = document.getElementById("chat-file-input");
+  if (!btn) return;
+  const show = chatActiveCli === "claude";
+  btn.style.display = show ? "" : "none";
+  if (fileInput) fileInput.disabled = !show;
+  if (!show) chatClearImages();
+}
+
+// Show permission mode selector for both Claude and Gemini
+function chatUpdatePermissionVisibility() {
+  const el = document.getElementById("chat-permission-mode");
+  if (!el) return;
+  el.style.display = ""; // visible for all backends
+}
+
+function chatGetPermissionMode() {
+  const el = document.getElementById("chat-permission-mode");
+  return el ? (el.value || "bypassPermissions") : undefined;
+}
+
+function chatSavePermissionMode(value) {
+  if (chatWorkspace) localStorage.setItem(`klaudii-perm-${chatWorkspace}`, value);
+}
+
+function chatRestorePermissionMode() {
+  const el = document.getElementById("chat-permission-mode");
+  if (!el || !chatWorkspace) return;
+  const saved = localStorage.getItem(`klaudii-perm-${chatWorkspace}`);
+  el.value = saved || "bypassPermissions";
+}
+
+// Draft sync — relay over WS for instant multi-window sync, HTTP PATCH fallback
+let chatDraftTimer = null;
+
+function chatSaveDraft(text) {
+  if (!chatWorkspace) return;
+  clearTimeout(chatDraftTimer);
+  const workspace = chatWorkspace;
+  chatPageSessionDrafts.add(workspace);
+  const draftMode = chatActiveCli === "claude" ? "claude-local" : "gemini";
+  const draftSession = chatSessionNum;
+  chatDraftTimer = setTimeout(() => {
+    if (chatWs && chatWs.readyState === WebSocket.OPEN) {
+      chatWs.send(JSON.stringify({ type: "draft", workspace, text, draftMode, draftSession }));
+    } else {
+      // Fallback to HTTP if WS is disconnected
+      fetch(`/api/workspace-state/${encodeURIComponent(workspace)}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ draft: text, draftMode, draftSession }),
+      }).catch(() => {});
+    }
+  }, 100);
+}
+
+async function chatRestoreDraft(prefetchedState = null) {
+  if (!chatWorkspace) return;
+  const workspaceAtCall = chatWorkspace;
+  const input = document.getElementById("chat-input");
+  if (!input) return;
+  // Only restore drafts saved during this page session to avoid stale state on load
+  if (!chatPageSessionDrafts.has(chatWorkspace)) {
+    input.value = "";
+    return;
+  }
+  try {
+    const state = prefetchedState || await fetch(`/api/workspace-state/${encodeURIComponent(chatWorkspace)}`).then(r => r.json());
+    // Don't apply if workspace changed during async fetch
+    if (chatWorkspace !== workspaceAtCall) return;
+    input.value = state.draft || "";
+  } catch { /* non-fatal */ }
+}
+
+// --- WebSocket ---
+
+function chatConnect() {
+  if (chatWs && chatWs.readyState === WebSocket.OPEN) return;
+
+  const wsUrl = `${location.protocol === "https:" ? "wss:" : "ws:"}//${location.host}/ws/chat`;
+  console.log("[chat-ws] connecting to", wsUrl);
+  chatWs = new WebSocket(wsUrl);
+
+  chatWs.onopen = () => {
+    glog("ws-open");
+    chatUpdateStatus(true);
+    // If history fetch failed while server was restarting, re-render now that it's up
+    if (chatHistoryFetchFailed && chatWorkspace) {
+      chatHistoryFetchFailed = false;
+      chatWasStreamingAtDisconnect = false; // clear here too — showChat re-renders everything
+      glog("ws-open: retrying history fetch after server restart");
+      chatShowChat();
+    } else if (chatWasStreamingAtDisconnect && chatWorkspace) {
+      // Disconnected mid-stream — check whether it's still running or completed
+      chatWasStreamingAtDisconnect = false;
+      fetch(`/api/workspace-state/${encodeURIComponent(chatWorkspace)}`)
+        .then(r => r.json())
+        .then(wsState => {
+          if (wsState.streaming) {
+            // Stream survived the reconnect (transient blip) — re-enter poll mode
+            // with partial content so the user catches up immediately
+            chatOpenedWhileStreaming = true;
+            chatShowChat();
+          } else {
+            // Stream completed while disconnected — render recovered content
+            chatRenderRecoveredContent();
+          }
+        })
+        .catch(() => chatRenderRecoveredContent());
+    }
+  };
+
+  chatWs.onclose = (evt) => {
+    glog("ws-close code=" + evt.code, "reason=" + (evt.reason || ""));
+    chatUpdateStatus(false);
+    // If a stream was in progress, clear it so the UI doesn't hang
+    if (chatStreaming) {
+      chatWasStreamingAtDisconnect = true;
+      chatRemoveThinking();
+      chatSetStreaming(false);
+      chatCurrentMsgEl = null;
+      chatCurrentMsgText = "";
+      chatAppendError("Connection lost — response may be incomplete.");
+    }
+    chatStopStreamPoll();
+    // Reconnect after 2s
+    setTimeout(chatConnect, 2000);
+  };
+
+  chatWs.onerror = (evt) => {
+    glog("ws-error", evt);
+  };
+
+  let wsEventCount = 0;
+  chatWs.onmessage = (evt) => {
+    let event;
+    try {
+      event = JSON.parse(evt.data);
+    } catch {
+      glog("ws-msg: invalid JSON", evt.data.slice(0, 100));
+      return;
+    }
+
+    wsEventCount++;
+    glog(`ws-msg #${wsEventCount} type=${event.type} workspace=${event.workspace}${event.role ? " role=" + event.role : ""}${event.content ? " contentLen=" + event.content.length : ""}${event.exitCode !== undefined ? " exitCode=" + event.exitCode : ""}${event.name ? " tool=" + event.name : ""}`);
+
+    // Only render events for the currently open workspace
+    if (event.workspace !== chatWorkspace) {
+      glog(`ws-msg: ignoring (current workspace=${chatWorkspace})`);
+      return;
+    }
+
+    handleGeminiEvent(event);
+  };
+}
+
+let chatServerConnected = true; // unified connection state
+
+function chatUpdateStatus(connected) {
+  const el = document.getElementById("chat-status");
+  const wasConnected = chatServerConnected;
+  chatServerConnected = connected;
+
+  if (el) {
+    if (connected) {
+      el.textContent = "connected";
+      el.className = "chat-bar-status connected";
+    } else {
+      el.textContent = "disconnected";
+      el.className = "chat-bar-status";
+    }
+  }
+
+  const input = document.getElementById("chat-input");
+  const sendBtn = document.getElementById("chat-send");
+
+  const inputCard = input ? input.closest(".chat-input-card") : null;
+
+  if (connected) {
+    // Re-enable input
+    if (input && !chatStreaming) {
+      input.disabled = false;
+      input.placeholder = chatActiveCli === "claude" ? "Message Claude\u2026" : "Message Gemini\u2026";
+    }
+    if (sendBtn && !chatStreaming) sendBtn.disabled = false;
+    if (inputCard) inputCard.classList.remove("disconnected");
+
+    // Remove disconnect banner
+    const banner = document.getElementById("chat-disconnect-banner");
+    if (banner) banner.remove();
+
+    // Show "Reconnected" toast briefly (only if was previously disconnected)
+    if (!wasConnected) {
+      chatShowReconnectedToast();
+      // Restore draft from localStorage
+      chatRestoreDraftFromLocal();
+    }
+  } else {
+    // Disable input so users don't type into a dead connection
+    if (input) {
+      input.disabled = true;
+      input.placeholder = "Server disconnected\u2026";
+    }
+    if (sendBtn) sendBtn.disabled = true;
+    if (inputCard) inputCard.classList.add("disconnected");
+
+    // Save draft to localStorage so it survives page reload
+    chatSaveDraftToLocal();
+
+    // Show disconnect banner in the chat area
+    chatShowDisconnectBanner();
+  }
+}
+
+function chatSaveDraftToLocal() {
+  const input = document.getElementById("chat-input");
+  if (!input || !input.value.trim()) return;
+  const key = `klaudii-draft-${chatWorkspace || "global"}`;
+  localStorage.setItem(key, input.value);
+}
+
+function chatRestoreDraftFromLocal() {
+  const input = document.getElementById("chat-input");
+  if (!input || !chatWorkspace) return;
+  const key = `klaudii-draft-${chatWorkspace}`;
+  const saved = localStorage.getItem(key);
+  if (saved && !input.value.trim()) {
+    input.value = saved;
+    // Auto-resize
+    input.style.height = "auto";
+    input.style.height = Math.min(input.scrollHeight, 256) + "px";
+  }
+  localStorage.removeItem(key);
+}
+
+function chatShowDisconnectBanner() {
+  if (document.getElementById("chat-disconnect-banner")) return;
+  const container = document.getElementById("chat-messages");
+  if (!container) return;
+  const banner = document.createElement("div");
+  banner.id = "chat-disconnect-banner";
+  banner.className = "chat-disconnect-banner";
+  banner.textContent = "Server disconnected — reconnecting\u2026";
+  container.appendChild(banner);
+  chatScrollToBottom();
+}
+
+function chatShowReconnectedToast() {
+  const container = document.getElementById("chat-messages");
+  if (!container) return;
+  const toast = document.createElement("div");
+  toast.className = "chat-reconnected-toast";
+  toast.textContent = "Reconnected";
+  container.appendChild(toast);
+  chatScrollToBottom();
+  setTimeout(() => toast.remove(), 3000);
+}
+
+// --- Event handling ---
+
+function handleGeminiEvent(event) {
+  const history = chatHistory[event.workspace] || [];
+
+  switch (event.type) {
+    case "init": {
+      const sessionId = event.session_id || event.sessionId || null;
+      glog("handle: init sessionId=" + (sessionId || "?") + " session#" + chatSessionNum);
+      // Update URL with session number (not CLI session ID)
+      if (chatSessionNum) {
+        const cur = getChatParams();
+        setChatParams({ ...cur, session: chatSessionNum });
+      }
+      break;
+    }
+
+    case "ack":
+      glog("handle: ack status=" + event.status);
+      chatUpdateMsgStatus(event.status);
+      break;
+
+    case "message":
+      if (event.role === "assistant" || !event.role) {
+        // First assistant content — remove thinking indicator
+        chatRemoveThinking();
+
+        const text = event.content || "";
+        chatCurrentMsgText += text;
+        glog(`handle: message delta=${event.delta || false} contentLen=${text.length} totalLen=${chatCurrentMsgText.length}`);
+
+        if (!chatCurrentMsgEl && chatCurrentMsgText) {
+          glog("handle: creating assistant message element");
+          chatCurrentMsgEl = chatAppendMessage("assistant", "", true);
+        }
+
+        if (chatCurrentMsgEl) {
+          const mdEl = chatCurrentMsgEl.querySelector(".md-content");
+          if (mdEl) {
+            mdEl.innerHTML = chatRenderMarkdown(chatCurrentMsgText);
+          }
+          chatScrollToBottom();
+        }
+      } else {
+        glog(`handle: message role=${event.role} (skipping — user echo)`);
+      }
+      break;
+
+    case "tool_use": {
+      chatRemoveThinking();
+      const toolName = event.tool_name || event.name || "tool";
+      const toolId = event.tool_id || "";
+      const params = event.parameters || event.args || event.input || {};
+      glog(`handle: tool_use name=${toolName} id=${toolId} awaiting=${!!event.awaiting_approval}`);
+      // Remove or discard the current message element before the tool pill
+      if (chatCurrentMsgEl) {
+        if (!chatCurrentMsgText) {
+          chatCurrentMsgEl.remove();
+        } else {
+          chatCurrentMsgEl.classList.remove("chat-streaming");
+        }
+      }
+      chatCurrentMsgEl = null;
+      chatCurrentMsgText = "";
+      if (toolName === "ExitPlanMode") {
+        // Plan approval: render the plan as markdown with approve/reject buttons
+        chatShowPlanApproval(toolId, params.plan || "");
+      } else if (toolName === "EnterPlanMode") {
+        // Planning mode entry — just show a small indicator, no action needed
+        chatAppendToolUse(toolName, toolId, params);
+      } else if (event.awaiting_approval) {
+        // Interactive approval prompt — show Approve/Deny buttons
+        chatShowApprovalPrompt(event);
+      } else if (/ask.*question|askfollowup|ask_followup/i.test(toolName)) {
+        // AskUserQuestion always triggers permission_request (requiresUserInteraction=true).
+        // Don't render anything here — the permission_request handler renders the
+        // interactive question card. Rendering a pill would leave an orphan.
+        chatAskToolIds.add(toolId);
+        glog(`handle: ask-tool (skipped, waiting for permission_request) toolId=${toolId}`);
+      } else {
+        chatAppendToolUse(toolName, toolId, params);
+      }
+      break;
+    }
+
+    case "tool_result": {
+      const toolId = event.tool_id || "";
+      const toolName = event.tool_name || "";
+      const output = event.output || event.content || "";
+      const status = event.status || "success";
+      const error = event.error;
+      glog(`handle: tool_result id=${toolId} tool=${toolName} status=${status} outputLen=${output.length}`);
+      // AskUserQuestion results are already shown in the question card — skip rendering.
+      // Check both tool_name (if present) and our tracked set (CLI often omits tool_name on results).
+      const isAskResult = /ask.*question/i.test(toolName) || chatAskToolIds.has(toolId);
+      if (isAskResult) {
+        chatAskToolIds.delete(toolId);
+      } else {
+        chatUpdateToolResult(toolId, status, output, error);
+      }
+      // Model continues processing after the tool — show thinking indicator so the
+      // UI doesn't appear frozen between tool completion and the next text chunk.
+      if (chatStreaming) chatShowThinking("Thinking\u2026");
+      break;
+    }
+
+    case "error":
+      chatRemoveThinking();
+      glog("handle: error message=" + (event.message || "?"));
+      chatAppendError(event.message || "Unknown error");
+      chatSetStreaming(false);
+      break;
+
+    case "done":
+      chatRemoveThinking();
+      chatStopStreamPoll(); // cancel any open-while-streaming poll — live WS beat it
+      glog(`handle: done exitCode=${event.exitCode} stopped=${event.stopped || false} assistantTextLen=${chatCurrentMsgText.length} stderr=${(event.stderr || "").slice(0, 200)}`);
+      if (chatCurrentMsgText) {
+        history.push({ role: "assistant", content: chatCurrentMsgText });
+        chatHistory[event.workspace] = history;
+      }
+      // Stamp the assistant bubble with completion time
+      chatStampMessageTime(chatCurrentMsgEl, Date.now());
+
+      // Finalize any orphaned running pills — tool_result events are emitted
+      // before "done", so any pills still showing "running" at this point
+      // never received their result (e.g. process stopped, relay crash).
+      chatFinalizeOrphanedPills();
+
+      chatSetStreaming(false);
+      chatCurrentMsgEl = null;
+      chatCurrentMsgText = "";
+
+      // If a partial bubble was showing (opened mid-stream), replace it with the full response
+      if (chatPartialMsgEl) {
+        const partialEl = chatPartialMsgEl;
+        chatPartialMsgEl = null;
+        const doneWs = event.workspace;
+        const doneSn = chatSessionNum;
+        chatFetchHistory(doneWs, doneSn)
+          .then(hist => {
+            const lastMsg = hist && [...hist].reverse().find(m => m.role === "assistant");
+            if (lastMsg) {
+              const mdEl = partialEl.querySelector(".md-content");
+              if (mdEl) mdEl.innerHTML = chatRenderMarkdown(lastMsg.content);
+              chatStampMessageTime(partialEl, lastMsg.ts || Date.now());
+              chatHistory[doneWs] = hist;
+            }
+            partialEl.classList.remove("chat-streaming");
+            chatScrollToBottom();
+          })
+          .catch(() => { partialEl.classList.remove("chat-streaming"); });
+      }
+
+      // Exit code 41 = auth failure (Gemini), 1 with auth error (Claude) — show auth panel
+      if (event.exitCode === 41) {
+        glog("handle: auth failure, showing auth panel");
+        chatShowAuthPanel();
+      } else if (event.exitCode && event.exitCode !== 0 && event.stderr && event.stderr.includes("auth")) {
+        glog("handle: possible auth failure, showing auth panel");
+        chatShowAuthPanel();
+      } else if (event.exitCode && event.exitCode !== 0 && event.stderr) {
+        chatAppendError(`Process exited with code ${event.exitCode}: ${event.stderr.slice(0, 500)}`);
+      }
+      break;
+
+    case "status": {
+      // Server-forwarded stderr status (e.g. quota retries)
+      const msg = event.message || "";
+      glog("handle: status " + msg);
+      const thinkLabel = document.querySelector("#chat-thinking .chat-thinking-label");
+      if (thinkLabel) {
+        thinkLabel.textContent = msg.length > 80 ? msg.slice(0, 77) + "..." : msg;
+      }
+      break;
+    }
+
+    case "draft": {
+      // Another window updated the draft — apply unless user is actively typing here
+      if (!chatLocalDraftActive) {
+        const input = document.getElementById("chat-input");
+        if (input) {
+          input.value = event.text || "";
+          // Auto-resize
+          input.style.height = "auto";
+          input.style.height = Math.min(input.scrollHeight, 256) + "px";
+        }
+      }
+      break;
+    }
+
+    case "user_message": {
+      // Another window sent a message — render the user bubble
+      glog("handle: user_message from another window");
+      if (!chatHistory[event.workspace]) chatHistory[event.workspace] = [];
+      chatHistory[event.workspace].push({ role: "user", content: event.content, sender: event.sender });
+      chatAppendMessage("user", event.content, false, null, event.ts, event.sender);
+      // Clear input since the message was sent
+      const input = document.getElementById("chat-input");
+      if (input) {
+        input.value = "";
+        input.style.height = "auto";
+      }
+      break;
+    }
+
+    case "streaming_start":
+      // Another window started a send — show thinking indicator
+      glog("handle: streaming_start from another window");
+      chatSetStreaming(true);
+      chatShowThinking();
+      break;
+
+    case "permission_request":
+      chatRemoveThinking();
+      glog("handle: permission_request request_id=" + event.request_id + " tool=" + event.tool_name);
+      // AskUserQuestion: show interactive question card. The user's answers are
+      // sent back as `updatedInput.answers` in the permission_response — NOT as a
+      // separate tool_result. The tool's call() reads answers from its input.
+      if (event.tool_name === "AskUserQuestion" || event.tool_name === "ask_followup_question") {
+        // Remove the pending tool pill that tool_use created for this tool
+        const pendingPill = document.querySelector(`.chat-tool.running[data-tool-name="AskUserQuestion"], .chat-tool.running[data-tool-name="ask_followup_question"]`);
+        if (pendingPill) pendingPill.remove();
+        const toolInput = event.tool_input || {};
+        const questions = toolInput.questions?.length
+          ? toolInput.questions
+          : [{ question: toolInput.question || toolInput.prompt || "", options: toolInput.options || toolInput.choices || [] }];
+        chatShowToolQuestions(event.request_id, questions, toolInput, true);
+        break;
+      }
+      // Auto-approve EnterPlanMode — it just switches Claude into planning mode
+      if (event.tool_name === "EnterPlanMode") {
+        if (chatWs && chatWs.readyState === WebSocket.OPEN) {
+          chatWs.send(JSON.stringify({ type: "permission_response", workspace: chatWorkspace, request_id: event.request_id, behavior: "allow", updatedInput: event.tool_input || {} }));
+        }
+        break;
+      }
+      // ExitPlanMode: show plan approval card with the plan content from tool_input
+      if (event.tool_name === "ExitPlanMode") {
+        chatShowPlanApproval(event.request_id, (event.tool_input || {}).plan || "", true);
+        break;
+      }
+      chatShowPermissionRequest(event.request_id, event.tool_name, event.tool_input, event.description, event.decision_reason);
+      break;
+
+    case "permission_resolved":
+      // Another client already responded to this permission_request.
+      // Update the UI to show the resolved state with answers.
+      glog("handle: permission_resolved request_id=" + event.request_id + " behavior=" + event.behavior + " tool=" + event.tool_name);
+      chatResolvePermissionUI(event.request_id, event.behavior, event.tool_name, event.updatedInput);
+      break;
+
+    case "thinking":
+      chatRemoveThinking();
+      glog("handle: thinking contentLen=" + (event.content || "").length);
+      chatAppendThinkingBlock(event.content || "");
+      break;
+
+    case "tool_progress": {
+      const tpId = event.tool_use_id || "";
+      const elapsed = event.elapsed_time_seconds;
+      glog(`handle: tool_progress id=${tpId} elapsed=${elapsed}s`);
+      if (tpId && elapsed != null) {
+        const pill = document.querySelector(`.chat-tool.running[data-tool-id="${CSS.escape(tpId)}"]`);
+        if (pill) {
+          let timerEl = pill.querySelector(".chat-tool-timer");
+          if (!timerEl) {
+            timerEl = document.createElement("span");
+            timerEl.className = "chat-tool-timer";
+            const summary = pill.querySelector(".chat-tool-summary");
+            if (summary) summary.appendChild(timerEl);
+          }
+          timerEl.textContent = ` ${Math.round(elapsed)}s`;
+        }
+      }
+      break;
+    }
+
+    case "usage":
+      // Per-turn usage update — update context remaining display
+      if (event.cumulative) chatUpdateCumulativeStats(event.cumulative);
+      break;
+
+    case "result":
+      glog("handle: result stats=" + JSON.stringify(event.stats || {}).slice(0, 200) + " subtype=" + (event.subtype || "success"));
+      chatShowResultFooter(event.stats, event.subtype, event.errors);
+      if (event.cumulative) chatUpdateCumulativeStats(event.cumulative);
+      break;
+
+    case "system_status":
+      glog("handle: system_status status=" + event.status + " permMode=" + event.permissionMode);
+      if (event.permissionMode) {
+        chatAppendSystemNote("Permission mode changed to " + event.permissionMode);
+      }
+      break;
+
+    case "compact_boundary":
+      glog("handle: compact_boundary pre=" + event.pre_tokens + " post=" + event.post_tokens);
+      chatAppendSystemNote(
+        "Context compacted" + (event.pre_tokens ? ` (was ~${Math.round(event.pre_tokens / 1000)}k tokens)` : "")
+      );
+      break;
+
+    case "context_reload":
+      glog("handle: context_reload reason=" + event.reason + " usedPct=" + event.usedPct);
+      chatAppendSystemNote(
+        "Context reloaded" + (event.usedPct ? ` (was ${event.usedPct}% full)` : "") + " \u2014 session refreshed with conversation history"
+      );
+      break;
+
+    case "task_started":
+      glog("handle: task_started id=" + event.task_id + " desc=" + event.description);
+      chatAppendTaskCard(event.task_id, event.description, "running");
+      break;
+
+    case "task_progress": {
+      glog("handle: task_progress id=" + event.task_id);
+      const taskCard = document.querySelector(`.chat-task-card[data-task-id="${CSS.escape(event.task_id)}"]`);
+      if (taskCard) {
+        const detail = taskCard.querySelector(".chat-task-detail");
+        if (detail && event.tool_name) detail.textContent = `Last tool: ${event.tool_name}`;
+      }
+      break;
+    }
+
+    case "task_notification": {
+      glog("handle: task_notification id=" + event.task_id + " status=" + event.status);
+      const taskEl = document.querySelector(`.chat-task-card[data-task-id="${CSS.escape(event.task_id)}"]`);
+      if (taskEl) {
+        taskEl.classList.remove("running");
+        taskEl.classList.add(event.status === "completed" ? "success" : "error");
+        const statusEl = taskEl.querySelector(".chat-task-status");
+        if (statusEl) statusEl.textContent = event.status === "completed" ? "✓ Completed" : "✗ " + event.status;
+        if (event.summary) {
+          const sumEl = document.createElement("div");
+          sumEl.className = "chat-task-summary";
+          sumEl.textContent = event.summary;
+          taskEl.appendChild(sumEl);
+        }
+      }
+      break;
+    }
+
+    default:
+      glog("handle: unknown event type=" + event.type + " keys=" + Object.keys(event).join(","));
+      break;
+  }
+}
+
+/**
+ * Update permission/question UI for a request_id that was resolved by another client.
+ * For AskUserQuestion, highlights the selected answers. For other tools, disables buttons.
+ */
+function chatResolvePermissionUI(requestId, behavior, toolName, updatedInput) {
+  const container = document.getElementById("chat-messages");
+  if (!container) return;
+  const sel = CSS.escape(requestId);
+  const cards = container.querySelectorAll(
+    `.chat-permission-request[data-request-id="${sel}"], .chat-plan-approval[data-request-id="${sel}"], .chat-question-card[data-request-id="${sel}"]`
+  );
+
+  for (const card of cards) {
+    // For AskUserQuestion, highlight the selected answers on the option buttons
+    if (/ask.*question/i.test(toolName) && updatedInput?.answers) {
+      const selectedValues = new Set(Object.values(updatedInput.answers));
+      card.querySelectorAll("button").forEach(b => {
+        b.disabled = true;
+        if (selectedValues.has(b.textContent.trim())) {
+          b.classList.add("selected");
+          b.textContent += " \u2713";
+        } else {
+          b.classList.add("greyed");
+        }
+      });
+    } else {
+      card.querySelectorAll("button").forEach(b => { b.disabled = true; });
+    }
+
+    const note = document.createElement("div");
+    note.style.fontSize = "0.75rem";
+    note.style.opacity = "0.7";
+    note.style.marginTop = "0.25rem";
+    note.textContent = behavior === "allow" ? "Answered in another window" : "Denied in another window";
+    card.appendChild(note);
+  }
+}
+
+function chatShowPermissionRequest(requestId, toolName, toolInput, description, decisionReason) {
+  const container = document.getElementById("chat-messages");
+  const div = document.createElement("div");
+  div.className = "chat-permission-request";
+  div.dataset.requestId = requestId;
+
+  const header = document.createElement("div");
+  header.className = "chat-permission-header";
+  header.textContent = toolName ? `Claude wants to use: ${toolName}` : "Claude is asking for permission";
+  div.appendChild(header);
+
+  // Show human-readable description if available
+  if (description) {
+    const descEl = document.createElement("div");
+    descEl.className = "chat-permission-desc";
+    descEl.textContent = description;
+    div.appendChild(descEl);
+  }
+
+  // Show decision reason if available
+  if (decisionReason) {
+    const reasonEl = document.createElement("div");
+    reasonEl.className = "chat-permission-reason";
+    reasonEl.textContent = decisionReason;
+    div.appendChild(reasonEl);
+  }
+
+  // Show key input fields for context (command, file_path, etc.)
+  if (toolInput && Object.keys(toolInput).length) {
+    const detail = document.createElement("div");
+    detail.className = "chat-permission-question";
+    const preview = Object.entries(toolInput)
+      .filter(([, v]) => typeof v === "string" || typeof v === "number")
+      .map(([k, v]) => {
+        const val = String(v);
+        return `${k}: ${val.length > 120 ? val.slice(0, 117) + "…" : val}`;
+      })
+      .join("\n");
+    detail.textContent = preview || JSON.stringify(toolInput).slice(0, 200);
+    detail.style.fontFamily = "monospace";
+    detail.style.fontSize = "0.8rem";
+    detail.style.whiteSpace = "pre-wrap";
+    div.appendChild(detail);
+  }
+
+  const btns = document.createElement("div");
+  btns.className = "chat-permission-buttons";
+
+  const respond = (behavior) => {
+    btns.querySelectorAll("button").forEach(b => { b.disabled = true; });
+    const chosen = btns.querySelector(`[data-behavior="${behavior}"]`);
+    if (chosen) chosen.textContent += " ✓";
+    if (chatWs && chatWs.readyState === WebSocket.OPEN) {
+      chatWs.send(JSON.stringify({
+        type: "permission_response",
+        workspace: chatWorkspace,
+        request_id: requestId,
+        behavior,
+        updatedInput: behavior === "allow" ? (toolInput || {}) : undefined,
+      }));
+    }
+    glog("permission_request: sent behavior=" + behavior + " request_id=" + requestId);
+  };
+
+  const allowBtn = document.createElement("button");
+  allowBtn.className = "btn primary";
+  allowBtn.textContent = "Allow";
+  allowBtn.dataset.behavior = "allow";
+  allowBtn.onclick = () => respond("allow");
+  btns.appendChild(allowBtn);
+
+  const denyBtn = document.createElement("button");
+  denyBtn.className = "btn";
+  denyBtn.textContent = "Deny";
+  denyBtn.dataset.behavior = "deny";
+  denyBtn.onclick = () => respond("deny");
+  btns.appendChild(denyBtn);
+
+  div.appendChild(btns);
+  container.appendChild(div);
+  chatScrollToBottom();
+}
+
+/**
+ * Show a plan approval card. Renders the plan as markdown with Approve/Reject buttons.
+ * @param {string} id - Either a tool_id (bypass mode) or request_id (permission mode)
+ * @param {string} planText - The markdown plan content
+ * @param {boolean} isPermissionRequest - true if this is a permission_request (non-bypass mode)
+ */
+function chatShowPlanApproval(id, planText, isPermissionRequest) {
+  const container = document.getElementById("chat-messages");
+
+  // Remove any existing running tool pill for this id (the generic one from tool_use)
+  const existingPill = container.querySelector(`.chat-tool.running[data-tool-id="${CSS.escape(id)}"]`);
+  if (existingPill) existingPill.remove();
+
+  const div = document.createElement("div");
+  div.className = "chat-plan-approval";
+  if (isPermissionRequest) div.dataset.requestId = id;
+
+  const header = document.createElement("div");
+  header.className = "chat-plan-header";
+  header.textContent = "Claude has proposed a plan";
+  div.appendChild(header);
+
+  if (planText) {
+    const content = document.createElement("div");
+    content.className = "chat-plan-content md-content";
+    content.innerHTML = chatRenderMarkdown(planText);
+    div.appendChild(content);
+  }
+
+  const btns = document.createElement("div");
+  btns.className = "chat-permission-buttons";
+
+  const respond = (approved) => {
+    btns.querySelectorAll("button").forEach(b => { b.disabled = true; });
+    div.classList.add(approved ? "approved" : "rejected");
+    header.textContent = approved ? "Plan approved" : "Plan rejected";
+
+    if (isPermissionRequest) {
+      // Non-bypass mode: send permission_response.
+      // updatedInput is REQUIRED by Claude CLI's Zod schema for "allow" responses.
+      if (chatWs && chatWs.readyState === WebSocket.OPEN) {
+        const payload = {
+          type: "permission_response",
+          workspace: chatWorkspace,
+          request_id: id,
+          behavior: approved ? "allow" : "deny",
+        };
+        if (approved) payload.updatedInput = { plan: planText };
+        chatWs.send(JSON.stringify(payload));
+      }
+    } else {
+      // Bypass mode: plan already executed. Send follow-up message to instruct Claude.
+      if (!approved && chatWs && chatWs.readyState === WebSocket.OPEN) {
+        chatWs.send(JSON.stringify({
+          type: "send",
+          workspace: chatWorkspace,
+          message: "I reject this plan. Please revise it.",
+          backend: "claude",
+        }));
+      }
+    }
+    glog("plan_approval: " + (approved ? "approved" : "rejected") + " id=" + id);
+  };
+
+  const approveBtn = document.createElement("button");
+  approveBtn.className = "btn primary";
+  approveBtn.textContent = "Approve Plan";
+  approveBtn.onclick = () => respond(true);
+  btns.appendChild(approveBtn);
+
+  const rejectBtn = document.createElement("button");
+  rejectBtn.className = "btn";
+  rejectBtn.textContent = "Reject Plan";
+  rejectBtn.onclick = () => respond(false);
+  btns.appendChild(rejectBtn);
+
+  div.appendChild(btns);
+  container.appendChild(div);
+  chatScrollToBottom();
+}
+
+// questions: [{question, header, options:[string|{label,description}], multiSelect?}]
+// id: either a tool_id (bypass mode / Gemini) or request_id (permission mode)
+// toolInput: original tool input for AskUserQuestion (used to build updatedInput)
+// isPermissionRequest: true → send answers via permission_response updatedInput.answers
+//                      false → send answers via tool_result_response content string
+function chatShowToolQuestions(id, questions, toolInput, isPermissionRequest) {
+  const container = document.getElementById("chat-messages");
+  const div = document.createElement("div");
+  div.className = isPermissionRequest ? "chat-permission-request chat-question-card" : "chat-permission-request";
+  if (isPermissionRequest) div.dataset.requestId = id;
+
+  const headerEl = document.createElement("div");
+  headerEl.className = "chat-permission-header";
+  headerEl.textContent = "Claude is asking";
+  div.appendChild(headerEl);
+
+  const answers = new Array(questions.length).fill(null);
+
+  const sendResult = () => {
+    if (isPermissionRequest) {
+      // Claude CLI AskUserQuestion: answers go in updatedInput.answers as {question: answer}
+      const answersMap = {};
+      questions.forEach((q, i) => {
+        const key = q.question || q.header || `Q${i + 1}`;
+        answersMap[key] = answers[i];
+      });
+      const updatedInput = { ...(toolInput || {}), answers: answersMap };
+      glog(`tool_questions: sending permission_response request_id=${id} answers=${JSON.stringify(answersMap)}`);
+      if (chatWs && chatWs.readyState === WebSocket.OPEN) {
+        chatWs.send(JSON.stringify({
+          type: "permission_response",
+          workspace: chatWorkspace,
+          request_id: id,
+          behavior: "allow",
+          updatedInput,
+        }));
+      }
+    } else {
+      // Gemini / bypass mode: answers as a formatted string via tool_result_response
+      const content = questions.map((q, i) => {
+        const prefix = q.header || q.question || `Q${i + 1}`;
+        return `${prefix}: ${answers[i]}`;
+      }).join("\n");
+      glog(`tool_questions: sending tool_result_response tool_id=${id}`);
+      if (chatWs && chatWs.readyState === WebSocket.OPEN) {
+        chatWs.send(JSON.stringify({
+          type: "tool_result_response",
+          workspace: chatWorkspace,
+          tool_id: id,
+          content,
+        }));
+      }
+    }
+  };
+
+  questions.forEach((q, qi) => {
+    const section = document.createElement("div");
+    section.className = "chat-question-section" + (qi > 0 ? " chat-question-section--subsequent" : "");
+
+    if (q.question) {
+      const qEl = document.createElement("div");
+      qEl.className = "chat-permission-question";
+      qEl.textContent = q.question;
+      section.appendChild(qEl);
+    }
+
+    const btns = document.createElement("div");
+    btns.className = "chat-permission-buttons";
+    const rawOptions = q.options || q.choices || [];
+    const renderOptions = rawOptions.length ? rawOptions : ["Yes", "No"];
+
+    renderOptions.forEach((opt, i) => {
+      const btn = document.createElement("button");
+      btn.className = "btn" + (i === 0 ? " primary" : "");
+      const label = typeof opt === "object" ? (opt.label || String(opt)) : String(opt);
+      btn.textContent = label;
+      btn.dataset.label = label;
+      if (typeof opt === "object" && opt.description) btn.title = opt.description;
+      btn.onclick = () => {
+        if (answers[qi] !== null) return;
+        btns.querySelectorAll("button").forEach(b => {
+          b.disabled = true;
+          b.classList.remove("primary");
+          b.classList.add("greyed");
+        });
+        const chosen = btns.querySelector(`[data-label="${CSS.escape(label)}"]`);
+        if (chosen) {
+          chosen.textContent += " \u2713";
+          chosen.classList.remove("greyed");
+          chosen.classList.add("selected", "primary");
+        }
+        answers[qi] = label;
+        glog(`tool_question[${qi}]: selected=${label}`);
+        if (answers.every(a => a !== null)) sendResult();
+      };
+      btns.appendChild(btn);
+    });
+
+    section.appendChild(btns);
+    div.appendChild(section);
+  });
+
+  container.appendChild(div);
+  chatScrollToBottom();
+}
+
+// --- DOM rendering ---
+
+function chatAppendMessage(role, content, streaming, images, ts, sender, msgStatus) {
+  const container = document.getElementById("chat-messages");
+  const div = document.createElement("div");
+  div.className = `chat-msg ${role}${streaming ? " chat-streaming" : ""}`;
+
+  if (role === "user") {
+    const bubble = document.createElement("div");
+    const senderClass = sender === "architect" ? " bubble-architect" : sender === "shepherd" ? " bubble-shepherd" : "";
+    bubble.className = "user-bubble" + senderClass;
+    // Render any attached images above the message text
+    if (images && images.length) {
+      const imgRow = document.createElement("div");
+      imgRow.className = "chat-msg-images";
+      images.forEach((img) => {
+        const im = document.createElement("img");
+        im.src = img.dataUrl;
+        im.className = "chat-msg-img";
+        im.alt = img.name || "attached image";
+        imgRow.appendChild(im);
+      });
+      bubble.appendChild(imgRow);
+    }
+    if (sender === "architect" || sender === "shepherd") {
+      const label = document.createElement("div");
+      label.className = "bubble-sender-label";
+      label.textContent = sender.charAt(0).toUpperCase() + sender.slice(1);
+      bubble.appendChild(label);
+    }
+    const textNode = document.createElement("span");
+    textNode.textContent = content;
+    bubble.appendChild(textNode);
+    div.appendChild(bubble);
+  } else {
+    const md = document.createElement("div");
+    md.className = "md-content";
+    md.innerHTML = content ? chatRenderMarkdown(content) : "";
+    div.appendChild(md);
+  }
+
+  const timeStr = chatMsgTime(ts);
+  if (timeStr || role === "user") {
+    const tsEl = document.createElement("div");
+    tsEl.className = "chat-msg-ts";
+    if (timeStr) tsEl.textContent = timeStr;
+    // Delivery checkmarks beside the timestamp for user messages
+    if (role === "user") {
+      const checks = document.createElement("span");
+      checks.className = "msg-delivery-status";
+      checks.dataset.status = msgStatus || "sending";
+      checks.innerHTML = ' <span class="check check-1">\u2713</span><span class="check check-2">\u2713</span>';
+      tsEl.appendChild(checks);
+    }
+    div.appendChild(tsEl);
+  }
+
+  container.appendChild(div);
+  chatScrollToBottom();
+  return div;
+}
+
+/**
+ * Update delivery status checkmarks on the last user message bubble.
+ * received = first check green (server got it)
+ * delivered = second check green (written to CLI stdin)
+ * processing is treated as delivered (both green).
+ */
+function chatUpdateMsgStatus(status) {
+  const container = document.getElementById("chat-messages");
+  if (!container) return;
+  // Find the last user message's delivery status element
+  const userMsgs = container.querySelectorAll(".chat-msg.user .msg-delivery-status");
+  const el = userMsgs.length ? userMsgs[userMsgs.length - 1] : null;
+  if (!el) return;
+  // Map processing to delivered (both checks green)
+  const mapped = status === "processing" ? "delivered" : status;
+  // Only allow forward progression
+  const order = ["sending", "received", "delivered"];
+  const cur = order.indexOf(el.dataset.status);
+  const next = order.indexOf(mapped);
+  if (next > cur) {
+    el.dataset.status = mapped;
+  }
+}
+
+// Legacy — kept for any remaining callers
+function chatSetMsgStatusFloat(status) {
+  chatUpdateMsgStatus(status);
+}
+
+/** Stamp a timestamp onto an already-rendered message element (used when assistant stream completes). */
+function chatStampMessageTime(el, ts) {
+  if (!el || !ts) return;
+  const timeStr = chatMsgTime(ts);
+  if (!timeStr) return;
+  let tsEl = el.querySelector(".chat-msg-ts");
+  if (!tsEl) {
+    tsEl = document.createElement("div");
+    tsEl.className = "chat-msg-ts";
+    el.appendChild(tsEl);
+  }
+  tsEl.textContent = timeStr;
+}
+
+/**
+ * Build a short human-readable description from tool name + params object.
+ */
+function chatToolDescription(name, params) {
+  if (!params || typeof params !== "object") return "";
+  const p = params;
+  // Normalize tool name to lowercase for matching (handles PascalCase and snake_case)
+  const n = (name || "").toLowerCase().replace(/_/g, "");
+  switch (n) {
+    case "read":
+    case "readfile":
+      return p.file_path || p.path || "";
+    case "write":
+    case "writefile":
+      return p.file_path || p.path || "";
+    case "edit":
+    case "editfile":
+      return p.file_path || p.path || "";
+    case "glob":
+    case "listfiles":
+      return p.pattern || "";
+    case "grep":
+    case "search":
+    case "searchfiles":
+      return p.pattern || p.query || "";
+    case "bash":
+    case "shell":
+    case "runcommand": {
+      const cmd = p.command || p.cmd || "";
+      return cmd.length > 80 ? cmd.slice(0, 77) + "..." : cmd;
+    }
+    case "websearch":
+      return p.query || "";
+    case "webfetch":
+      return p.url || "";
+    case "enterplanmode":
+      return "Entering planning mode";
+    case "exitplanmode":
+      return "Plan ready for review";
+    default: {
+      // Try to find a single short string value to display
+      const vals = Object.values(p).filter((v) => typeof v === "string" && v.length < 100);
+      return vals.length === 1 ? vals[0] : "";
+    }
+  }
+}
+
+// --- Tool grouping helpers ---
+
+function chatGroupItemLabel(toolName, count) {
+  const n = (toolName || "").toLowerCase().replace(/_/g, "");
+  switch (n) {
+    case "read": case "readfile": return count + " file" + (count !== 1 ? "s" : "");
+    case "write": case "writefile": return count + " file" + (count !== 1 ? "s" : "");
+    case "edit": case "editfile": return count + " edit" + (count !== 1 ? "s" : "");
+    case "bash": case "shell": case "runcommand": return count + " command" + (count !== 1 ? "s" : "");
+    case "grep": case "search": case "searchfiles": return count + " search" + (count !== 1 ? "es" : "");
+    case "glob": case "listfiles": return count + " pattern" + (count !== 1 ? "s" : "");
+    default: return count + " call" + (count !== 1 ? "s" : "");
+  }
+}
+
+function chatIsGroupableTool(toolName) {
+  if (!toolName) return false;
+  if (/^(ExitPlanMode|EnterPlanMode)$/i.test(toolName)) return false;
+  if (/ask.*question|askfollowup|ask_followup/i.test(toolName)) return false;
+  return true;
+}
+
+function chatCreateToolGroup(toolName, isRunning) {
+  const group = document.createElement("details");
+  group.open = true;
+  group.className = `chat-tool chat-tool-group${isRunning ? " running" : ""}`;
+  group.dataset.toolName = toolName;
+  group.addEventListener("toggle", () => {
+    if (!group.open && chatToolDisplayMode === "expanded") group.open = true;
+  });
+
+  const summary = document.createElement("summary");
+  summary.className = "chat-tool-summary";
+  summary.innerHTML =
+    (isRunning ? `<span class="chat-tool-spinner"></span>` : "") +
+    `<span class="chat-tool-name">${chatEscHtml(toolName)}</span>` +
+    `<span class="chat-tool-group-count"></span>`;
+  group.appendChild(summary);
+
+  const itemsDiv = document.createElement("div");
+  itemsDiv.className = "chat-tool-group-items";
+  group.appendChild(itemsDiv);
+
+  return group;
+}
+
+function chatMakeSubItem(toolName, toolId, params, isRunning, status, output) {
+  const isError = status === "error";
+  const readonly = isReadOnlyTool(toolName, params);
+  const sub = document.createElement("details");
+  sub.className = `chat-tool-sub${isRunning ? " running" : (isError ? " error" : " success")}`;
+  sub.dataset.toolId = toolId || "";
+  sub.dataset.toolName = toolName || "";
+  sub.dataset.toolReadonly = readonly ? "true" : "false";
+  if (!isRunning && chatToolDisplayMode === "expanded") sub.open = true;
+  if (chatToolDisplayMode === "hidden" && !isRunning) {
+    sub.style.display = "none";
+  }
+
+  const desc = chatToolDescription(toolName, params);
+  const summary = document.createElement("summary");
+  summary.className = "chat-tool-sub-summary";
+  if (isRunning) {
+    summary.innerHTML = `<span class="chat-tool-spinner"></span>`;
+  } else {
+    const iconChar = isError ? "\u2717" : "\u2713";
+    summary.innerHTML = `<span class="chat-tool-icon ${isError ? "error" : "success"}">${iconChar}</span>`;
+  }
+  summary.innerHTML += `<span class="chat-tool-sub-desc">${chatEscHtml(desc || toolName || "")}</span>`;
+  sub.appendChild(summary);
+  if (isRunning) chatStartPillTimer(sub, summary);
+
+  if (!isRunning && !isError && /^edit$/i.test(toolName) && params && params.old_string != null) {
+    chatRenderEditDiffFromParams(sub, params);
+  } else {
+    const paramsStr = typeof params === "object" ? JSON.stringify(params, null, 2) : String(params || "");
+    if (paramsStr && paramsStr !== "{}") {
+      const sec = document.createElement("div");
+      sec.className = "chat-tool-section";
+      sec.innerHTML = `<div class="chat-tool-section-label">Parameters</div>`;
+      const pre = document.createElement("pre");
+      pre.textContent = paramsStr;
+      sec.appendChild(pre);
+      sub.appendChild(sec);
+    }
+  }
+
+  if (!isRunning) {
+    const trimmed = (output || "").trim();
+    if (trimmed && !(!isError && /^edit$/i.test(toolName) && params?.old_string != null)) {
+      const sec = document.createElement("div");
+      sec.className = "chat-tool-section";
+      sec.innerHTML = `<div class="chat-tool-section-label">${isError ? "Error" : "Output"}</div>`;
+      const pre = document.createElement("pre");
+      pre.textContent = trimmed.length > 5000 ? trimmed.slice(0, 5000) + "\n...(truncated)" : trimmed;
+      sec.appendChild(pre);
+      sub.appendChild(sec);
+    }
+  }
+
+  return sub;
+}
+
+function chatUpdateGroupSummary(groupEl) {
+  const items = groupEl.querySelectorAll(":scope > .chat-tool-group-items > .chat-tool-sub");
+  const total = items.length;
+  let errors = 0, running = 0;
+  items.forEach(item => {
+    if (item.classList.contains("running")) running++;
+    else if (item.classList.contains("error")) errors++;
+  });
+
+  const toolName = groupEl.dataset.toolName;
+  const countEl = groupEl.querySelector(":scope > .chat-tool-summary .chat-tool-group-count");
+  if (countEl) {
+    let text = chatGroupItemLabel(toolName, total);
+    if (errors > 0 && running === 0) text += ` (${errors} error${errors > 1 ? "s" : ""})`;
+    countEl.textContent = text;
+  }
+
+  const summary = groupEl.querySelector(":scope > .chat-tool-summary");
+  if (running === 0) {
+    groupEl.classList.remove("running");
+    const isAllError = errors > 0 && errors === total;
+    groupEl.classList.add(isAllError ? "error" : "success");
+    const spinner = summary?.querySelector(".chat-tool-spinner");
+    if (spinner) {
+      const icon = document.createElement("span");
+      icon.className = `chat-tool-icon ${isAllError ? "error" : "success"}`;
+      icon.textContent = isAllError ? "\u2717" : "\u2713";
+      spinner.replaceWith(icon);
+    } else if (summary && !summary.querySelector(".chat-tool-icon")) {
+      const icon = document.createElement("span");
+      icon.className = `chat-tool-icon ${isAllError ? "error" : "success"}`;
+      icon.textContent = isAllError ? "\u2717" : "\u2713";
+      const nameEl = summary.querySelector(".chat-tool-name");
+      if (nameEl) summary.insertBefore(icon, nameEl);
+      else summary.prepend(icon);
+    }
+  }
+}
+
+function chatUpdateSubItemResult(subItem, status, output, error) {
+  const isError = status === "error" || !!error;
+  chatStopPillTimer(subItem);
+  subItem.classList.remove("running");
+  subItem.classList.add(isError ? "error" : "success");
+  if (chatToolDisplayMode === "expanded") {
+    subItem.open = true;
+  } else {
+    subItem.open = false;
+  }
+
+  const summary = subItem.querySelector(".chat-tool-sub-summary");
+  const spinner = summary?.querySelector(".chat-tool-spinner");
+  if (spinner) {
+    const icon = document.createElement("span");
+    icon.className = `chat-tool-icon ${isError ? "error" : "success"}`;
+    icon.textContent = isError ? "\u2717" : "\u2713";
+    spinner.replaceWith(icon);
+  }
+
+  const toolName = subItem.dataset.toolName || "";
+
+  if (!isError && /^edit$/i.test(toolName)) {
+    chatRenderEditDiff(subItem);
+  }
+
+  const trimmed = (error || output || "").trim();
+  if (trimmed && !(!isError && /^edit$/i.test(toolName))) {
+    const sec = document.createElement("div");
+    sec.className = "chat-tool-section";
+    sec.innerHTML = `<div class="chat-tool-section-label">${isError ? "Error" : "Output"}</div>`;
+    const pre = document.createElement("pre");
+    pre.textContent = trimmed.length > 5000 ? trimmed.slice(0, 5000) + "\n...(truncated)" : trimmed;
+    sec.appendChild(pre);
+    subItem.appendChild(sec);
+  }
+
+  const groupEl = subItem.closest(".chat-tool-group");
+  if (groupEl) chatUpdateGroupSummary(groupEl);
+}
+
+function chatShowApprovalPrompt(event) {
+  const container = document.getElementById("chat-messages");
+  const div = document.createElement("div");
+  div.className = "chat-approval-prompt";
+  const params = event.parameters || {};
+  const paramsStr = JSON.stringify(params, null, 2);
+  div.innerHTML = `
+    <div class="chat-approval-header">
+      <span class="chat-approval-icon">🔧</span>
+      <span class="chat-approval-tool">${chatEscHtml(event.tool_name || "tool")}</span>
+    </div>
+    <pre class="chat-approval-params">${chatEscHtml(paramsStr)}</pre>
+    <div class="chat-approval-buttons">
+      <button class="btn primary chat-approve-btn">Approve</button>
+      <button class="btn chat-deny-btn">Deny</button>
+    </div>`;
+  const callId = event.call_id;
+  div.querySelector(".chat-approve-btn").onclick = () => {
+    div.querySelectorAll("button").forEach((b) => { b.disabled = true; });
+    div.querySelector(".chat-approval-buttons").innerHTML = '<span class="chat-approval-resolved">✓ Approved</span>';
+    chatConfirmTool(callId, "proceed_once");
+  };
+  div.querySelector(".chat-deny-btn").onclick = () => {
+    div.querySelectorAll("button").forEach((b) => { b.disabled = true; });
+    div.querySelector(".chat-approval-buttons").innerHTML = '<span class="chat-approval-resolved denied">✗ Denied</span>';
+    chatConfirmTool(callId, "cancel");
+  };
+  container.appendChild(div);
+  container.scrollTop = container.scrollHeight;
+}
+
+function chatConfirmTool(callId, outcome) {
+  fetch(`/api/gemini/${encodeURIComponent(chatWorkspace)}/confirm`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ callId, outcome }),
+  }).catch((e) => glog("confirmTool error:", e));
+}
+
+/**
+ * Render a completed tool pill directly from history data (tool_use + tool_result combined).
+ * Creates the pill in its final open state without the two-step running→done dance.
+ */
+/**
+ * Render a completed AskUserQuestion in history.
+ * Shows the question text, option buttons (disabled, with selected one marked), and status.
+ */
+function chatRenderCompletedQuestion(params, output, status) {
+  const container = document.getElementById("chat-messages");
+  const div = document.createElement("div");
+  div.className = "chat-permission-request";
+  if (status === "error") div.classList.add("chat-question-error");
+
+  const headerEl = document.createElement("div");
+  headerEl.className = "chat-permission-header";
+  headerEl.textContent = status === "error" ? "Question (failed)" : "Question";
+  div.appendChild(headerEl);
+
+  // Parse selected answers from output: "User has answered your questions: "Q"="A", "Q2"="B". You can..."
+  const selectedAnswers = {};
+  const answerMatches = (output || "").matchAll(/"([^"]+)"="([^"]+)"/g);
+  for (const m of answerMatches) selectedAnswers[m[1]] = m[2];
+
+  const questions = params.questions || [{ question: params.question || "", options: params.options || [] }];
+
+  questions.forEach((q) => {
+    const section = document.createElement("div");
+    section.className = "chat-question-section";
+
+    if (q.question) {
+      const qEl = document.createElement("div");
+      qEl.className = "chat-permission-question";
+      qEl.textContent = q.question;
+      section.appendChild(qEl);
+    }
+
+    const btns = document.createElement("div");
+    btns.className = "chat-permission-buttons";
+    const rawOptions = q.options || [];
+
+    if (rawOptions.length) {
+      rawOptions.forEach((opt) => {
+        const btn = document.createElement("button");
+        const label = typeof opt === "object" ? (opt.label || String(opt)) : String(opt);
+        const isSelected = selectedAnswers[q.question] === label || selectedAnswers[q.header] === label;
+        btn.className = "btn" + (isSelected ? " selected" : " greyed");
+        btn.textContent = label + (isSelected ? " \u2713" : "");
+        btn.disabled = true;
+        if (typeof opt === "object" && opt.description) btn.title = opt.description;
+        btns.appendChild(btn);
+      });
+    } else if (Object.keys(selectedAnswers).length) {
+      // No options defined — show the answer as text
+      const key = q.question || q.header || Object.keys(selectedAnswers)[0];
+      const answer = selectedAnswers[key];
+      if (answer) {
+        const ansEl = document.createElement("div");
+        ansEl.className = "chat-permission-question";
+        ansEl.style.fontStyle = "italic";
+        ansEl.textContent = answer;
+        section.appendChild(ansEl);
+      }
+    }
+
+    if (btns.children.length) section.appendChild(btns);
+    div.appendChild(section);
+  });
+
+  container.appendChild(div);
+}
+
+function chatRenderCompletedTool(toolName, toolId, params, status, output) {
+  const container = document.getElementById("chat-messages");
+
+  // Check if we can group with previous element
+  if (chatIsGroupableTool(toolName)) {
+    const lastEl = container.lastElementChild;
+    if (lastEl && lastEl.dataset.toolName === toolName) {
+      if (lastEl.classList.contains("chat-tool-group")) {
+        const itemsDiv = lastEl.querySelector(".chat-tool-group-items");
+        itemsDiv.appendChild(chatMakeSubItem(toolName, toolId, params, false, status, output));
+        chatUpdateGroupSummary(lastEl);
+        chatScrollToBottom();
+        return;
+      }
+      if (lastEl.classList.contains("chat-tool") && !lastEl.classList.contains("chat-tool-group")) {
+        const group = chatCreateToolGroup(toolName, false);
+        const itemsDiv = group.querySelector(".chat-tool-group-items");
+        itemsDiv.appendChild(chatMakeSubItem(
+          lastEl.dataset.toolName, lastEl.dataset.toolId,
+          lastEl._toolParams || {}, false, lastEl._toolStatus || "success", lastEl._toolOutput || ""
+        ));
+        itemsDiv.appendChild(chatMakeSubItem(toolName, toolId, params, false, status, output));
+        chatUpdateGroupSummary(group);
+        container.replaceChild(group, lastEl);
+        chatScrollToBottom();
+        return;
+      }
+    }
+  }
+
+  const isError = status === "error";
+  const readonly = isReadOnlyTool(toolName, params);
+  const pill = document.createElement("details");
+  pill.open = chatInitialPillOpen();
+  pill.className = `chat-tool ${isError ? "error" : "success"}`;
+  pill.dataset.toolId = toolId || "";
+  pill.dataset.toolName = toolName || "";
+  pill.dataset.toolReadonly = readonly ? "true" : "false";
+  pill._toolParams = params;
+  pill._toolOutput = output || "";
+  pill._toolStatus = status;
+  pill.addEventListener("toggle", () => {
+    if (!pill.open && chatToolDisplayMode === "expanded") pill.open = true;
+  });
+
+  if (!chatShouldShowTool(toolName, params)) {
+    pill.style.display = "none";
+  }
+
+  const desc = chatToolDescription(toolName, params);
+  const summary = document.createElement("summary");
+  summary.className = "chat-tool-summary";
+  const icon = isError ? "\u2717" : "\u2713";
+  summary.innerHTML =
+    `<span class="chat-tool-icon ${isError ? "error" : "success"}">${icon}</span>` +
+    `<span class="chat-tool-name">${chatEscHtml(toolName || "tool")}</span>` +
+    (desc ? `<span class="chat-tool-desc">${chatEscHtml(desc)}</span>` : "");
+  pill.appendChild(summary);
+
+  // Edit tool: show diff instead of raw params
+  if (!isError && /^edit$/i.test(toolName) && params && params.old_string != null) {
+    chatRenderEditDiffFromParams(pill, params);
+  } else {
+    const paramsStr = typeof params === "object" ? JSON.stringify(params, null, 2) : String(params || "");
+    if (paramsStr && paramsStr !== "{}") {
+      const sec = document.createElement("div");
+      sec.className = "chat-tool-section";
+      sec.innerHTML = `<div class="chat-tool-section-label">Parameters</div>`;
+      const pre = document.createElement("pre");
+      pre.textContent = paramsStr;
+      sec.appendChild(pre);
+      pill.appendChild(sec);
+    }
+  }
+
+  const trimmed = (output || "").trim();
+  // Skip output for successful Edit diffs — the diff itself is the output
+  if (trimmed && !(!isError && /^edit$/i.test(toolName) && params?.old_string != null)) {
+    const sec = document.createElement("div");
+    sec.className = "chat-tool-section";
+    sec.innerHTML = `<div class="chat-tool-section-label">${isError ? "Error" : "Output"}</div>`;
+    const pre = document.createElement("pre");
+    pre.textContent = trimmed.length > 5000 ? trimmed.slice(0, 5000) + "\n...(truncated)" : trimmed;
+    sec.appendChild(pre);
+    pill.appendChild(sec);
+  }
+
+  container.appendChild(pill);
+  chatScrollToBottom();
+}
+
+/** Start a client-side elapsed timer on a running pill/sub-item element. */
+function chatStartPillTimer(el, summaryEl) {
+  const timerEl = document.createElement("span");
+  timerEl.className = "chat-tool-timer";
+  timerEl.textContent = " 0s";
+  if (summaryEl) summaryEl.appendChild(timerEl);
+  el._timerStart = Date.now();
+  el._timerInterval = setInterval(() => {
+    const elapsed = Math.round((Date.now() - el._timerStart) / 1000);
+    timerEl.textContent = ` ${elapsed}s`;
+  }, 1000);
+}
+
+/** Stop the client-side elapsed timer on a pill/sub-item element. */
+function chatStopPillTimer(el) {
+  if (el._timerInterval) {
+    clearInterval(el._timerInterval);
+    el._timerInterval = null;
+  }
+}
+
+/**
+ * Append a tool-use pill. Starts in a "running" state with a spinner.
+ * Shows tool name + short description inline.
+ * Full params are always visible in the body.
+ */
+function chatAppendToolUse(toolName, toolId, params) {
+  const container = document.getElementById("chat-messages");
+
+  // Check if we can group with previous element
+  if (chatIsGroupableTool(toolName)) {
+    const lastEl = container.lastElementChild;
+    if (lastEl && lastEl.dataset.toolName === toolName) {
+      if (lastEl.classList.contains("chat-tool-group")) {
+        const itemsDiv = lastEl.querySelector(".chat-tool-group-items");
+        itemsDiv.appendChild(chatMakeSubItem(toolName, toolId, params, true, null, null));
+        chatUpdateGroupSummary(lastEl);
+        chatScrollToBottom();
+        return;
+      }
+      if (lastEl.classList.contains("chat-tool") && !lastEl.classList.contains("chat-tool-group")) {
+        const group = chatCreateToolGroup(toolName, true);
+        const itemsDiv = group.querySelector(".chat-tool-group-items");
+        const existingRunning = lastEl.classList.contains("running");
+        const existingStatus = existingRunning ? null : (lastEl.classList.contains("error") ? "error" : "success");
+        itemsDiv.appendChild(chatMakeSubItem(
+          lastEl.dataset.toolName, lastEl.dataset.toolId,
+          lastEl._toolParams || {}, existingRunning, existingStatus,
+          existingRunning ? null : (lastEl._toolOutput || "")
+        ));
+        itemsDiv.appendChild(chatMakeSubItem(toolName, toolId, params, true, null, null));
+        chatUpdateGroupSummary(group);
+        chatStopPillTimer(lastEl);
+        container.replaceChild(group, lastEl);
+        chatScrollToBottom();
+        return;
+      }
+    }
+  }
+
+  const readonly = isReadOnlyTool(toolName, params);
+  const pill = document.createElement("details");
+  pill.open = true; // Running tools always start open
+  pill.className = "chat-tool running";
+  pill.dataset.toolId = toolId;
+  pill.dataset.toolName = toolName;
+  pill.dataset.toolReadonly = readonly ? "true" : "false";
+  pill._toolParams = params;
+  pill.addEventListener("toggle", () => { if (pill.classList.contains("running") && !pill.open) pill.open = true; });
+
+  if (!chatShouldShowTool(toolName, params)) {
+    pill.style.display = "none";
+  }
+
+  const desc = chatToolDescription(toolName, params);
+  const summary = document.createElement("summary");
+  summary.className = "chat-tool-summary";
+  summary.innerHTML =
+    `<span class="chat-tool-spinner"></span>` +
+    `<span class="chat-tool-name">${chatEscHtml(toolName)}</span>` +
+    (desc ? `<span class="chat-tool-desc">${chatEscHtml(desc)}</span>` : "");
+  pill.appendChild(summary);
+  chatStartPillTimer(pill, summary);
+
+  const paramsStr = typeof params === "object" ? JSON.stringify(params, null, 2) : String(params || "");
+  if (paramsStr && paramsStr !== "{}") {
+    const sec = document.createElement("div");
+    sec.className = "chat-tool-section";
+    sec.innerHTML = `<div class="chat-tool-section-label">Parameters</div>`;
+    const pre = document.createElement("pre");
+    pre.textContent = paramsStr;
+    sec.appendChild(pre);
+    pill.appendChild(sec);
+  }
+
+  container.appendChild(pill);
+  chatScrollToBottom();
+}
+
+/**
+ * Update a tool pill with its result and mark it done.
+ * Matches by tool_id. Output is always visible in the body.
+ */
+function chatUpdateToolResult(toolId, status, output, error) {
+  const container = document.getElementById("chat-messages");
+
+  // Check if tool is a sub-item in a group
+  if (toolId) {
+    const subItem = container.querySelector(`.chat-tool-group .chat-tool-sub[data-tool-id="${CSS.escape(toolId)}"]`);
+    if (subItem) {
+      chatUpdateSubItemResult(subItem, status, output, error);
+      chatScrollToBottom();
+      return;
+    }
+  }
+
+  // Find by tool_id first, fall back to last running pill
+  let pill = toolId
+    ? container.querySelector(`.chat-tool.running[data-tool-id="${CSS.escape(toolId)}"]`)
+    : null;
+  if (!pill) {
+    const running = container.querySelectorAll(".chat-tool.running");
+    pill = running.length ? running[running.length - 1] : null;
+  }
+
+  const isError = status === "error" || !!error;
+
+  if (pill) {
+    chatStopPillTimer(pill);
+    pill.classList.remove("running");
+    pill.classList.add(isError ? "error" : "success");
+    pill._toolOutput = (error || output || "");
+    pill._toolStatus = isError ? "error" : "success";
+
+    // Collapse when done unless in expanded mode
+    if (chatToolDisplayMode !== "expanded") {
+      pill.open = false;
+    }
+
+    // Replace spinner with status icon
+    const summaryEl = pill.querySelector(".chat-tool-summary");
+    if (summaryEl) {
+      const spinner = summaryEl.querySelector(".chat-tool-spinner");
+      if (spinner) {
+        const icon = document.createElement("span");
+        icon.className = isError ? "chat-tool-icon error" : "chat-tool-icon success";
+        icon.textContent = isError ? "\u2717" : "\u2713";
+        spinner.replaceWith(icon);
+      }
+    }
+
+    const toolName = pill.dataset.toolName || "";
+
+    // For Edit tool: replace raw params with a color diff
+    if (!isError && /^edit$/i.test(toolName)) {
+      chatRenderEditDiff(pill);
+    }
+
+    // Append output section (skip for Edit — the diff is the output)
+    const trimmed = (error || output || "").trim();
+    if (trimmed && !(!isError && /^edit$/i.test(toolName))) {
+      const section = document.createElement("div");
+      section.className = "chat-tool-section";
+      section.innerHTML = `<div class="chat-tool-section-label">${isError ? "Error" : "Output"}</div>`;
+      const pre = document.createElement("pre");
+      pre.textContent = trimmed.length > 5000 ? trimmed.slice(0, 5000) + "\n...(truncated)" : trimmed;
+      section.appendChild(pre);
+      pill.appendChild(section);
+    }
+  } else {
+    // No matching pill — standalone fallback
+    const pill2 = document.createElement("details");
+    pill2.open = chatInitialPillOpen();
+    pill2.className = `chat-tool ${isError ? "error" : "success"}`;
+    pill2.addEventListener("toggle", () => {
+      if (!pill2.open && chatToolDisplayMode === "expanded") pill2.open = true;
+    });
+    const summary = document.createElement("summary");
+    summary.className = "chat-tool-summary";
+    const icon = isError ? "\u2717" : "\u2713";
+    summary.innerHTML =
+      `<span class="chat-tool-icon ${isError ? "error" : "success"}">${icon}</span>` +
+      `<span class="chat-tool-name">${chatEscHtml(toolId || "tool")}</span>` +
+      `<span class="chat-tool-desc">(result)</span>`;
+    pill2.appendChild(summary);
+    const pre = document.createElement("pre");
+    pre.textContent = error || output || "";
+    pill2.appendChild(pre);
+    container.appendChild(pill2);
+  }
+
+  chatScrollToBottom();
+}
+
+/**
+ * Finalize any tool pills still in "running" state.
+ * Called on "done" — tool_result events are emitted before "done", so any
+ * pills still running at this point never received their result.
+ */
+function chatFinalizeOrphanedPills() {
+  const container = document.getElementById("chat-messages");
+  if (!container) return;
+  const running = container.querySelectorAll(".chat-tool.running");
+  if (!running.length) return;
+  glog(`finalizeOrphanedPills: ${running.length} orphaned pill(s)`);
+  for (const pill of running) {
+    chatStopPillTimer(pill);
+    pill.classList.remove("running");
+    pill.classList.add("success");
+    if (chatToolDisplayMode !== "expanded") pill.open = false;
+    const spinner = pill.querySelector(".chat-tool-spinner");
+    if (spinner) {
+      const icon = document.createElement("span");
+      icon.className = "chat-tool-icon success";
+      icon.textContent = "\u2713";
+      spinner.replaceWith(icon);
+    }
+  }
+}
+
+function chatEscHtml(str) {
+  const el = document.createElement("span");
+  el.textContent = str;
+  return el.innerHTML;
+}
+
+function chatAppendError(message) {
+  const container = document.getElementById("chat-messages");
+  const div = document.createElement("div");
+  div.className = "chat-msg error";
+  div.textContent = message;
+  container.appendChild(div);
+  chatScrollToBottom();
+}
+
+/**
+ * Render a color diff for an Edit tool pill.
+ * Extracts old_string/new_string from the pill's stored params and replaces
+ * the Parameters section with a unified diff view.
+ */
+function chatRenderEditDiff(pill) {
+  // Parse params from the pre element in the Parameters section
+  const paramSection = pill.querySelector(".chat-tool-section");
+  if (!paramSection) return;
+  const paramPre = paramSection.querySelector("pre");
+  if (!paramPre) return;
+  let params;
+  try { params = JSON.parse(paramPre.textContent); } catch { return; }
+
+  const oldStr = params.old_string || "";
+  const newStr = params.new_string || "";
+  const filePath = params.file_path || "";
+
+  // Replace the params section with a diff view
+  paramSection.innerHTML = "";
+  const label = document.createElement("div");
+  label.className = "chat-tool-section-label";
+  label.textContent = filePath || "Diff";
+  paramSection.appendChild(label);
+
+  const diffEl = document.createElement("pre");
+  diffEl.className = "chat-diff";
+
+  // Build simple unified diff lines
+  const oldLines = oldStr.split("\n");
+  const newLines = newStr.split("\n");
+
+  oldLines.forEach(line => {
+    const span = document.createElement("span");
+    span.className = "diff-removed";
+    span.textContent = "- " + line + "\n";
+    diffEl.appendChild(span);
+  });
+  newLines.forEach(line => {
+    const span = document.createElement("span");
+    span.className = "diff-added";
+    span.textContent = "+ " + line + "\n";
+    diffEl.appendChild(span);
+  });
+
+  paramSection.appendChild(diffEl);
+}
+
+/**
+ * Render a diff for Edit tool in completed tool history (non-live).
+ * Called from chatRenderCompletedTool when tool_name is Edit.
+ */
+function chatRenderEditDiffFromParams(pill, params) {
+  const oldStr = params.old_string || "";
+  const newStr = params.new_string || "";
+  const filePath = params.file_path || "";
+
+  const sec = document.createElement("div");
+  sec.className = "chat-tool-section";
+  const label = document.createElement("div");
+  label.className = "chat-tool-section-label";
+  label.textContent = filePath || "Diff";
+  sec.appendChild(label);
+
+  const diffEl = document.createElement("pre");
+  diffEl.className = "chat-diff";
+  (oldStr.split("\n")).forEach(line => {
+    const span = document.createElement("span");
+    span.className = "diff-removed";
+    span.textContent = "- " + line + "\n";
+    diffEl.appendChild(span);
+  });
+  (newStr.split("\n")).forEach(line => {
+    const span = document.createElement("span");
+    span.className = "diff-added";
+    span.textContent = "+ " + line + "\n";
+    diffEl.appendChild(span);
+  });
+  sec.appendChild(diffEl);
+  pill.appendChild(sec);
+}
+
+/** Render a collapsible thinking block (extended thinking / chain-of-thought). */
+function chatAppendThinkingBlock(content) {
+  const container = document.getElementById("chat-messages");
+  // Append to existing thinking block if one is open (streaming)
+  const existing = container.querySelector("details.chat-thinking-block:last-child");
+  if (existing && existing.open) {
+    const body = existing.querySelector(".chat-thinking-body");
+    if (body) {
+      body.textContent += content;
+      chatScrollToBottom();
+      return;
+    }
+  }
+  const details = document.createElement("details");
+  details.className = "chat-thinking-block";
+  const summary = document.createElement("summary");
+  summary.textContent = "Thinking\u2026";
+  details.appendChild(summary);
+  const body = document.createElement("div");
+  body.className = "chat-thinking-body";
+  body.textContent = content;
+  details.appendChild(body);
+  container.appendChild(details);
+  chatScrollToBottom();
+}
+
+/** Show a thin system note (compaction, permission mode change, etc.). */
+function chatAppendSystemNote(text) {
+  const container = document.getElementById("chat-messages");
+  const div = document.createElement("div");
+  div.className = "chat-system-note";
+  div.textContent = text;
+  container.appendChild(div);
+  chatScrollToBottom();
+}
+
+/** Show a background task card. */
+function chatAppendTaskCard(taskId, description, status) {
+  const container = document.getElementById("chat-messages");
+  const div = document.createElement("div");
+  div.className = "chat-task-card running";
+  div.dataset.taskId = taskId;
+  div.innerHTML =
+    `<span class="chat-task-status">\u21BB Running</span>` +
+    `<span class="chat-task-desc">${chatEscHtml(description)}</span>` +
+    `<div class="chat-task-detail"></div>`;
+  container.appendChild(div);
+  chatScrollToBottom();
+}
+
+/** Show cost/token/duration footer after a turn completes. */
+function chatShowResultFooter(stats, subtype, errors) {
+  if (!stats && !subtype) return;
+  const container = document.getElementById("chat-messages");
+
+  // Show error banner for non-success results
+  if (subtype && subtype !== "success") {
+    const errorDiv = document.createElement("div");
+    errorDiv.className = "chat-result-error";
+    if (subtype === "error_max_turns") {
+      errorDiv.textContent = "Claude reached the maximum number of turns" + (stats?.turns ? ` (${stats.turns})` : "");
+    } else if (subtype === "error_max_budget_usd") {
+      errorDiv.textContent = "Claude exceeded the budget limit" + (stats?.cost ? ` ($${stats.cost.toFixed(2)})` : "");
+    } else if (subtype === "error_during_execution") {
+      errorDiv.textContent = "Error during execution";
+      if (errors?.length) errorDiv.textContent += ": " + errors.map(e => e.message || e).join("; ");
+    } else if (subtype === "error_insufficient_context") {
+      errorDiv.textContent = "Claude ran out of context window";
+    } else if (subtype === "error_permission_denied") {
+      errorDiv.textContent = "Permission was denied";
+    } else if (subtype === "error_model_unavailable") {
+      errorDiv.textContent = "Model is currently unavailable";
+    } else if (subtype === "interrupted") {
+      errorDiv.textContent = "Turn was interrupted";
+      errorDiv.className = "chat-result-error interrupted";
+    } else {
+      errorDiv.textContent = "Turn ended: " + subtype;
+    }
+    container.appendChild(errorDiv);
+  }
+
+  // Show token/duration footer after a turn completes (no cost)
+  if (stats && (stats.total_tokens || stats.duration_ms)) {
+    const parts = [];
+    if (stats.total_tokens) parts.push(stats.total_tokens >= 1000 ? (stats.total_tokens / 1000).toFixed(1) + "k tokens" : stats.total_tokens + " tokens");
+    if (stats.duration_ms) parts.push((stats.duration_ms / 1000).toFixed(1) + "s");
+    if (parts.length) {
+      const footer = document.createElement("div");
+      footer.className = "chat-result-footer";
+      footer.textContent = parts.join(" \u00B7 ");
+      container.appendChild(footer);
+    }
+  }
+}
+
+/** Update the context remaining % in the input footer. */
+function chatUpdateCumulativeStats(cumulative) {
+  const el = document.getElementById("chat-cumulative-stats");
+  if (!el) return;
+  if (cumulative.context_remaining_pct != null && cumulative.last_input_tokens > 0) {
+    el.textContent = cumulative.context_remaining_pct + "% context remaining";
+  } else {
+    el.textContent = "";
+  }
+}
+
+function chatScrollToBottom() {
+  const container = document.getElementById("chat-messages");
+  if (container) {
+    container.scrollTop = container.scrollHeight;
+  }
+}
+
+function chatRenderMarkdown(text) {
+  if (typeof marked !== "undefined" && marked.parse) {
+    try {
+      return marked.parse(text);
+    } catch {
+      // Fall back to plain text
+    }
+  }
+  // Fallback: escape HTML and convert newlines
+  const el = document.createElement("span");
+  el.textContent = text;
+  return el.innerHTML.replace(/\n/g, "<br>");
+}
+
+// --- Auth UI ---
+
+// Active OAuth polling timer (so we can cancel it)
+let chatAuthPollTimer = null;
+
+function chatShowAuthPanel() {
+  const container = document.getElementById("chat-messages");
+  container.innerHTML = "";
+
+  // Hide workspace-scoped option when opened without a workspace (e.g. from auth dot)
+  const showWorkspaceScope = !!chatWorkspace;
+  const isClaude = chatActiveCli === "claude";
+
+  const panel = document.createElement("div");
+  panel.className = "chat-auth-panel";
+
+  if (isClaude) {
+    panel.innerHTML = `
+      <h3>Claude Authentication Required</h3>
+      <p>Choose how to authenticate with Claude CLI:</p>
+      <div class="chat-auth-options">
+        <div class="chat-auth-option">
+          <h4>Login via CLI</h4>
+          <p>Run <code>claude auth login</code> in your terminal to authenticate.</p>
+        </div>
+        <div class="chat-auth-option">
+          <h4>Use API Key</h4>
+          <p>Enter an <code>ANTHROPIC_API_KEY</code> from <a href="https://console.anthropic.com/settings/keys" target="_blank">Anthropic Console</a>.</p>
+          <div class="chat-auth-key-form">
+            <input type="password" id="chat-apikey-input" placeholder="Paste API key..." />
+            ${showWorkspaceScope ? `
+            <div class="chat-auth-key-scope">
+              <label><input type="radio" name="chat-key-scope" value="global" checked /> Global (all workspaces)</label>
+              <label><input type="radio" name="chat-key-scope" value="workspace" /> This workspace only</label>
+            </div>
+            ` : ""}
+            <button class="btn primary" onclick="chatSaveApiKey()">Save Key</button>
+          </div>
+        </div>
+      </div>
+    `;
+  } else {
+    panel.innerHTML = `
+      <h3>Gemini Authentication Required</h3>
+      <p>Choose how to authenticate with Gemini CLI:</p>
+      <div class="chat-auth-options">
+        <div class="chat-auth-option">
+          <h4>Login with Google</h4>
+          <p>Opens your browser to complete the Google OAuth flow.</p>
+          <button class="btn primary" id="chat-oauth-btn" onclick="chatStartOAuthLogin()">Login with Google</button>
+          <div id="chat-oauth-status" class="chat-auth-status hidden"></div>
+        </div>
+        <div class="chat-auth-option">
+          <h4>Use API Key</h4>
+          <p>Enter a <code>GEMINI_API_KEY</code> from <a href="https://aistudio.google.com/apikey" target="_blank">Google AI Studio</a>.</p>
+          <div class="chat-auth-key-form">
+            <input type="password" id="chat-apikey-input" placeholder="Paste API key..." />
+            ${showWorkspaceScope ? `
+            <div class="chat-auth-key-scope">
+              <label><input type="radio" name="chat-key-scope" value="global" checked /> Global (all workspaces)</label>
+              <label><input type="radio" name="chat-key-scope" value="workspace" /> This workspace only</label>
+            </div>
+            ` : ""}
+            <button class="btn primary" onclick="chatSaveApiKey()">Save Key</button>
+          </div>
+        </div>
+      </div>
+    `;
+  }
+  container.appendChild(panel);
+}
+
+async function chatStartOAuthLogin() {
+  const btn = document.getElementById("chat-oauth-btn");
+  const status = document.getElementById("chat-oauth-status");
+
+  // Disable button, show waiting state
+  if (btn) btn.disabled = true;
+  if (status) {
+    status.classList.remove("hidden");
+    status.innerHTML = '<span class="chat-auth-spinner"></span> Opening browser...';
+  }
+
+  try {
+    const res = await fetch("/api/gemini/auth/login", { method: "POST" });
+    const data = await res.json();
+
+    if (!res.ok) throw new Error(data.error || "Failed to start login");
+
+    if (data.alreadyAuthenticated) {
+      // Already logged in — go straight to chat
+      if (chatWorkspace) {
+        chatShowChat();
+      } else {
+        closeGeminiChat();
+        if (typeof refresh === "function") refresh();
+      }
+      return;
+    }
+
+    // Browser should be open now — poll for auth completion
+    if (status) {
+      status.innerHTML = '<span class="chat-auth-spinner"></span> Waiting for authentication to complete...';
+    }
+
+    chatPollAuthCompletion();
+
+  } catch (err) {
+    if (btn) btn.disabled = false;
+    if (status) {
+      status.classList.remove("hidden");
+      status.innerHTML = `Failed to open login. Try running <code>gemini</code> in your terminal to authenticate manually.`;
+    }
+  }
+}
+
+function chatPollAuthCompletion() {
+  // Clear any existing poll
+  if (chatAuthPollTimer) clearInterval(chatAuthPollTimer);
+
+  let elapsed = 0;
+  const interval = 2000;
+  const timeout = 5 * 60 * 1000; // 5 min
+
+  chatAuthPollTimer = setInterval(async () => {
+    elapsed += interval;
+
+    if (elapsed >= timeout) {
+      clearInterval(chatAuthPollTimer);
+      chatAuthPollTimer = null;
+      const status = document.getElementById("chat-oauth-status");
+      const btn = document.getElementById("chat-oauth-btn");
+      if (status) status.innerHTML = `Timed out. Try again, or run <code>gemini</code> in your terminal to authenticate manually.`;
+      if (btn) btn.disabled = false;
+      return;
+    }
+
+    try {
+      const res = await fetch("/api/gemini/auth/recheck", { method: "POST" });
+      const data = await res.json();
+
+      if (data.loggedIn) {
+        clearInterval(chatAuthPollTimer);
+        chatAuthPollTimer = null;
+
+        if (chatWorkspace) {
+          chatShowChat();
+        } else {
+          // Opened from auth dot with no workspace — just close and refresh dashboard
+          closeGeminiChat();
+          if (typeof refresh === "function") refresh();
+        }
+      }
+    } catch {
+      // Network error — keep polling
+    }
+  }, interval);
+}
+
+async function chatSaveApiKey() {
+  const input = document.getElementById("chat-apikey-input");
+  const key = input ? input.value.trim() : "";
+  if (!key) return;
+
+  const scope = document.querySelector('input[name="chat-key-scope"]:checked');
+  const isWorkspace = scope && scope.value === "workspace";
+
+  try {
+    const body = { apiKey: key };
+    if (isWorkspace) body.workspace = chatWorkspace;
+
+    const keyEndpoint = chatActiveCli === "claude" ? "/api/claude-chat/apikey" : "/api/gemini/apikey";
+    const res = await fetch(keyEndpoint, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || "Failed to save key");
+
+    // Key saved — refresh models (new key may unlock different models) and switch to chat
+    chatRefreshModels();
+    chatShowChat();
+  } catch (err) {
+    chatAppendError("Failed to save API key: " + err.message);
+  }
+}
+
+// Stop any in-progress stream-poll and remove the waiting indicator.
+function chatStopStreamPoll() {
+  if (chatStreamPollTimer) {
+    clearInterval(chatStreamPollTimer);
+    chatStreamPollTimer = null;
+  }
+  chatRemoveThinking();
+}
+
+// Show "Waiting for response…" dots and poll history every 2 s until the
+// in-flight assistant reply arrives (or the server says streaming is done).
+/**
+ * After a server restart/crash, check if new history entries appeared while
+ * we were disconnected (written by recoverStreams) and render them.
+ */
+async function chatRenderRecoveredContent() {
+  const ws = chatWorkspace;
+  const sn = chatSessionNum;
+  const knownLen = (chatHistory[ws] || []).length;
+  // Always remove the "Connection lost" banner — we're reconnected regardless of content
+  const container = document.getElementById("chat-messages");
+  const lastEl = container?.lastElementChild;
+  if (lastEl?.classList.contains("chat-error")) lastEl.remove();
+  // Give the server a moment to finish recovery before fetching
+  await new Promise(r => setTimeout(r, 600));
+  try {
+    const history = await chatFetchHistory(ws, sn);
+    const newMsgs = history.slice(knownLen);
+    if (newMsgs.length === 0) {
+      glog("recovery-check: no new content");
+      return;
+    }
+    glog(`recovery-check: rendering ${newMsgs.length} recovered message(s)`);
+
+    const pendingToolUses = new Map();
+    for (const msg of newMsgs) {
+      if (msg.role === "tool_use") {
+        try { const d = JSON.parse(msg.content); pendingToolUses.set(d.tool_id, d); } catch {}
+      } else if (msg.role === "tool_result") {
+        try {
+          const d = JSON.parse(msg.content);
+          const tu = pendingToolUses.get(d.tool_id);
+          if (tu) pendingToolUses.delete(d.tool_id);
+          const tName = tu ? tu.tool_name : (d.tool_name || "tool");
+          if (/ask.*question/i.test(tName)) {
+            chatRenderCompletedQuestion(tu ? tu.parameters : {}, d.output || "", d.status);
+          } else {
+            chatRenderCompletedTool(tName, d.tool_id, tu ? tu.parameters : {}, d.status, d.output);
+          }
+        } catch {}
+      } else {
+        chatAppendMessage(msg.role, msg.content, false, null, msg.ts, msg.sender, msg.role === "user" ? "processing" : undefined);
+      }
+    }
+    for (const tu of pendingToolUses.values()) chatAppendToolUse(tu.tool_name, tu.tool_id, tu.parameters);
+    chatHistory[ws] = history;
+    chatScrollToBottom();
+  } catch (e) {
+    glog("recovery-check: error", e.message);
+  }
+}
+
+function chatStartStreamPoll(historyLengthAtOpen) {
+  chatStopStreamPoll();
+  chatShowThinking();
+
+  const ws = chatWorkspace;
+  const sn = chatSessionNum;
+
+  // Immediately show partial content so the user sees what was generated before they left
+  fetch(`/api/gemini/stream-partial/${encodeURIComponent(ws)}`)
+    .then(r => r.ok ? r.json() : null)
+    .then(data => {
+      if (!data || !data.text || chatWorkspace !== ws) return;
+      chatRemoveThinking();
+      chatPartialMsgEl = chatAppendMessage("assistant", data.text, true, null, null);
+      chatShowThinking();
+    })
+    .catch(() => {});
+
+  chatStreamPollTimer = setInterval(async () => {
+    try {
+      // Fetch history and latest partial content in parallel
+      const [history, partialData] = await Promise.all([
+        chatFetchHistory(ws, sn),
+        fetch(`/api/gemini/stream-partial/${encodeURIComponent(ws)}`).then(r => r.ok ? r.json() : null).catch(() => null),
+      ]);
+
+      // Keep partial bubble in sync with what's been generated so far
+      if (partialData && partialData.text) {
+        if (chatPartialMsgEl) {
+          const mdEl = chatPartialMsgEl.querySelector(".md-content");
+          if (mdEl) {
+            mdEl.innerHTML = chatRenderMarkdown(partialData.text);
+            chatScrollToBottom();
+          }
+        } else if (chatWorkspace === ws) {
+          chatRemoveThinking();
+          chatPartialMsgEl = chatAppendMessage("assistant", partialData.text, true, null, null);
+          chatShowThinking();
+        }
+      }
+
+      if (history.length > historyLengthAtOpen) {
+        chatStopStreamPoll();
+        // Remove the partial bubble — render fresh from server history
+        if (chatPartialMsgEl) { chatPartialMsgEl.remove(); chatPartialMsgEl = null; }
+        const newMsgs = history.slice(historyLengthAtOpen);
+        const container = document.getElementById("chat-messages");
+        const pendingToolUses = new Map();
+        for (const msg of newMsgs) {
+          if (msg.role === "tool_use") {
+            try {
+              const d = JSON.parse(msg.content);
+              pendingToolUses.set(d.tool_id, d);
+            } catch { /* ignore */ }
+          } else if (msg.role === "tool_result") {
+            try {
+              const d = JSON.parse(msg.content);
+              const tu = d.tool_id ? pendingToolUses.get(d.tool_id) : null;
+              if (tu) pendingToolUses.delete(d.tool_id);
+              const tName = tu ? tu.tool_name : (d.tool_name || "tool");
+              if (/ask.*question/i.test(tName)) {
+                chatRenderCompletedQuestion(tu ? tu.parameters : {}, d.output || "", d.status);
+              } else {
+                chatRenderCompletedTool(tName, d.tool_id, tu ? tu.parameters : {}, d.status, d.output);
+              }
+            } catch { /* ignore */ }
+          } else {
+            chatAppendMessage(msg.role, msg.content, false, null, msg.ts, msg.sender);
+          }
+        }
+        for (const tu of pendingToolUses.values()) {
+          chatAppendToolUse(tu.tool_name, tu.tool_id, tu.parameters);
+        }
+        chatSetStreaming(false);
+        container.scrollTop = container.scrollHeight;
+        return;
+      }
+      // Also bail if the server says streaming stopped (e.g. error or done)
+      const wsRes = await fetch(`/api/workspace-state/${encodeURIComponent(ws)}`);
+      const wsState = await wsRes.json();
+      if (!wsState.streaming) {
+        chatStopStreamPoll();
+        // Leave partial content visible if no new history — something ended without persisting
+        if (chatPartialMsgEl) {
+          chatPartialMsgEl.classList.remove("chat-streaming");
+          chatPartialMsgEl = null;
+        }
+        chatSetStreaming(false);
+      }
+    } catch { /* ignore transient poll errors */ }
+  }, 2000);
+}
+
+async function chatShowChat(wsState = null) {
+  glog("showChat: workspace=" + chatWorkspace + " session#" + chatSessionNum);
+  const workspaceAtCall = chatWorkspace;
+  const container = document.getElementById("chat-messages");
+  container.innerHTML = "";
+  // Checkmarks are now inline on user bubbles — no global reset needed
+
+  // Fetch sessions list, conversation history, and cumulative stats in parallel
+  if (chatWorkspace) {
+    const sessionNumAtCall = chatSessionNum;
+    const [, history] = await Promise.all([
+      chatFetchSessions(chatWorkspace),
+      chatFetchHistory(chatWorkspace, sessionNumAtCall),
+      chatFetchCumulativeStats(chatWorkspace),
+    ]);
+    // Bail out if workspace changed during async fetch (user switched workspaces)
+    if (chatWorkspace !== workspaceAtCall) {
+      glog("showChat: workspace changed during fetch, aborting stale render");
+      return;
+    }
+    const pendingToolUses = new Map();
+    for (const msg of history) {
+      if (msg.role === "tool_use") {
+        try {
+          const d = JSON.parse(msg.content);
+          pendingToolUses.set(d.tool_id, d);
+        } catch { /* ignore */ }
+      } else if (msg.role === "tool_result") {
+        try {
+          const d = JSON.parse(msg.content);
+          const tu = d.tool_id ? pendingToolUses.get(d.tool_id) : null;
+          if (tu) pendingToolUses.delete(d.tool_id);
+          const name = tu ? tu.tool_name : (d.tool_name || "tool");
+          // ExitPlanMode: render as plan card instead of generic tool pill
+          if (name === "ExitPlanMode") {
+            chatShowPlanApproval(d.tool_id, (tu ? tu.parameters : {}).plan || d.output || "", false);
+            const card = document.querySelector(".chat-plan-approval:last-child");
+            if (card) {
+              card.classList.add("approved");
+              card.querySelector(".chat-plan-header").textContent = "Plan";
+              card.querySelectorAll("button").forEach(b => { b.disabled = true; b.style.display = "none"; });
+            }
+          } else if (/ask.*question/i.test(name)) {
+            // AskUserQuestion: render completed question card with selected answer
+            chatRenderCompletedQuestion(tu ? tu.parameters : {}, d.output || "", d.status);
+          } else {
+            chatRenderCompletedTool(name, d.tool_id, tu ? tu.parameters : {}, d.status, d.output);
+          }
+        } catch { /* ignore */ }
+      } else {
+        // Render non-tool messages immediately but keep pendingToolUses alive —
+        // tool_result may arrive after intervening assistant/user messages due to
+        // batch boundaries from synthetic result events.
+        // History user messages show final "processing" checkmarks (already completed).
+        chatAppendMessage(msg.role, msg.content, false, null, msg.ts, msg.sender, msg.role === "user" ? "processing" : undefined);
+      }
+    }
+    // Flush any tool_uses that never got a result.
+    // If we're not currently streaming, these are orphaned/stale — render as completed.
+    // If we ARE streaming, they may still be in-progress — render as running.
+    const isCurrentlyStreaming = wsState?.streaming || chatStreaming;
+    for (const tu of pendingToolUses.values()) {
+      if (tu.tool_name === "ExitPlanMode") {
+        chatShowPlanApproval(tu.tool_id, tu.parameters.plan || "");
+      } else if (isCurrentlyStreaming) {
+        chatAppendToolUse(tu.tool_name, tu.tool_id, tu.parameters);
+      } else {
+        // Orphaned — render as a completed tool with no output
+        chatRenderCompletedTool(tu.tool_name, tu.tool_id, tu.parameters, "interrupted", "");
+      }
+    }
+
+    // If the server has a pending permission_request (e.g. from relay replay after
+    // restart), show it now so Claude isn't blocked indefinitely.
+    if (wsState && wsState.pendingPermission) {
+      const pp = wsState.pendingPermission;
+      glog("showChat: restoring pending permission_request", pp.tool_name, pp.request_id);
+      handleGeminiEvent({ ...pp, workspace: chatWorkspace });
+    }
+
+    // If a stream was in-flight when we opened, poll until the reply lands.
+    // Leave streaming=true so the input stays disabled while we wait.
+    if (chatOpenedWhileStreaming) {
+      chatOpenedWhileStreaming = false;
+      const lastMsg = history[history.length - 1];
+      if (lastMsg && lastMsg.role === "user") {
+        chatSetStreaming(true);
+        chatStartStreamPoll(history.length);
+        // Skip the chatSetStreaming(false) below — poll completion handles it
+        const input = document.getElementById("chat-input");
+        if (input) await chatRestoreDraft(wsState);
+        return;
+      }
+    }
+  }
+
+  // Enable input and restore draft (pass pre-fetched state to avoid a duplicate round-trip)
+  chatSetStreaming(false);
+  const input = document.getElementById("chat-input");
+  if (input) {
+    await chatRestoreDraft(wsState);
+    input.focus();
+  }
+}
+
+// --- Overlay controls ---
+
+async function openChat(project, projectPath, cli) {
+  chatActiveCli = cli || "gemini";
+  glog(`openChat: project=${project} path=${projectPath} cli=${chatActiveCli}`);
+
+  // Flush draft for the previous workspace before switching (handles direct
+  // workspace-to-workspace clicks that skip closeGeminiChat).
+  const prevWorkspace = chatWorkspace;
+  if (prevWorkspace && prevWorkspace !== project) {
+    // Cancel any pending debounced draft save for the old workspace
+    clearTimeout(chatDraftTimer);
+    const input = document.getElementById("chat-input");
+    if (input && input.value) {
+      // Save immediately via HTTP (bypass debounce) so the draft isn't lost
+      const draftMode = chatActiveCli === "claude" ? "claude-local" : "gemini";
+      fetch(`/api/workspace-state/${encodeURIComponent(prevWorkspace)}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ draft: input.value, draftMode, draftSession: chatSessionNum }),
+      }).catch(() => {});
+    }
+    // Clear input immediately so the old draft doesn't flash in the new workspace
+    if (input) input.value = "";
+  }
+
+  chatWorkspace = project || null;
+  chatWorkspacePath = projectPath || null;
+
+  // Clear typing guard so draft restoration isn't blocked
+  chatLocalDraftActive = false;
+  clearTimeout(chatLocalDraftTimeout);
+
+  // Check if this is an agent chat (set by openAgentChat in app.js)
+  chatAgentRole = window._agentRole || null;
+
+  const cliLabel = chatActiveCli === "claude" ? "Claude" : "Gemini";
+
+  // Set title — show agent role label when in agent chat mode
+  if (chatAgentRole) {
+    const roleLabel = chatAgentRole.charAt(0).toUpperCase() + chatAgentRole.slice(1);
+    document.getElementById("chat-title").innerHTML =
+      `<span class="agent-role-badge ${chatAgentRole}">${roleLabel}</span>`;
+  } else if (project) {
+    const parts = project.split("--");
+    const repo = parts[0];
+    const branch = parts.length > 1 ? parts.slice(1).join("--") : null;
+    document.getElementById("chat-title").innerHTML =
+      `<span>${cliLabel}</span> <span style="font-weight:400;color:var(--text-faint)">${esc(repo)}${branch ? " / " + esc(branch) : ""}</span>`;
+  } else {
+    document.getElementById("chat-title").innerHTML = `<span>${cliLabel}</span>`;
+  }
+
+  // Update placeholder
+  const inputEl = document.getElementById("chat-input");
+  const placeholderName = chatAgentRole
+    ? chatAgentRole.charAt(0).toUpperCase() + chatAgentRole.slice(1)
+    : cliLabel;
+  if (inputEl) inputEl.placeholder = `Message ${placeholderName}...`;
+
+  // Reset streaming state and image attachments
+  chatCurrentMsgEl = null;
+  chatCurrentMsgText = "";
+  chatPartialMsgEl = null;
+  chatSetStreaming(false);
+  chatClearImages();
+  chatUpdateAttachVisibility();
+  chatUpdatePermissionVisibility();
+  chatRestorePermissionMode();
+  chatRestoreThinking();
+  chatRestoreToolDisplayMode();
+
+  // Restore last session from server state (non-blocking — chatShowChat uses it)
+  chatSessionNum = null;
+  let wsState = null;
+  if (project) {
+    try {
+      const wsRes = await fetch(`/api/workspace-state/${encodeURIComponent(project)}`);
+      wsState = await wsRes.json();
+      const stateMode = chatActiveCli === "claude" ? "claude-local" : "gemini";
+      if (wsState.sessionNum != null) {
+        chatSessionNum = wsState.sessionNum;
+        glog(`openChat: restoring session#${chatSessionNum} from server state`);
+      }
+      chatOpenedWhileStreaming = wsState.streaming || false;
+      // Record that this workspace is in this mode
+      fetch(`/api/workspace-state/${encodeURIComponent(project)}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ mode: stateMode }),
+      }).catch(() => {});
+    } catch { /* non-fatal */ }
+  }
+
+  // Force model list refresh for the new CLI backend
+  chatModelsFetched = false;
+
+  // Show panel
+  document.getElementById("chat-overlay").classList.remove("hidden");
+
+  // Activate split layout (unless chatonly)
+  const currentMode = getChatParams().mode;
+  if (currentMode !== "chatonly") {
+    document.body.classList.add("chat-open");
+  }
+
+  // Update URL to reflect chat state
+  const currentParams = getChatParams();
+  setChatParams({
+    mode: currentParams.mode,
+    workspace: project || undefined,
+    tool: cli || "gemini",
+  });
+
+  // Populate model selector and quota (async, non-blocking)
+  chatFetchModels();
+  if (chatActiveCli === "gemini") chatFetchQuota();
+  else document.getElementById("chat-quota").textContent = "";
+
+  // Connect WS if needed (only if we have a workspace for chat)
+  if (project) chatConnect();
+
+  // Check auth — use cached health data for instant response, fall back to fetch
+  const authField = chatActiveCli === "claude" ? "claudeChatAuth" : "chatAuth";
+  const cachedAuth = (typeof lastHealthData !== "undefined" && lastHealthData && lastHealthData[authField]) || null;
+
+  // No workspace — opened from auth dot, always show auth panel
+  if (!project) {
+    chatShowAuthPanel();
+    return;
+  }
+
+  if (cachedAuth && cachedAuth.loggedIn) {
+    chatShowChat(wsState);
+  } else if (cachedAuth && !cachedAuth.loggedIn) {
+    // Check if workspace has an API key (fast local fetch)
+    try {
+      const keyBase = chatActiveCli === "claude" ? "/api/claude-chat" : "/api/gemini";
+      const keyRes = await fetch(`${keyBase}/apikey/${encodeURIComponent(project)}`);
+      const keyData = await keyRes.json();
+      if (keyData.hasKey) {
+        chatShowChat(wsState);
+      } else {
+        chatShowAuthPanel();
+      }
+    } catch {
+      chatShowAuthPanel();
+    }
+  } else {
+    // No cached data yet — fetch and decide
+    try {
+      const res = await fetch("/api/health");
+      const data = await res.json();
+      const authData = data[authField];
+      if (authData && authData.loggedIn) {
+        chatShowChat(wsState);
+      } else {
+        chatShowAuthPanel();
+      }
+    } catch {
+      chatShowChat(wsState);
+    }
+  }
+}
+
+function closeGeminiChat() {
+  glog("closeChat");
+
+  // Clear agent chat state
+  chatAgentRole = null;
+  delete window._agentRole;
+  delete window._agentSystemPrompt;
+
+  // Flush current input draft immediately so it persists across close/reopen
+  const input = document.getElementById("chat-input");
+  if (input) chatSaveDraft(input.value);
+
+  chatStopStreamPoll();
+  document.getElementById("chat-overlay").classList.add("hidden");
+  document.body.classList.remove("chat-open");
+
+  // If chatonly mode, exit back to dashboard
+  const params = getChatParams();
+  if (params.mode === "chatonly") {
+    document.body.classList.remove("chatonly");
+    // Re-enable dashboard polling
+    if (typeof refresh === "function") refresh();
+    if (typeof refreshCloudStatus === "function") refreshCloudStatus();
+    refreshTimer = setInterval(() => {
+      if (typeof refresh === "function") refresh();
+      if (typeof refreshCloudStatus === "function") refreshCloudStatus();
+    }, 10000);
+  }
+
+  clearChatParams();
+}
+
+async function clearGeminiSession() {
+  glog("clearSession (new chat): workspace=" + chatWorkspace + " cli=" + chatActiveCli);
+  if (!chatWorkspace) return;
+
+  // Stop any active process
+  if (chatWs && chatWs.readyState === WebSocket.OPEN) {
+    chatWs.send(JSON.stringify({ type: "stop", workspace: chatWorkspace, cli: chatActiveCli }));
+  }
+
+  // Create a new session on the server (preserves old sessions)
+  const clearBase = chatActiveCli === "claude" ? "/api/claude-chat" : "/api/gemini";
+  try {
+    const res = await fetch(`${clearBase}/clear/${encodeURIComponent(chatWorkspace)}`, { method: "POST" });
+    const data = await res.json();
+    chatSessionNum = data.session;
+    glog("clearSession: new session#" + chatSessionNum);
+  } catch {
+    glog("clearSession: server call failed");
+  }
+
+  // Clear local cache
+  delete chatHistory[chatWorkspace];
+
+  // Clear UI
+  document.getElementById("chat-messages").innerHTML = "";
+  chatCurrentMsgEl = null;
+  chatCurrentMsgText = "";
+  chatSetStreaming(false);
+
+  // Update URL with new session number
+  const cur = getChatParams();
+  setChatParams({ ...cur, session: chatSessionNum || undefined });
+
+  // Refresh session selector
+  await chatFetchSessions(chatWorkspace);
+
+  const input = document.getElementById("chat-input");
+  if (input) input.focus();
+}
+
+// --- Input handling ---
+
+function chatInputKeydown(event) {
+  if (event.key === "Enter" && !event.shiftKey) {
+    event.preventDefault();
+    sendGeminiMessage();
+    return;
+  }
+
+  // Auto-resize textarea
+  const ta = event.target;
+  requestAnimationFrame(() => {
+    ta.style.height = "auto";
+    ta.style.height = Math.min(ta.scrollHeight, 256) + "px";
+  });
+}
+
+function sendGeminiMessage() {
+  if (!chatServerConnected) {
+    glog("send: blocked (server disconnected)");
+    return;
+  }
+
+  const input = document.getElementById("chat-input");
+  const message = input.value.trim();
+  if (!message) {
+    glog("send: blocked (empty message)");
+    return;
+  }
+
+  // Discard any in-progress reload-poll — user is sending a new message
+  chatStopStreamPoll();
+
+  glog(`send: workspace=${chatWorkspace} msgLen=${message.length} wsState=${chatWs ? chatWs.readyState : "null"}`);
+
+  // Add to local cache (server persists when WS receives the message)
+  if (!chatHistory[chatWorkspace]) chatHistory[chatWorkspace] = [];
+  chatHistory[chatWorkspace].push({ role: "user", content: message });
+
+  // Render user bubble (with any pending images above the text)
+  chatAppendMessage("user", message, false, chatPendingImages.slice(), Date.now());
+
+  // Clear input and draft
+  input.value = "";
+  input.style.height = "auto";
+  chatSaveDraft("");
+
+  // Start streaming — show thinking indicator until first content arrives (skip if already streaming)
+  if (!chatStreaming) {
+    chatSetStreaming(true);
+    chatShowThinking();
+    window._chatSendTime = Date.now();
+  }
+  glog("send: thinking indicator shown, waiting for events...");
+
+  // Send over WebSocket (include model if not Auto)
+  const modelSelect = document.getElementById("chat-model");
+  const model = modelSelect ? modelSelect.value : "";
+
+  if (chatWs && chatWs.readyState === WebSocket.OPEN) {
+    const images = chatPendingImages.map((i) => i.dataUrl);
+    const payload = {
+      type: "send",
+      workspace: chatWorkspace,
+      message,
+      model: model || undefined,
+      cli: chatActiveCli,
+      permissionMode: chatGetPermissionMode(),
+      ...(chatThinkingEnabled && chatActiveCli === "claude" ? { thinking: true } : {}),
+      ...(images.length ? { images } : {}),
+    };
+
+    // Agent chat: include systemPrompt on the first message only
+    if (window._agentSystemPrompt) {
+      payload.systemPrompt = window._agentSystemPrompt;
+      delete window._agentSystemPrompt;
+      glog("send: injecting agent systemPrompt (" + payload.systemPrompt.length + " chars)");
+    }
+
+    glog("send: ws.send", JSON.stringify(payload).slice(0, 200));
+    chatWs.send(JSON.stringify(payload));
+    chatClearImages();
+  } else {
+    glog("send: ws not open, showing error");
+    chatAppendError("Not connected to server");
+    chatSetStreaming(false);
+  }
+}
+
+function chatShowThinking() {
+  if (document.getElementById("chat-thinking")) return; // already visible
+  window._chatThinkingStart = Date.now();
+
+  const container = document.getElementById("chat-messages");
+  const div = document.createElement("div");
+  div.className = "chat-thinking";
+  div.id = "chat-thinking";
+
+  const SIZE = 40;
+  const canvas = document.createElement("canvas");
+  canvas.width = SIZE;
+  canvas.height = SIZE;
+  div.appendChild(canvas);
+  container.appendChild(div);
+  chatScrollToBottom();
+
+  const ctx = canvas.getContext("2d");
+  const COUNT = 20;
+  const cx = SIZE / 2, cy = SIZE / 2;
+
+  const particles = Array.from({ length: COUNT }, (_, i) => ({
+    angle: (i / COUNT) * Math.PI * 2,
+    radius: 4 + Math.random() * 10,
+    speed: (i % 2 === 0 ? 1 : -1) * (0.018 + Math.random() * 0.022),
+    colorIdx: i % 3,
+    wobble: Math.random() * Math.PI * 2,
+  }));
+
+  let speedMult = 1;
+  let speedTarget = 1;
+  let targetCooldown = 0;
+
+  function frame(t) {
+    // Drift toward a new speed target every 60-150 frames
+    if (--targetCooldown <= 0) {
+      targetCooldown = 60 + Math.random() * 90;
+      const r = Math.random();
+      speedTarget = r < 0.15 ? 0.15 + Math.random() * 0.35  // slow drift
+                 : r < 0.65 ? 0.7  + Math.random() * 0.8    // normal
+                 :             2.5  + Math.random() * 2.5;   // energetic burst
+    }
+    speedMult += (speedTarget - speedMult) * 0.04;
+
+    // Re-read theme colors each frame so theme switches take effect live
+    const cs = getComputedStyle(document.documentElement);
+    const colors = [
+      cs.getPropertyValue("--s-green").trim(),
+      cs.getPropertyValue("--s-blue-text").trim(),
+      cs.getPropertyValue("--text-strong").trim(),
+    ];
+
+    ctx.clearRect(0, 0, SIZE, SIZE); // transparent — no background box
+    for (const p of particles) {
+      p.angle += p.speed * speedMult;
+      const r = p.radius + Math.sin(t * 0.003 + p.wobble) * 2.5;
+      const x = cx + Math.cos(p.angle) * r;
+      const y = cy + Math.sin(p.angle) * r;
+      ctx.fillStyle = colors[p.colorIdx];
+      ctx.beginPath();
+      ctx.arc(x, y, 1, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    window._chatOrbitalRaf = requestAnimationFrame(frame);
+  }
+  window._chatOrbitalRaf = requestAnimationFrame(frame);
+}
+
+function chatRemoveThinking() {
+  const el = document.getElementById("chat-thinking");
+  if (el) {
+    const elapsed = window._chatThinkingStart ? Date.now() - window._chatThinkingStart : "?";
+    glog(`removeThinking: visible for ${elapsed}ms`);
+    el.remove();
+  }
+  if (window._chatOrbitalRaf) {
+    cancelAnimationFrame(window._chatOrbitalRaf);
+    window._chatOrbitalRaf = null;
+  }
+  if (window._chatThinkingTimer) {
+    clearInterval(window._chatThinkingTimer);
+    window._chatThinkingTimer = null;
+  }
+}
+
+function chatStopStreaming() {
+  glog("stopStreaming");
+  if (!chatWorkspace) return;
+  if (chatWs && chatWs.readyState === WebSocket.OPEN) {
+    // For Claude: send soft interrupt first. If Claude doesn't respond within
+    // 5 seconds, the server will escalate to kill.
+    if (chatActiveCli === "claude") {
+      chatWs.send(JSON.stringify({ type: "interrupt", workspace: chatWorkspace }));
+    }
+    chatWs.send(JSON.stringify({ type: "stop", workspace: chatWorkspace, cli: chatActiveCli }));
+  }
+  // Immediate feedback — don't wait for server round-trip
+  chatRemoveThinking();
+  chatSetStreaming(false);
+  chatCurrentMsgEl = null;
+  chatCurrentMsgText = "";
+}
+
+function chatSetStreaming(active) {
+  glog(`setStreaming: ${active}${!active && window._chatSendTime ? " totalRoundtrip=" + (Date.now() - window._chatSendTime) + "ms" : ""}`);
+  chatStreaming = active;
+  const input = document.getElementById("chat-input");
+  const sendBtn = document.getElementById("chat-send");
+  const stopBtn = document.getElementById("chat-stop");
+
+  const modelSelect = document.getElementById("chat-model");
+  if (modelSelect) modelSelect.disabled = active;
+
+  const permSelect = document.getElementById("chat-permission-mode");
+  if (permSelect) permSelect.disabled = active;
+
+  const thinkingToggle = document.getElementById("chat-thinking-toggle");
+  if (thinkingToggle) thinkingToggle.disabled = active;
+
+  // Send button stays visible always (for steering mid-stream)
+  // Stop button appears next to it only during generation
+  if (stopBtn) stopBtn.style.display = active ? "" : "none";
+
+  // Remove streaming class from previous message when done
+  if (!active && chatCurrentMsgEl) {
+    chatCurrentMsgEl.classList.remove("chat-streaming");
+  }
+
+  // Clean up thinking indicator when streaming ends
+  if (!active) chatRemoveThinking();
+}
+
+// --- URL-driven initialization ---
+
+async function initFromUrlParams() {
+  const params = getChatParams();
+
+  // Handle chatonly mode — hide dashboard
+  if (params.mode === "chatonly") {
+    document.body.classList.add("chatonly");
+    // Reduce dashboard polling since it's invisible
+    if (typeof refreshTimer !== "undefined" && refreshTimer) {
+      clearInterval(refreshTimer);
+      refreshTimer = null;
+    }
+  }
+
+  // If workspace specified, auto-open chat
+  if (params.workspace) {
+    const tool = params.tool || "gemini";
+    const wsPath = await resolveWorkspacePath(params.workspace);
+
+    if (wsPath) {
+      // If session param specified, switch to that session first
+      if (params.session) {
+        const base = tool === "claude" ? "/api/claude-chat" : "/api/gemini";
+        try {
+          await fetch(`${base}/sessions/${encodeURIComponent(params.workspace)}/switch`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ session: Number(params.session) }),
+          });
+          chatSessionNum = Number(params.session);
+        } catch {
+          // Session switch failed — will load current session
+        }
+      }
+      openChat(params.workspace, wsPath, tool);
+    } else {
+      // Workspace not found — show overlay with error
+      document.getElementById("chat-overlay").classList.remove("hidden");
+      const container = document.getElementById("chat-messages");
+      container.innerHTML = "";
+      const div = document.createElement("div");
+      div.className = "chat-msg error";
+      div.textContent = `Workspace "${params.workspace}" not found. Check the URL and try again.`;
+      container.appendChild(div);
+    }
+  }
+}
+
+// Handle browser back/forward
+window.addEventListener("popstate", () => {
+  const params = getChatParams();
+  if (params.workspace) {
+    resolveWorkspacePath(params.workspace).then(path => {
+      if (path) openChat(params.workspace, path, params.tool || "gemini");
+    });
+  } else {
+    // No chat params — close panel if open
+    const overlay = document.getElementById("chat-overlay");
+    if (overlay && !overlay.classList.contains("hidden")) {
+      overlay.classList.add("hidden");
+    }
+    document.body.classList.remove("chatonly", "chat-open");
+  }
+});
+
+// Persist permission mode + send runtime switch to active relay
+document.getElementById("chat-permission-mode")?.addEventListener("change", function() {
+  chatSavePermissionMode(this.value);
+  if (this.value && chatActiveCli === "claude" && chatWs && chatWs.readyState === WebSocket.OPEN) {
+    chatWs.send(JSON.stringify({ type: "set_permission_mode", workspace: chatWorkspace, mode: this.value }));
+    glog("perm-switch: sent set_permission_mode=" + this.value);
+  }
+});
+
+// Extended thinking toggle
+function chatToggleThinking() {
+  chatThinkingEnabled = !chatThinkingEnabled;
+  const btn = document.getElementById("chat-thinking-toggle");
+  if (btn) btn.classList.toggle("active", chatThinkingEnabled);
+  if (chatWorkspace) localStorage.setItem(`klaudii-thinking-${chatWorkspace}`, chatThinkingEnabled ? "1" : "0");
+  glog("thinking-toggle: enabled=" + chatThinkingEnabled);
+}
+
+function chatRestoreThinking() {
+  const btn = document.getElementById("chat-thinking-toggle");
+  if (!btn) return;
+  // Only show for Claude backend
+  btn.style.display = chatActiveCli === "claude" ? "" : "none";
+  if (chatWorkspace) {
+    const saved = localStorage.getItem(`klaudii-thinking-${chatWorkspace}`);
+    chatThinkingEnabled = saved === "1";
+  } else {
+    chatThinkingEnabled = false;
+  }
+  btn.classList.toggle("active", chatThinkingEnabled);
+}
+
+// Persist model selection per workspace + send runtime model switch to active relay
+document.getElementById("chat-model")?.addEventListener("change", function() {
+  const newModel = this.value;
+  if (chatWorkspace) localStorage.setItem(`klaudii-model-${chatWorkspace}`, newModel);
+  // Send runtime model switch to active Claude relay (takes effect on next API call)
+  if (newModel && chatActiveCli === "claude" && chatWs && chatWs.readyState === WebSocket.OPEN) {
+    chatWs.send(JSON.stringify({ type: "set_model", workspace: chatWorkspace, model: newModel }));
+    glog("model-switch: sent set_model=" + newModel);
+  }
+});
+
+// Draft sync — save as user types + set local typing guard
+document.getElementById("chat-input")?.addEventListener("input", (e) => {
+  // Mark as actively typing so incoming remote drafts don't clobber our input
+  chatLocalDraftActive = true;
+  clearTimeout(chatLocalDraftTimeout);
+  chatLocalDraftTimeout = setTimeout(() => { chatLocalDraftActive = false; }, 1000);
+  chatSaveDraft(e.target.value);
+});
+
+// Paste images from clipboard into chat
+document.getElementById("chat-input")?.addEventListener("paste", (e) => {
+  if (chatActiveCli !== "claude") return;
+  const items = Array.from(e.clipboardData?.items || []);
+  const imageItems = items.filter((item) => item.type.startsWith("image/"));
+  if (imageItems.length === 0) return;
+  e.preventDefault();
+  imageItems.forEach((item) => {
+    const file = item.getAsFile();
+    if (file) chatLoadImageFile(file);
+  });
+});
+
+// Drag-and-drop images onto the chat panel
+const chatPanel = document.querySelector(".chat-panel");
+if (chatPanel) {
+  chatPanel.addEventListener("dragover", (e) => {
+    if (chatActiveCli !== "claude") return;
+    const hasImage = Array.from(e.dataTransfer.items || []).some((i) => i.type.startsWith("image/"));
+    if (!hasImage) return;
+    e.preventDefault();
+    chatPanel.classList.add("drag-over");
+  });
+  chatPanel.addEventListener("dragleave", (e) => {
+    if (!chatPanel.contains(e.relatedTarget)) chatPanel.classList.remove("drag-over");
+  });
+  chatPanel.addEventListener("drop", (e) => {
+    chatPanel.classList.remove("drag-over");
+    if (chatActiveCli !== "claude") return;
+    e.preventDefault();
+    Array.from(e.dataTransfer.files || []).forEach((file) => chatLoadImageFile(file));
+  });
+}
+
+// Scroll to bottom whenever the tab/window regains visibility
+document.addEventListener("visibilitychange", () => {
+  if (!document.hidden) chatScrollToBottom();
+});
+
+// Auto-open chat from URL params on page load
+initFromUrlParams();

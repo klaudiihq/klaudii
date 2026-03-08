@@ -6,6 +6,13 @@ let sortMode = localStorage.getItem("klaudii-sort") || "activity";
 let sortDir = localStorage.getItem("klaudii-sort-dir") || "desc";
 let openPanelProject = null;
 let panelAutoCloseTimer = null;
+let showWorkerWorkspaces = false; // driven by server settings (workerVisibility)
+let currentProject = localStorage.getItem("klaudii-current-project") || "";
+let allProjectsList = [];
+let sidebarTab = localStorage.getItem("klaudii-sidebar-tab") || "workspaces";
+let lastSessions = [];
+let lastProcs = [];
+let healthFailCount = 0; // consecutive health check failures for backoff
 
 // --- SVG icon constants (matching extension) ---
 const STAT_CPU_SVG = `<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="4" width="16" height="16" rx="2"/><rect x="9" y="9" width="6" height="6"/><line x1="9" y1="1" x2="9" y2="4"/><line x1="15" y1="1" x2="15" y2="4"/><line x1="9" y1="20" x2="9" y2="23"/><line x1="15" y1="20" x2="15" y2="23"/><line x1="20" y1="9" x2="23" y2="9"/><line x1="20" y1="14" x2="23" y2="14"/><line x1="1" y1="9" x2="4" y2="9"/><line x1="1" y1="14" x2="4" y2="14"/></svg>`;
@@ -84,6 +91,56 @@ async function api(path, opts = {}) {
   return res.json();
 }
 
+// --- Project switcher ---
+
+function getRepoName(projectName) {
+  const parts = projectName.split("--");
+  return parts[0];
+}
+
+async function refreshProjectSwitcher() {
+  try {
+    allProjectsList = await api("/api/projects");
+    if (!Array.isArray(allProjectsList)) allProjectsList = [];
+  } catch {
+    allProjectsList = [];
+  }
+
+  const repos = [...new Set(allProjectsList.map(p => getRepoName(p.name)))].sort();
+  const select = document.getElementById("project-switcher");
+  if (!select) return;
+
+  const prev = select.value;
+  select.innerHTML = `<option value="">All Projects</option>` +
+    repos.map(r => `<option value="${esc(r)}"${r === currentProject ? " selected" : ""}>${esc(r)}</option>`).join("");
+
+  // If stored project no longer exists, reset to all
+  if (currentProject && !repos.includes(currentProject)) {
+    currentProject = "";
+    localStorage.removeItem("klaudii-current-project");
+    select.value = "";
+  }
+
+  // Hide switcher if only one repo
+  select.style.display = repos.length <= 1 ? "none" : "";
+}
+
+function switchProject(repo) {
+  currentProject = repo;
+  if (repo) {
+    localStorage.setItem("klaudii-current-project", repo);
+  } else {
+    localStorage.removeItem("klaudii-current-project");
+  }
+  refresh();
+  refreshTasks();
+}
+
+function matchesCurrentProject(projectName) {
+  if (!currentProject) return true;
+  return getRepoName(projectName) === currentProject;
+}
+
 // --- Sorting ---
 
 function setSort(mode) {
@@ -127,11 +184,51 @@ function sortSessions(sessions) {
 
 // --- Rendering ---
 
+async function toggleWorkerWorkspaces() {
+  const newMode = showWorkerWorkspaces ? "hide" : "show";
+  try {
+    await api("/api/settings", { method: "PATCH", body: { workerVisibility: newMode } });
+  } catch { /* best-effort */ }
+  showWorkerWorkspaces = newMode === "show";
+  updateWorkerToggle();
+  refresh();
+}
+
+function updateWorkerToggle() {
+  const btn = document.getElementById("worker-toggle");
+  if (btn) {
+    btn.classList.toggle("active", showWorkerWorkspaces);
+    btn.title = showWorkerWorkspaces ? "Showing worker workspaces" : "Worker workspaces hidden";
+  }
+}
+
 function renderSessions(sessions, procs) {
   const container = document.getElementById("sessions-list");
   updateSortButtons();
+  updateWorkerToggle();
+
+  // Always hide agent chat workspaces (accessed via header buttons)
+  sessions = sessions.filter(s => !s.project.startsWith("__") || !s.project.endsWith("__"));
+
+  // Filter by selected project
+  if (currentProject) {
+    sessions = sessions.filter(s => matchesCurrentProject(s.project));
+  }
+
+  // Filter out worker workspaces unless toggle is on
+  const workerCount = sessions.filter(s => s.workspaceType === "worker").length;
+  if (!showWorkerWorkspaces) {
+    sessions = sessions.filter(s => s.workspaceType !== "worker");
+  }
+  // Show/hide worker toggle based on whether any exist
+  const workerToggle = document.getElementById("worker-toggle");
+  if (workerToggle) workerToggle.classList.toggle("hidden", workerCount === 0);
+
   if (!sessions.length) {
-    container.innerHTML = '<p style="color:#666">No workspaces configured.</p>';
+    const msg = currentProject
+      ? `No workspaces for project "${esc(currentProject)}".`
+      : "No workspaces configured.";
+    container.innerHTML = `<p style="color:#666">${msg}</p>`;
     return;
   }
 
@@ -139,9 +236,14 @@ function renderSessions(sessions, procs) {
 
   // Build a lookup of managed process stats by project name
   const procByProject = {};
+  const freerangeByProject = {};
   if (procs) {
     for (const p of procs) {
       if (p.managed && p.project) procByProject[p.project] = p;
+      if (!p.managed && p.project) {
+        if (!freerangeByProject[p.project]) freerangeByProject[p.project] = [];
+        freerangeByProject[p.project].push(p);
+      }
     }
   }
 
@@ -226,24 +328,58 @@ function renderSessions(sessions, procs) {
           </select>
         </div>
         <button class="btn btn-sm primary" onclick="startSession('${esc(s.project)}', {continueSession:true})">Continue</button>
-        <button class="btn btn-sm" onclick="startSession('${esc(s.project)}')">New Session</button>
+        <button class="btn btn-sm" onclick="startSession('${esc(s.project)}')">New Workspace</button>
         <button class="btn btn-sm" onclick="toggleHistory('${esc(s.project)}')">History</button>
         <button class="btn btn-sm danger" onclick="removeWorkspace(this, '${esc(s.project)}', ${!!(g && (g.dirtyFiles || g.unpushed))})">Remove</button>`;
+    }
+
+    // Build running instances list (tmux + relay + freerange)
+    const instances = [];
+    if (status === "running" || status === "exited") {
+      instances.push({ type: "terminal", label: "Terminal" });
+    }
+    if (s.relayActive && s.relays) {
+      for (const r of s.relays) {
+        instances.push({ type: "relay", label: `Chat${r.sessionNum ? " #" + r.sessionNum : ""}`, pid: r.pid, sessionNum: r.sessionNum });
+      }
+    }
+    const freerange = freerangeByProject[s.project] || [];
+    for (const fr of freerange) {
+      instances.push({ type: "freerange", label: `PID ${fr.pid}`, pid: fr.pid, launchedBy: fr.launchedBy });
+    }
+
+    const relayCount = instances.filter(i => i.type === "relay").length;
+    let instancesHtml = "";
+    if (instances.length > 0) {
+      instancesHtml = `<div class="instance-list">${instances.map(inst => {
+        let stopBtn = "";
+        if (inst.type === "terminal") {
+          stopBtn = `<button class="btn btn-xs danger" onclick="event.stopPropagation(); stopSession('${esc(s.project)}')">Stop</button>`;
+        } else if (inst.type === "relay") {
+          stopBtn = `<button class="btn btn-xs danger" onclick="event.stopPropagation(); stopRelay('${esc(s.project)}', ${inst.sessionNum || 'undefined'})">Stop</button>`;
+        } else if (inst.type === "freerange") {
+          stopBtn = `<button class="btn btn-xs danger" onclick="event.stopPropagation(); confirmKill(this, ${inst.pid})">Kill</button>`;
+        }
+        const typeCls = inst.type;
+        const fromLabel = inst.launchedBy ? ` <span class="instance-from">via ${esc(inst.launchedBy)}</span>` : "";
+        return `<div class="instance-row"><span class="instance-type ${typeCls}">${esc(inst.label)}${fromLabel}</span>${stopBtn}</div>`;
+      }).join("")}${relayCount > 1 ? `<div class="instance-row"><span class="instance-type relay">${relayCount} chats</span><button class="btn btn-xs danger" onclick="event.stopPropagation(); stopRelay('${esc(s.project)}')">Stop All</button></div>` : ""}</div>`;
     }
 
     const isPanelOpen = openPanelProject === s.project;
 
     // Chat mode pill
     const chatMode = s.chatMode || "claude-local";
-    const chatActive = !!s.chatActive;
-    const modePill = `<button class="chat-mode-pill mode-${esc(chatMode)}${chatActive ? " streaming" : ""}" data-mode="${esc(chatMode)}" onclick="cycleChatMode(event, '${esc(s.project)}')" title="Chat mode — click to change">${chatActive ? '<span class="mode-pulse"></span>' : '<span class="mode-dot"></span>'}${esc(CHAT_MODE_LABELS[chatMode] || chatMode)}</button>`;
+    const modePill = `<button class="chat-mode-pill mode-${esc(chatMode)}" data-mode="${esc(chatMode)}" onclick="cycleChatMode(event, '${esc(s.project)}')" title="Chat mode — click to change"><span class="mode-dot"></span>${esc(CHAT_MODE_LABELS[chatMode] || chatMode)}</button>`;
 
     // Activity timestamp row
     const lastAct = s.lastActivity ? absoluteTime(s.lastActivity) : null;
     const activityRow = lastAct ? `<div class="remote-timing">${lastAct}</div>` : "";
 
+    const isWorker = s.workspaceType === "worker";
+
     return `
-    <div class="card" id="card-${esc(s.project)}" data-project="${esc(s.project)}" data-chat-mode="${esc(chatMode)}" data-project-path="${esc(s.projectPath || "")}" data-claude-url="${esc(s.claudeUrl || "")}">
+    <div class="card${isWorker ? " worker-card" : ""}" id="card-${esc(s.project)}" data-project="${esc(s.project)}" data-chat-mode="${esc(chatMode)}" data-project-path="${esc(s.projectPath || "")}" data-claude-url="${esc(s.claudeUrl || "")}">
       <div class="card-accent ${status}"></div>
       <div class="card-body">
         <div class="card-header">
@@ -252,6 +388,7 @@ function renderSessions(sessions, procs) {
             ${branchLink ? `<span class="card-subtitle">${branchLink}</span>` : ""}
           </div>
           <div class="card-badges">
+            ${isWorker ? '<span class="worker-badge">worker</span>' : ""}
             ${modePill}
             ${permBadge}
             <span class="card-status ${displayStatus}">${displayStatus}</span>
@@ -260,6 +397,7 @@ function renderSessions(sessions, procs) {
         ${activityRow}
         ${gitBar}
         ${statsRow}
+        ${instancesHtml}
         <div class="card-actions-panel${isPanelOpen ? "" : " hidden"}" id="panel-${esc(s.project)}">
           ${panelItems}
         </div>
@@ -313,6 +451,13 @@ async function startSession(project, opts = {}) {
 async function stopSession(project) {
   await api("/api/sessions/stop", { method: "POST", body: { project } });
   closeTerminal();
+  refresh();
+}
+
+async function stopRelay(project, sessionNum) {
+  const body = {};
+  if (sessionNum !== undefined) body.sessionNum = sessionNum;
+  await api(`/api/chat/${encodeURIComponent(project)}/stop`, { method: "POST", body });
   refresh();
 }
 
@@ -664,11 +809,18 @@ function confirmKill(btn, pid) {
 
 async function refresh() {
   try {
-    const [health, sessions, procs] = await Promise.all([
+    const [health, sessions, procs, settings] = await Promise.all([
       api("/api/health"),
       api("/api/sessions"),
       api("/api/processes"),
+      api("/api/settings").catch(() => null),
     ]);
+
+    // Sync worker visibility from server settings
+    if (settings && settings.workerVisibility) {
+      showWorkerWorkspaces = settings.workerVisibility === "show";
+      currentSettings = settings;
+    }
 
     lastHealthData = health;
     const badge = document.getElementById("status-badge");
@@ -712,21 +864,55 @@ async function refresh() {
         const geminiTitle = health.geminiAuth.email ? esc(health.geminiAuth.email) : (health.geminiAuth.method === "api_key" ? "API key" : "OAuth");
         authRows.push(`<span class="auth-row ok" title="${geminiTitle}"><span class="auth-dot ok"></span>Gemini</span>`);
       } else {
-        authRows.push('<span class="auth-row error clickable" title="Click to authenticate" onclick="openGeminiChat(null, null)"><span class="auth-dot error"></span>Gemini</span>');
+        authRows.push('<span class="auth-row error clickable" title="Click to authenticate" onclick="openChat(null, null)"><span class="auth-dot error"></span>Gemini</span>');
       }
     }
     authEl.innerHTML = (authRows.length ? '<span class="auth-title">auth</span>' : '') + authRows.join("");
 
+    lastSessions = sessions;
+    lastProcs = procs;
     renderSessions(sessions, procs);
     renderProcesses(procs);
+    renderSidebar();
+
+    // Health succeeded — reset failure count and notify chat panel
+    if (healthFailCount > 0) {
+      healthFailCount = 0;
+      if (typeof chatUpdateStatus === "function") chatUpdateStatus(true);
+    }
   } catch (err) {
     const badge = document.getElementById("status-badge");
     badge.textContent = "offline";
     badge.className = "badge error";
+
+    // Notify chat panel of server disconnect
+    healthFailCount++;
+    if (typeof chatUpdateStatus === "function") chatUpdateStatus(false);
   }
 }
 
 // --- New Session Modal ---
+
+// --- Agent Chat (Architect / Shepherd) ---
+
+async function openAgentChat(role) {
+  try {
+    const res = await fetch(`/api/agent-chat/${encodeURIComponent(role)}/start`, { method: "POST" });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({ error: "Unknown error" }));
+      alert("Failed to start agent chat: " + (err.error || res.statusText));
+      return;
+    }
+    const data = await res.json();
+    // Store system prompt and role for the chat UI to use on first message
+    window._agentSystemPrompt = data.systemPrompt;
+    window._agentRole = role;
+    // Open the chat panel using the agent workspace
+    openChat(data.workspace, data.workspacePath, "claude");
+  } catch (err) {
+    alert("Failed to start agent chat: " + err.message);
+  }
+}
 
 let allRepos = [];
 let selectedRepo = null;
@@ -844,7 +1030,7 @@ async function createNewSession() {
     alert("Failed: " + err.message);
   } finally {
     btn.disabled = false;
-    btn.textContent = "Start Session";
+    btn.textContent = "Create Workspace";
   }
 }
 
@@ -1326,137 +1512,906 @@ async function schedulerTrigger(name) {
   setTimeout(refreshScheduler, 1000);
 }
 
-// --- Beads ---
+// --- Tasks ---
 
-let beadsCollapsed = localStorage.getItem("klaudii-beads-collapsed") === "1";
-let beadFilter = "all";
-let beadsData = [];
-let expandedBeadId = null;
+let tasksCollapsed = localStorage.getItem("klaudii-tasks-collapsed") === "1";
+let taskFilter = "all";
+let tasksData = [];
+let expandedTaskId = null;
+let taskSessionsCache = {}; // taskId → { sessions: [...], fetchedAt }
 
 const PRIORITY_LABELS = ["P0", "P1", "P2", "P3", "P4"];
 
-async function refreshBeads() {
+async function refreshTasks() {
   try {
-    beadsData = await api("/api/beads");
-    if (!Array.isArray(beadsData)) beadsData = [];
-    renderBeads();
+    tasksData = await api("/api/tasks");
+    if (!Array.isArray(tasksData)) tasksData = [];
+    renderTasks();
+    renderSidebar();
   } catch {
-    // Beads endpoint not available
+    // Tasks endpoint not available
   }
 }
 
-function renderBeads() {
-  const section = document.getElementById("beads-section");
-  const container = document.getElementById("beads-list");
+function renderTasks() {
+  const section = document.getElementById("tasks-section");
+  const container = document.getElementById("tasks-list");
   if (!section || !container) return;
 
-  if (!beadsData.length) {
+  if (!tasksData.length) {
+    section.classList.add("hidden");
+    return;
+  }
+
+  let visibleTasks = tasksData;
+  if (currentProject) {
+    visibleTasks = tasksData.filter(b => b.id.startsWith(currentProject + "-"));
+  }
+  if (!visibleTasks.length) {
     section.classList.add("hidden");
     return;
   }
 
   section.classList.remove("hidden");
-  const toggle = document.getElementById("beads-toggle");
-  if (toggle) toggle.textContent = beadsCollapsed ? "Show" : "Hide";
-  document.getElementById("beads-toolbar").style.display = beadsCollapsed ? "none" : "";
-  document.getElementById("beads-list").style.display = beadsCollapsed ? "none" : "";
-  const form = document.getElementById("bead-form");
-  if (beadsCollapsed && form) form.classList.add("hidden");
+  const toggle = document.getElementById("tasks-toggle");
+  if (toggle) toggle.textContent = tasksCollapsed ? "Show" : "Hide";
+  document.getElementById("tasks-toolbar").style.display = tasksCollapsed ? "none" : "";
+  document.getElementById("tasks-list").style.display = tasksCollapsed ? "none" : "";
+  const form = document.getElementById("task-form");
+  if (tasksCollapsed && form) form.classList.add("hidden");
 
-  const filtered = beadFilter === "all"
-    ? beadsData
-    : beadsData.filter(b => b.status === beadFilter);
+  const filtered = taskFilter === "all"
+    ? visibleTasks
+    : visibleTasks.filter(b => b.status === taskFilter);
 
   if (!filtered.length) {
-    container.innerHTML = `<div style="padding:12px;color:var(--text-faint);font-size:12px;text-align:center">No beads matching "${beadFilter}"</div>`;
+    container.innerHTML = `<div style="padding:12px;color:var(--text-faint);font-size:12px;text-align:center">No tasks matching "${taskFilter}"</div>`;
     return;
   }
 
   container.innerHTML = filtered.map(b => {
     const statusLabel = (b.status || "open").replace(/_/g, " ");
-    const updated = b.updated_at ? relativeTime(new Date(b.updated_at).getTime()) : "";
-    const assignee = b.assignee || "";
     const priority = PRIORITY_LABELS[b.priority] || `P${b.priority}`;
-    const isExpanded = expandedBeadId === b.id;
+    const shortId = b.id.includes("-") ? b.id.split("-").pop() : b.id;
+    const isExpanded = expandedTaskId === b.id;
     const descHtml = isExpanded && b.description
-      ? `<div class="bead-desc-expanded">${esc(b.description)}</div>`
+      ? `<div class="task-desc-expanded">${esc(b.description)}</div>`
       : "";
 
-    const closedOrBlocked = b.status === "closed" || b.status === "blocked";
-    const actionBtns = closedOrBlocked ? "" : `
-      <div class="bead-actions">
-        <button class="btn btn-sm" onclick="beadSetStatus('${esc(b.id)}','blocked')" title="Block">Block</button>
-        <button class="btn btn-sm success" onclick="beadSetStatus('${esc(b.id)}','closed')" title="Close">Close</button>
-      </div>`;
+    // Worker sessions section (shown when expanded)
+    let sessionsHtml = "";
+    if (isExpanded) {
+      const cached = taskSessionsCache[b.id];
+      if (cached && cached.sessions.length > 0) {
+        const rows = cached.sessions.map(s => {
+          const statusCls = s.status === "running" ? "running" : s.status === "exited" ? "exited" : "stopped";
+          return `<div class="task-session-row">
+            <span class="task-session-workspace">${esc(s.workspace)}</span>
+            <span class="task-session-num">${s.sessionNum != null ? `#${s.sessionNum}` : ""}</span>
+            <span class="task-session-status ${statusCls}">${esc(s.status)}</span>
+            ${s.status === "running" ? `<button class="btn btn-xs danger" onclick="stopSession('${esc(s.workspace)}')">Stop</button>` : ""}
+          </div>`;
+        }).join("");
+        sessionsHtml = `<div class="task-sessions"><div class="task-sessions-label">Worker Sessions</div>${rows}</div>`;
+      } else if (cached) {
+        sessionsHtml = `<div class="task-sessions"><div class="task-sessions-label" style="color:var(--text-faint)">No worker sessions</div></div>`;
+      } else {
+        sessionsHtml = `<div class="task-sessions"><div class="task-sessions-label" style="color:var(--text-faint)">Loading sessions...</div></div>`;
+      }
+    }
 
-    return `<div class="bead-row">
-      <div class="bead-row-top">
-        <span class="bead-id">${esc(b.id)}</span>
-        <span class="bead-title" onclick="toggleBeadDesc('${esc(b.id)}')">${esc(b.title)}</span>
-        <span class="bead-status ${esc(b.status || "open")}">${esc(statusLabel)}</span>
-        <span class="bead-priority">${esc(priority)}</span>
-        <span class="bead-assignee" title="${esc(assignee)}">${esc(assignee)}</span>
-        <span class="bead-updated">${esc(updated)}</span>
-        ${actionBtns}
+    return `<div class="task-row">
+      <div class="task-row-top">
+        <span class="task-short-id" title="${esc(b.id)}">${esc(shortId)}</span>
+        <span class="task-title" onclick="openTaskDetail('${esc(b.id)}')">${esc(b.title)}</span>
+        <span class="task-status ${esc(b.status || "open")}">${esc(statusLabel)}</span>
+        <span class="task-priority">${esc(priority)}</span>
       </div>
       ${descHtml}
+      ${sessionsHtml}
     </div>`;
   }).join("");
 }
 
-function setBeadFilter(f) {
-  beadFilter = f;
-  document.querySelectorAll(".beads-filter").forEach(btn => {
+function setTaskFilter(f) {
+  taskFilter = f;
+  document.querySelectorAll(".tasks-filter").forEach(btn => {
     btn.classList.toggle("active", btn.dataset.filter === f);
   });
-  renderBeads();
+  renderTasks();
 }
 
-function toggleBeadsSection() {
-  beadsCollapsed = !beadsCollapsed;
-  localStorage.setItem("klaudii-beads-collapsed", beadsCollapsed ? "1" : "0");
-  renderBeads();
+function toggleTasksSection() {
+  tasksCollapsed = !tasksCollapsed;
+  localStorage.setItem("klaudii-tasks-collapsed", tasksCollapsed ? "1" : "0");
+  renderTasks();
 }
 
-function toggleBeadDesc(id) {
-  expandedBeadId = expandedBeadId === id ? null : id;
-  renderBeads();
-}
-
-function openBeadForm() {
-  document.getElementById("bead-form").classList.remove("hidden");
-  document.getElementById("bead-title").focus();
-}
-
-function closeBeadForm() {
-  document.getElementById("bead-form").classList.add("hidden");
-  document.getElementById("bead-title").value = "";
-  document.getElementById("bead-desc").value = "";
-  document.getElementById("bead-priority").value = "2";
-  document.getElementById("bead-type").value = "task";
-}
-
-async function submitBead() {
-  const title = document.getElementById("bead-title").value.trim();
-  if (!title) { document.getElementById("bead-title").focus(); return; }
-  const description = document.getElementById("bead-desc").value.trim();
-  const priority = Number(document.getElementById("bead-priority").value);
-  const type = document.getElementById("bead-type").value;
-  try {
-    await api("/api/beads", { method: "POST", body: { title, description, priority, type } });
-    closeBeadForm();
-    refreshBeads();
-  } catch (err) {
-    alert("Failed to create bead: " + err.message);
+async function toggleTaskDesc(id) {
+  expandedTaskId = expandedTaskId === id ? null : id;
+  renderTasks();
+  // Fetch worker sessions when expanding
+  if (expandedTaskId === id) {
+    try {
+      const data = await api(`/api/tasks/${encodeURIComponent(id)}/sessions`);
+      taskSessionsCache[id] = { sessions: data.sessions || [], fetchedAt: Date.now() };
+    } catch {
+      taskSessionsCache[id] = { sessions: [], fetchedAt: Date.now() };
+    }
+    renderTasks();
   }
 }
 
-async function beadSetStatus(id, status) {
+function openTaskForm() {
+  document.getElementById("task-form").classList.remove("hidden");
+  document.getElementById("task-title").focus();
+}
+
+function closeTaskForm() {
+  document.getElementById("task-form").classList.add("hidden");
+  document.getElementById("task-title").value = "";
+  document.getElementById("task-desc").value = "";
+  document.getElementById("task-priority").value = "2";
+  document.getElementById("task-type").value = "task";
+}
+
+async function submitTask() {
+  const title = document.getElementById("task-title").value.trim();
+  if (!title) { document.getElementById("task-title").focus(); return; }
+  const description = document.getElementById("task-desc").value.trim();
+  const priority = Number(document.getElementById("task-priority").value);
+  const type = document.getElementById("task-type").value;
   try {
-    await api(`/api/beads/${encodeURIComponent(id)}`, { method: "PATCH", body: { status } });
-    refreshBeads();
+    await api("/api/tasks", { method: "POST", body: { title, description, priority, type } });
+    closeTaskForm();
+    refreshTasks();
   } catch (err) {
-    alert("Failed to update bead: " + err.message);
+    alert("Failed to create task: " + err.message);
+  }
+}
+
+async function taskSetStatus(id, status) {
+  try {
+    await api(`/api/tasks/${encodeURIComponent(id)}`, { method: "PATCH", body: { status } });
+    refreshTasks();
+    if (currentDetailTaskId === id) openTaskDetail(id);
+  } catch (err) {
+    alert("Failed to update task: " + err.message);
+  }
+}
+
+// --- Task Detail Panel ---
+
+let currentDetailTaskId = null;
+
+async function openTaskDetail(taskId) {
+  currentDetailTaskId = taskId;
+  const overlay = document.getElementById("task-detail-overlay");
+  const idEl = document.getElementById("task-detail-id");
+  const bodyEl = document.getElementById("task-detail-body");
+
+  overlay.classList.remove("hidden");
+  idEl.textContent = taskId;
+  bodyEl.innerHTML = '<div class="task-detail-loading">Loading...</div>';
+
+  try {
+    const [task, sessionsData] = await Promise.all([
+      api(`/api/tasks/${encodeURIComponent(taskId)}`),
+      api(`/api/tasks/${encodeURIComponent(taskId)}/sessions`),
+    ]);
+
+    const b = Array.isArray(task) ? task[0] : task;
+    if (!b || b.error) {
+      bodyEl.innerHTML = `<div class="task-detail-loading">${esc(b?.error || "Task not found")}</div>`;
+      return;
+    }
+
+    const sessions = sessionsData.sessions || [];
+    const comments = b.comments || [];
+    const deps = b.dependents || [];
+
+    // Render description with markdown
+    let descHtml = "";
+    if (b.description) {
+      if (typeof marked !== "undefined" && marked.parse) {
+        descHtml = marked.parse(b.description);
+      } else {
+        descHtml = `<pre>${esc(b.description)}</pre>`;
+      }
+    }
+
+    // Status options
+    const statuses = ["open", "in_progress", "blocked", "closed"];
+    const statusOpts = statuses.map(s =>
+      `<option value="${s}"${s === b.status ? " selected" : ""}>${s.replace(/_/g, " ")}</option>`
+    ).join("");
+
+    // Priority options
+    const priorityOpts = [0,1,2,3,4].map(p =>
+      `<option value="${p}"${p === b.priority ? " selected" : ""}>P${p}</option>`
+    ).join("");
+
+    // Timestamps
+    const created = b.created_at ? new Date(b.created_at).toLocaleString() : "—";
+    const updated = b.updated_at ? new Date(b.updated_at).toLocaleString() : "—";
+
+    // Dependencies
+    let depsHtml = "";
+    if (deps.length) {
+      const depRows = deps.map(d => `
+        <div class="task-detail-dep" onclick="openTaskDetail('${esc(d.id)}')" style="cursor:pointer">
+          <span class="task-detail-dep-id">${esc(d.id)}</span>
+          <span class="task-detail-dep-title">${esc(d.title)}</span>
+          <span class="task-status ${esc(d.status || "open")}" style="font-size:9px;padding:1px 5px">${esc((d.status || "open").replace(/_/g, " "))}</span>
+          <span class="task-detail-dep-type">${esc(d.dependency_type || "related")}</span>
+        </div>`).join("");
+      depsHtml = `
+        <div class="task-detail-section">
+          <div class="task-detail-section-title">Dependencies</div>
+          <div class="task-detail-deps">${depRows}</div>
+        </div>`;
+    }
+
+    // Worker sessions
+    let sessionsHtml = "";
+    if (sessions.length) {
+      const rows = sessions.map(s => {
+        const statusCls = s.status === "running" ? "running" : s.status === "exited" ? "exited" : "stopped";
+        return `<div class="task-session-row">
+          <span class="task-session-workspace">${esc(s.workspace)}</span>
+          <span class="task-session-num">${s.sessionNum != null ? `#${s.sessionNum}` : ""}</span>
+          <span class="task-session-status ${statusCls}">${esc(s.status)}</span>
+          ${s.status === "running" ? `<button class="btn btn-xs danger" onclick="event.stopPropagation();stopSession('${esc(s.workspace)}')">Stop</button>` : ""}
+        </div>`;
+      }).join("");
+      sessionsHtml = `
+        <div class="task-detail-section">
+          <div class="task-detail-section-title">Worker Sessions</div>
+          ${rows}
+        </div>`;
+    }
+
+    // Comments
+    const commentsListHtml = comments.length
+      ? comments.map(c => `
+          <div class="task-comment">
+            <div class="task-comment-header">
+              <span class="task-comment-author">${esc(c.author || "unknown")}</span>
+              <span class="task-comment-time">${c.created_at ? new Date(c.created_at).toLocaleString() : ""}</span>
+            </div>
+            <div class="task-comment-text">${esc(c.text || c.content || "")}</div>
+          </div>`).join("")
+      : '<div class="task-comments-empty">No comments yet</div>';
+
+    bodyEl.innerHTML = `
+      <div class="task-detail-title">${esc(b.title)}</div>
+
+      <div class="task-detail-meta">
+        <span class="task-detail-meta-label">Status</span>
+        <select onchange="taskDetailUpdate('${esc(b.id)}',{status:this.value})">${statusOpts}</select>
+        <span class="task-detail-meta-label">Priority</span>
+        <select onchange="taskDetailUpdate('${esc(b.id)}',{priority:Number(this.value)})">${priorityOpts}</select>
+        <span class="task-detail-meta-label">Assignee</span>
+        <input class="task-detail-assignee-input" value="${esc(b.assignee || "")}" placeholder="unassigned"
+          onchange="taskDetailUpdate('${esc(b.id)}',{assignee:this.value})" />
+      </div>
+
+      <div class="task-detail-timestamps">
+        <span>Created: ${esc(created)}</span>
+        <span>Updated: ${esc(updated)}</span>
+      </div>
+
+      ${b.description ? `
+        <div class="task-detail-section">
+          <div class="task-detail-section-title">Description</div>
+          <div class="task-detail-desc">${descHtml}</div>
+        </div>` : ""}
+
+      ${depsHtml}
+      ${sessionsHtml}
+
+      <div class="task-detail-section">
+        <div class="task-detail-section-title">Comments (${comments.length})</div>
+        <div class="task-comments-list">${commentsListHtml}</div>
+        <div class="task-comment-form">
+          <textarea id="task-comment-input" placeholder="Add a comment..." onkeydown="if(event.key==='Enter'&&event.metaKey){event.preventDefault();submitTaskComment('${esc(b.id)}')}"></textarea>
+          <button class="btn btn-sm primary" onclick="submitTaskComment('${esc(b.id)}')">Post</button>
+        </div>
+      </div>
+    `;
+  } catch (err) {
+    bodyEl.innerHTML = `<div class="task-detail-loading">Error: ${esc(err.message)}</div>`;
+  }
+}
+
+function closeTaskDetail() {
+  currentDetailTaskId = null;
+  document.getElementById("task-detail-overlay").classList.add("hidden");
+}
+
+function closeTaskDetailBackdrop(e) {
+  if (e.target === e.currentTarget) closeTaskDetail();
+}
+
+async function taskDetailUpdate(id, fields) {
+  try {
+    await api(`/api/tasks/${encodeURIComponent(id)}`, { method: "PATCH", body: fields });
+    refreshTasks();
+    openTaskDetail(id);
+  } catch (err) {
+    alert("Failed to update task: " + err.message);
+  }
+}
+
+async function submitTaskComment(id) {
+  const input = document.getElementById("task-comment-input");
+  const text = input.value.trim();
+  if (!text) { input.focus(); return; }
+  try {
+    await api(`/api/tasks/${encodeURIComponent(id)}`, { method: "PATCH", body: { comment: text } });
+    refreshTasks();
+    openTaskDetail(id);
+  } catch (err) {
+    alert("Failed to add comment: " + err.message);
+  }
+}
+
+// --- Worker Detail View ---
+
+let currentWorkerProject = null;
+let workerActiveTab = "task";
+let workerStatsTimer = null;
+let workerActivityTimer = null;
+
+async function openWorkerDetail(project) {
+  currentWorkerProject = project;
+  workerActiveTab = "task";
+
+  const overlay = document.getElementById("worker-detail-overlay");
+  const titleEl = document.getElementById("worker-detail-title");
+  const bodyEl = document.getElementById("worker-detail-body");
+  const statsEl = document.getElementById("worker-detail-stats");
+
+  overlay.classList.remove("hidden");
+
+  const parts = project.split("--");
+  const branch = parts.length > 1 ? parts.slice(1).join("--") : project;
+  titleEl.textContent = branch;
+
+  statsEl.innerHTML = '<span class="worker-stat">Loading stats...</span>';
+  bodyEl.innerHTML = '<div class="worker-detail-loading">Loading...</div>';
+
+  // Set active tab button
+  document.querySelectorAll(".worker-tab").forEach(b => b.classList.toggle("active", b.dataset.tab === "task"));
+
+  // Fetch stats and content in parallel
+  refreshWorkerStats(project);
+  await renderWorkerTask(project);
+
+  // Start polling stats every 5 seconds
+  clearInterval(workerStatsTimer);
+  workerStatsTimer = setInterval(() => {
+    if (currentWorkerProject === project) refreshWorkerStats(project);
+  }, 5000);
+}
+
+function closeWorkerDetail() {
+  currentWorkerProject = null;
+  document.getElementById("worker-detail-overlay").classList.add("hidden");
+  clearInterval(workerStatsTimer);
+  clearInterval(workerActivityTimer);
+  workerStatsTimer = null;
+  workerActivityTimer = null;
+}
+
+function closeWorkerDetailBackdrop(e) {
+  if (e.target === e.currentTarget) closeWorkerDetail();
+}
+
+async function refreshWorkerStats(project) {
+  const statsEl = document.getElementById("worker-detail-stats");
+  if (!statsEl) return;
+
+  try {
+    const data = await api(`/api/workspace-stats/${encodeURIComponent(project)}`);
+    const stats = [];
+
+    // Files changed
+    if (data.filesChanged != null) {
+      stats.push(`<span class="worker-stat">${PENCIL_SVG} ${data.filesChanged} file${data.filesChanged === 1 ? "" : "s"}</span>`);
+    }
+
+    // Lines changed
+    const lines = (data.linesAdded || 0) + (data.linesRemoved || 0);
+    if (lines > 0) {
+      stats.push(`<span class="worker-stat">
+        <span class="worker-stat-added">+${data.linesAdded || 0}</span>
+        <span class="worker-stat-removed">-${data.linesRemoved || 0}</span>
+      </span>`);
+    }
+
+    // CPU
+    stats.push(`<span class="worker-stat">${STAT_CPU_SVG} ${data.cpu != null ? data.cpu + "%" : "—"}</span>`);
+
+    // RAM
+    stats.push(`<span class="worker-stat">${STAT_MEM_SVG} ${data.memMB != null ? data.memMB + " MB" : "—"}</span>`);
+
+    // Uptime
+    if (data.uptime) {
+      stats.push(`<span class="worker-stat">${STAT_CLOCK_SVG} ${esc(data.uptime)}</span>`);
+    }
+
+    // Last activity
+    if (data.lastActivity) {
+      const ago = timeSince(data.lastActivity);
+      stats.push(`<span class="worker-stat" title="Last activity">${ago} ago</span>`);
+    }
+
+    // Running indicator
+    stats.push(`<span class="worker-stat-status ${data.isRunning ? "running" : "stopped"}">${data.isRunning ? "Running" : "Stopped"}</span>`);
+
+    statsEl.innerHTML = stats.join("");
+  } catch {
+    statsEl.innerHTML = '<span class="worker-stat">Stats unavailable</span>';
+  }
+}
+
+function timeSince(ts) {
+  const sec = Math.floor((Date.now() - ts) / 1000);
+  if (sec < 60) return sec + "s";
+  if (sec < 3600) return Math.floor(sec / 60) + "m";
+  if (sec < 86400) return Math.floor(sec / 3600) + "h";
+  return Math.floor(sec / 86400) + "d";
+}
+
+async function switchWorkerTab(tab) {
+  workerActiveTab = tab;
+  document.querySelectorAll(".worker-tab").forEach(b => b.classList.toggle("active", b.dataset.tab === tab));
+  clearInterval(workerActivityTimer);
+  workerActivityTimer = null;
+
+  if (tab === "task") {
+    await renderWorkerTask(currentWorkerProject);
+  } else {
+    await renderWorkerActivity(currentWorkerProject);
+  }
+}
+
+async function renderWorkerTask(project) {
+  const bodyEl = document.getElementById("worker-detail-body");
+  if (!bodyEl || workerActiveTab !== "task") return;
+
+  // Find the task ID for this worker from session data
+  try {
+    const sessions = await api("/api/sessions");
+    const session = sessions.find(s => s.project === project);
+    const taskId = session?.taskId;
+
+    if (!taskId) {
+      bodyEl.innerHTML = '<div class="worker-detail-empty">No task assigned to this worker</div>';
+      return;
+    }
+
+    const task = await api(`/api/tasks/${encodeURIComponent(taskId)}`);
+    if (!task || task.error) {
+      bodyEl.innerHTML = `<div class="worker-detail-empty">Task ${esc(taskId)} not found</div>`;
+      return;
+    }
+
+    // Parse description into sections (Goal, Specs, Verification, Safety)
+    const desc = task.description || "";
+    const sections = parseTaskSections(desc);
+
+    let html = `<div class="worker-task">
+      <div class="worker-task-title">${esc(task.title)}</div>
+      <div class="worker-task-id">${esc(task.id)} · P${task.priority || 2} · ${esc((task.status || "open").replace(/_/g, " "))}</div>`;
+
+    for (const [heading, content] of sections) {
+      html += `<div class="worker-task-section">
+        <div class="worker-task-section-title">${esc(heading)}</div>
+        <div class="worker-task-section-body">${renderTaskContent(content)}</div>
+      </div>`;
+    }
+
+    html += `</div>`;
+    bodyEl.innerHTML = html;
+  } catch (err) {
+    bodyEl.innerHTML = `<div class="worker-detail-empty">Error loading task: ${esc(err.message)}</div>`;
+  }
+}
+
+function parseTaskSections(desc) {
+  // Split description by known headings (Goal, Specs, Verification, Safety)
+  // or by markdown-style headers
+  const lines = desc.split("\n");
+  const sections = [];
+  let currentHeading = "Description";
+  let currentContent = [];
+
+  for (const line of lines) {
+    const headingMatch = line.match(/^(Goal|Specs|Verification|Safety|Description)\s*:/i) ||
+                          line.match(/^#{1,3}\s+(.*)/);
+    if (headingMatch) {
+      if (currentContent.length) {
+        sections.push([currentHeading, currentContent.join("\n").trim()]);
+      }
+      currentHeading = headingMatch[1];
+      const rest = line.slice(headingMatch[0].length).trim();
+      currentContent = rest ? [rest] : [];
+    } else {
+      currentContent.push(line);
+    }
+  }
+  if (currentContent.length) {
+    sections.push([currentHeading, currentContent.join("\n").trim()]);
+  }
+
+  return sections;
+}
+
+function renderTaskContent(text) {
+  // Render list items and paragraphs
+  const lines = text.split("\n");
+  let html = "";
+  let inList = false;
+
+  for (const line of lines) {
+    const listMatch = line.match(/^\s*[-*]\s+(.*)/);
+    if (listMatch) {
+      if (!inList) { html += "<ul>"; inList = true; }
+      html += `<li>${esc(listMatch[1])}</li>`;
+    } else {
+      if (inList) { html += "</ul>"; inList = false; }
+      if (line.trim()) html += `<p>${esc(line)}</p>`;
+    }
+  }
+  if (inList) html += "</ul>";
+  return html;
+}
+
+async function renderWorkerActivity(project) {
+  const bodyEl = document.getElementById("worker-detail-body");
+  if (!bodyEl || workerActiveTab !== "activity") return;
+
+  bodyEl.innerHTML = '<div class="worker-detail-loading">Loading activity...</div>';
+
+  try {
+    const data = await api(`/api/worker-activity/${encodeURIComponent(project)}`);
+    const messages = data.messages || [];
+
+    if (!messages.length) {
+      bodyEl.innerHTML = '<div class="worker-detail-empty">No activity recorded yet</div>';
+      return;
+    }
+
+    bodyEl.innerHTML = renderActivityMessages(messages);
+    bodyEl.scrollTop = bodyEl.scrollHeight;
+
+    // Poll for updates if worker is running
+    clearInterval(workerActivityTimer);
+    workerActivityTimer = setInterval(async () => {
+      if (currentWorkerProject !== project || workerActiveTab !== "activity") {
+        clearInterval(workerActivityTimer);
+        return;
+      }
+      try {
+        const fresh = await api(`/api/worker-activity/${encodeURIComponent(project)}`);
+        const freshMsgs = fresh.messages || [];
+        if (freshMsgs.length !== messages.length) {
+          const wasAtBottom = bodyEl.scrollHeight - bodyEl.scrollTop - bodyEl.clientHeight < 50;
+          bodyEl.innerHTML = renderActivityMessages(freshMsgs);
+          messages.length = 0;
+          messages.push(...freshMsgs);
+          if (wasAtBottom) bodyEl.scrollTop = bodyEl.scrollHeight;
+        }
+      } catch {}
+    }, 3000);
+  } catch (err) {
+    bodyEl.innerHTML = `<div class="worker-detail-empty">Error: ${esc(err.message)}</div>`;
+  }
+}
+
+function getWorkerToolDisplayMode() {
+  if (currentWorkerProject) {
+    return localStorage.getItem(`klaudii-tool-display-${currentWorkerProject}`) || "normal";
+  }
+  return "normal";
+}
+
+function renderActivityMessages(messages) {
+  const mode = getWorkerToolDisplayMode();
+  let html = '<div class="worker-activity">';
+  const pendingTools = new Map();
+
+  for (const msg of messages) {
+    if (msg.role === "thinking") {
+      html += `<div class="wa-thinking">
+        <div class="wa-thinking-header" onclick="this.parentElement.classList.toggle('expanded')">Thinking</div>
+        <div class="wa-thinking-content">${esc(msg.content)}</div>
+      </div>`;
+    } else if (msg.role === "user") {
+      html += `<div class="wa-msg wa-user"><div class="wa-role">User</div><div class="wa-content">${esc(msg.content)}</div></div>`;
+    } else if (msg.role === "assistant") {
+      html += `<div class="wa-msg wa-assistant"><div class="wa-content">${workerRenderMarkdown(msg.content)}</div></div>`;
+    } else if (msg.role === "tool_use") {
+      try {
+        const d = JSON.parse(msg.content);
+        pendingTools.set(d.tool_id, d);
+        // Don't render yet — wait for tool_result to pair with it
+      } catch {
+        html += `<div class="wa-tool-pill">Unknown tool</div>`;
+      }
+    } else if (msg.role === "tool_result") {
+      try {
+        const d = JSON.parse(msg.content);
+        const tu = d.tool_id ? pendingTools.get(d.tool_id) : null;
+        if (tu) pendingTools.delete(d.tool_id);
+        const toolName = tu ? tu.tool_name : "tool";
+        const params = tu ? tu.parameters : {};
+        const statusCls = d.status === "error" ? "error" : "success";
+        const output = d.output || "";
+
+        html += renderToolPill(toolName, params, statusCls, output, mode);
+      } catch {}
+    }
+  }
+
+  // Flush pending tools that never got results (still running)
+  for (const tu of pendingTools.values()) {
+    const readonly = typeof isReadOnlyTool === "function" && isReadOnlyTool(tu.tool_name, tu.parameters);
+    const hidden = mode === "minimal" && readonly;
+    html += `<div class="wa-tool-pill running"${hidden ? ' style="display:none"' : ''}>
+      <div class="wa-tool-header">${esc(tu.tool_name)} <span class="wa-tool-status running">running</span></div>
+      ${renderToolParams(tu.parameters)}
+    </div>`;
+  }
+
+  html += '</div>';
+  return html;
+}
+
+function renderToolPill(name, params, statusCls, output, mode) {
+  mode = mode || "normal";
+  const readonly = typeof isReadOnlyTool === "function" && isReadOnlyTool(name, params);
+
+  // Minimal: hide read-only tools
+  if (mode === "minimal" && readonly) return "";
+
+  const paramSummary = renderToolParamSummary(name, params);
+  const outputPreview = output.length > 500 ? output.slice(0, 500) + "..." : output;
+  const expanded = mode === "full" ? " expanded" : "";
+
+  return `<div class="wa-tool-pill ${esc(statusCls)}${expanded}">
+    <div class="wa-tool-header" onclick="this.parentElement.classList.toggle('expanded')">
+      <span class="wa-tool-name">${esc(name)}</span>
+      ${paramSummary ? `<span class="wa-tool-summary">${paramSummary}</span>` : ""}
+      <span class="wa-tool-status ${esc(statusCls)}">${statusCls === "error" ? "error" : "done"}</span>
+    </div>
+    <div class="wa-tool-body">
+      ${renderToolParams(params)}
+      ${output ? `<div class="wa-tool-output"><pre>${esc(outputPreview)}</pre></div>` : ""}
+    </div>
+  </div>`;
+}
+
+function renderToolParamSummary(name, params) {
+  // Show a short summary depending on tool type
+  if (name === "Read" && params.file_path) return esc(params.file_path.split("/").pop());
+  if (name === "Edit" && params.file_path) return esc(params.file_path.split("/").pop());
+  if (name === "Write" && params.file_path) return esc(params.file_path.split("/").pop());
+  if (name === "Bash" && params.command) return esc(params.command.slice(0, 60));
+  if (name === "Grep" && params.pattern) return esc(params.pattern.slice(0, 40));
+  if (name === "Glob" && params.pattern) return esc(params.pattern);
+  return "";
+}
+
+function renderToolParams(params) {
+  if (!params || !Object.keys(params).length) return "";
+  const entries = Object.entries(params).filter(([k]) => k !== "content" && k !== "new_string" && k !== "old_string");
+  if (!entries.length) return "";
+  return `<div class="wa-tool-params">${entries.map(([k, v]) => {
+    const val = typeof v === "string" ? (v.length > 100 ? v.slice(0, 100) + "..." : v) : JSON.stringify(v);
+    return `<span class="wa-param"><span class="wa-param-key">${esc(k)}</span>: ${esc(val)}</span>`;
+  }).join("")}</div>`;
+}
+
+function workerRenderMarkdown(text) {
+  if (typeof marked !== "undefined" && marked.parse) {
+    try { return marked.parse(text); } catch {}
+  }
+  return `<p>${esc(text)}</p>`;
+}
+
+// --- Sidebar ---
+
+function switchSidebarTab(tab) {
+  sidebarTab = tab;
+  localStorage.setItem("klaudii-sidebar-tab", tab);
+  document.querySelectorAll(".sidebar-tab").forEach(btn => {
+    btn.classList.toggle("active", btn.dataset.tab === tab);
+  });
+  renderSidebar();
+}
+
+function renderSidebar() {
+  const container = document.getElementById("sidebar-content");
+  if (!container) return;
+
+  document.querySelectorAll(".sidebar-tab").forEach(btn => {
+    btn.classList.toggle("active", btn.dataset.tab === sidebarTab);
+  });
+
+  updateSidebarBadges();
+
+  if (sidebarTab === "workers") renderSidebarWorkers();
+  else if (sidebarTab === "tasks") renderSidebarTasks();
+  else renderSidebarWorkspaces();
+}
+
+function updateSidebarBadges() {
+  const sessions = lastSessions.filter(s => !(s.project.startsWith("__") && s.project.endsWith("__")));
+  const workers = sessions.filter(s => s.workspaceType === "worker");
+  const workspaces = sessions.filter(s => s.workspaceType !== "worker");
+
+  const runningWorkers = workers.filter(s => {
+    const st = s.status || (s.running ? "running" : "stopped");
+    return st === "running";
+  });
+  const runningWorkspaces = workspaces.filter(s => {
+    const st = s.status || (s.running ? "running" : "stopped");
+    return st === "running" || s.relayActive;
+  });
+  const openTasks = tasksData.filter(b => b.status !== "closed");
+
+  const wb = document.getElementById("sidebar-badge-workers");
+  const bb = document.getElementById("sidebar-badge-tasks");
+  const wsb = document.getElementById("sidebar-badge-workspaces");
+  if (wb) {
+    wb.textContent = runningWorkers.length;
+    wb.classList.toggle("has-activity", runningWorkers.length > 0);
+  }
+  if (bb) bb.textContent = openTasks.length;
+  if (wsb) wsb.textContent = runningWorkspaces.length;
+}
+
+function findTaskForWorker(session) {
+  if (!tasksData.length) return null;
+  const branch = session.git?.branch || session.project.split("--").slice(1).join("--") || "";
+  return tasksData.find(b => branch.includes(b.id)) || null;
+}
+
+function renderSidebarWorkers() {
+  const container = document.getElementById("sidebar-content");
+  const workers = lastSessions.filter(s => s.workspaceType === "worker");
+
+  if (!workers.length) {
+    container.innerHTML = '<div class="sidebar-empty">No workers</div>';
+    return;
+  }
+
+  const procByProject = {};
+  if (lastProcs) {
+    for (const p of lastProcs) {
+      if (p.managed && p.project) procByProject[p.project] = p;
+    }
+  }
+
+  container.innerHTML = workers.map(s => {
+    const branch = s.git?.branch || s.project.split("--").slice(1).join("--") || s.project;
+    const status = s.status || (s.running ? "running" : "stopped");
+    const isActive = status === "running";
+    const proc = procByProject[s.project];
+    const uptime = proc?.uptime || "";
+    const task = findTaskForWorker(s);
+    const taskTitle = task ? task.title : "";
+    const metaParts = [uptime, taskTitle].filter(Boolean);
+
+    return `<div class="sidebar-card" onclick="sidebarWorkerClick('${esc(s.project)}')">
+      <div class="sidebar-card-accent ${status}"></div>
+      <div class="sidebar-card-body">
+        <div class="sidebar-card-header">
+          <span class="sidebar-card-title"><span class="sidebar-worker-dot ${isActive ? "active" : "idle"}"></span>${esc(branch)}</span>
+          <span class="card-status ${status}" style="font-size:9px;padding:1px 5px">${esc(status)}</span>
+        </div>
+        ${metaParts.length ? `<span class="sidebar-card-meta">${esc(metaParts.join(" \u00b7 "))}</span>` : ""}
+      </div>
+    </div>`;
+  }).join("");
+}
+
+function renderSidebarTasks() {
+  const container = document.getElementById("sidebar-content");
+
+  if (!tasksData.length) {
+    container.innerHTML = '<div class="sidebar-empty">No tasks</div>';
+    return;
+  }
+
+  const sorted = [...tasksData].sort((a, b) => {
+    const statusOrder = { open: 0, in_progress: 1, blocked: 2, closed: 3 };
+    const sa = statusOrder[a.status] ?? 99;
+    const sb2 = statusOrder[b.status] ?? 99;
+    if (sa !== sb2) return sa - sb2;
+    return (a.priority || 2) - (b.priority || 2);
+  });
+
+  container.innerHTML = sorted.map(b => {
+    const statusLabel = (b.status || "open").replace(/_/g, " ");
+    const priority = PRIORITY_LABELS[b.priority] || `P${b.priority}`;
+    const shortId = b.id.includes("-") ? b.id.split("-").pop() : b.id;
+
+    return `<div class="sidebar-task" onclick="openTaskDetail('${esc(b.id)}')">
+      <span class="sidebar-task-priority p${b.priority || 2}">${esc(priority)}</span>
+      <div class="sidebar-task-info">
+        <span class="sidebar-card-title">${esc(b.title)}</span>
+        <span class="sidebar-card-meta">${esc(shortId)} \u00b7 ${esc(statusLabel)}</span>
+      </div>
+      <span class="task-status ${esc(b.status || "open")}" style="font-size:9px;padding:1px 5px">${esc(statusLabel)}</span>
+    </div>`;
+  }).join("");
+}
+
+function renderSidebarWorkspaces() {
+  const container = document.getElementById("sidebar-content");
+  let sessions = lastSessions.filter(s =>
+    s.workspaceType !== "worker" && !(s.project.startsWith("__") && s.project.endsWith("__"))
+  );
+
+  if (!sessions.length) {
+    container.innerHTML = '<div class="sidebar-empty">No workspaces</div>';
+    return;
+  }
+
+  sessions = sortSessions(sessions);
+
+  container.innerHTML = sessions.map(s => {
+    const parts = s.project.split("--");
+    const repo = parts[0];
+    const branch = parts.length > 1 ? parts.slice(1).join("--") : null;
+    const status = s.status || (s.running ? "running" : "stopped");
+    const displayStatus = (status === "stopped" && s.relayActive) ? "running" : status;
+    const lastAct = s.lastActivity ? relativeTime(s.lastActivity) : "";
+
+    return `<div class="sidebar-card" data-project="${esc(s.project)}" data-project-path="${esc(s.projectPath || "")}" data-chat-mode="${esc(s.chatMode || "claude-local")}" data-claude-url="${esc(s.claudeUrl || "")}" onclick="sidebarWorkspaceClick(this)">
+      <div class="sidebar-card-accent ${displayStatus}"></div>
+      <div class="sidebar-card-body">
+        <div class="sidebar-card-header">
+          <span class="sidebar-card-title">${esc(repo)}</span>
+          <span class="card-status ${displayStatus}" style="font-size:9px;padding:1px 5px">${esc(displayStatus)}</span>
+        </div>
+        ${branch ? `<span class="sidebar-card-sub">${esc(branch)}</span>` : ""}
+        ${lastAct ? `<span class="sidebar-card-meta">${esc(lastAct)}</span>` : ""}
+      </div>
+    </div>`;
+  }).join("");
+}
+
+function sidebarWorkspaceClick(el) {
+  const project = el.dataset.project;
+  if (!project) return;
+  const chatMode = el.dataset.chatMode || "claude-local";
+  const projectPath = el.dataset.projectPath || "";
+  const claudeUrl = el.dataset.claudeUrl || "";
+
+  document.querySelectorAll(".sidebar-card.active-workspace, .card.active-workspace").forEach(c => c.classList.remove("active-workspace"));
+  el.classList.add("active-workspace");
+  const mainCard = document.getElementById(`card-${project}`);
+  if (mainCard) mainCard.classList.add("active-workspace");
+
+  if (chatMode === "claude-remote") {
+    if (claudeUrl) window.open(claudeUrl, "_blank");
+    return;
+  }
+
+  const cli = chatMode === "gemini" ? "gemini" : "claude";
+  openChat(project, projectPath, cli);
+}
+
+function sidebarWorkerClick(project) {
+  const card = document.getElementById(`card-${project}`);
+  if (card) {
+    card.scrollIntoView({ behavior: "smooth", block: "center" });
+    openWorkerDetail(project);
   }
 }
 
@@ -1480,6 +2435,12 @@ document.getElementById("sessions-list").addEventListener("click", (e) => {
   const project = card.dataset.project;
   if (!project) return;
 
+  // Worker cards open the worker detail view
+  if (card.classList.contains("worker-card")) {
+    openWorkerDetail(project);
+    return;
+  }
+
   const chatMode = card.dataset.chatMode || "claude-local";
   const projectPath = card.dataset.projectPath || "";
   const claudeUrl = card.dataset.claudeUrl || "";
@@ -1494,10 +2455,88 @@ document.getElementById("sessions-list").addEventListener("click", (e) => {
     return;
   }
 
-  // Map stored mode to cli param expected by openGeminiChat
+  // Map stored mode to cli param expected by openChat
   const cli = chatMode === "gemini" ? "gemini" : "claude";
-  openGeminiChat(project, projectPath, cli);
+  openChat(project, projectPath, cli);
 });
+
+// --- Settings ---
+
+let currentSettings = null;
+
+function openSettingsModal() {
+  document.getElementById("settings-modal").classList.remove("hidden");
+  renderSettingsModal();
+}
+
+function closeSettingsModal() {
+  document.getElementById("settings-modal").classList.add("hidden");
+}
+
+function closeSettingsBackdrop(e) {
+  if (e.target.id === "settings-modal") closeSettingsModal();
+}
+
+async function renderSettingsModal() {
+  const body = document.getElementById("settings-modal-body");
+  try {
+    currentSettings = await api("/api/settings");
+  } catch {
+    currentSettings = { workerVisibility: "hide", theme: "dark" };
+  }
+
+  body.innerHTML = `
+    <div class="form-group">
+      <label>Worker workspace visibility</label>
+      <select id="setting-worker-visibility" class="settings-select" onchange="saveSettings()">
+        <option value="hide"${currentSettings.workerVisibility === "hide" ? " selected" : ""}>Hide</option>
+        <option value="show"${currentSettings.workerVisibility === "show" ? " selected" : ""}>Show</option>
+        <option value="auto-clean"${currentSettings.workerVisibility === "auto-clean" ? " selected" : ""}>Auto-clean</option>
+      </select>
+      <div class="form-hint">Controls visibility of worker-created workspaces on the dashboard.</div>
+    </div>
+    <div class="form-group">
+      <label>Theme preference</label>
+      <select id="setting-theme" class="settings-select" onchange="saveSettings()">
+        <option value="dark"${currentSettings.theme === "dark" ? " selected" : ""}>Dark</option>
+        <option value="light"${currentSettings.theme === "light" ? " selected" : ""}>Light</option>
+        <option value="auto"${currentSettings.theme === "auto" ? " selected" : ""}>Auto</option>
+      </select>
+      <div class="form-hint">Theme is also toggled via the quick-toggle in the header.</div>
+    </div>
+    <div id="settings-status" class="form-hint" style="margin-top:0.5rem"></div>
+  `;
+}
+
+async function saveSettings() {
+  const workerVisibility = document.getElementById("setting-worker-visibility").value;
+  const theme = document.getElementById("setting-theme").value;
+  const statusEl = document.getElementById("settings-status");
+
+  try {
+    currentSettings = await api("/api/settings", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ workerVisibility, theme }),
+    });
+    if (statusEl) statusEl.textContent = "Saved.";
+    applyThemeFromSettings(theme);
+  } catch (err) {
+    if (statusEl) statusEl.textContent = "Failed to save: " + err.message;
+  }
+}
+
+function applyThemeFromSettings(theme) {
+  let isLight;
+  if (theme === "auto") {
+    isLight = window.matchMedia("(prefers-color-scheme: light)").matches;
+  } else {
+    isLight = theme === "light";
+  }
+  document.documentElement.classList.toggle("light", isLight);
+  localStorage.setItem("klaudii-theme", isLight ? "light" : "dark");
+  document.getElementById("theme-toggle").textContent = isLight ? "\uD83C\uDF19" : "\u2600";
+}
 
 // --- Init ---
 
@@ -1508,18 +2547,21 @@ if (localStorage.getItem("klaudii-theme") === "light") {
 
 // Skip all dashboard polling in chatonly mode — only chat overlay is visible
 if (new URLSearchParams(window.location.search).get("mode") === "chatonly") {
-  // Fetch health once (for auth status used by gemini.js)
+  // Fetch health once (for auth status used by chat.js)
   api("/api/health").then(h => { lastHealthData = h; }).catch(() => {});
 } else {
+  refreshProjectSwitcher();
   refresh();
   refreshCloudStatus();
   refreshScheduler();
-  refreshBeads();
+  refreshTasks();
   refreshTimer = setInterval(() => {
     refresh();
     refreshCloudStatus();
   }, 10000);
   refreshUsage();
   setInterval(refreshUsage, 60000);
-  setInterval(() => { refreshScheduler(); refreshBeads(); }, 30000);
+  setInterval(() => { refreshScheduler(); refreshTasks(); }, 30000);
+  // Refresh project list periodically (new projects may be added)
+  setInterval(refreshProjectSwitcher, 30000);
 }

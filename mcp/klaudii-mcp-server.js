@@ -58,18 +58,18 @@ server.tool(
   {
     repo: z.string().describe("Repository name (e.g. 'klaudii')"),
     branch: z.string().describe("Branch name for the worktree"),
-    bead_id: z.string().optional().describe("Bead ID to assign to this workspace"),
+    task_id: z.string().optional().describe("Task ID to assign to this workspace"),
   },
-  async ({ repo, branch, bead_id }) => {
+  async ({ repo, branch, task_id }) => {
     const result = await api("/sessions/new", {
       method: "POST",
       body: { repo, branch },
     });
 
-    // If a bead_id was provided, claim it and add a comment noting the workspace
-    if (bead_id) {
+    // If a task_id was provided, claim it and add a comment noting the workspace
+    if (task_id) {
       try {
-        await api(`/beads/${encodeURIComponent(bead_id)}`, {
+        await api(`/tasks/${encodeURIComponent(task_id)}`, {
           method: "PATCH",
           body: { status: "in_progress", comment: `Assigned to workspace ${result.project}` },
         });
@@ -87,7 +87,7 @@ server.tool(
           branch: result.branch,
           tmuxSession: result.tmuxSession,
           ttydPort: result.ttydPort,
-          beadAssigned: bead_id || null,
+          taskAssigned: task_id || null,
         }, null, 2),
       }],
     };
@@ -127,31 +127,31 @@ server.tool(
   }
 );
 
-// --- klaudii_read_beads ---
+// --- klaudii_read_tasks ---
 
 server.tool(
-  "klaudii_read_beads",
-  "Read all beads (task issues) with optional filtering by status or priority",
+  "klaudii_read_tasks",
+  "Read all tasks (task issues) with optional filtering by status or priority",
   {
     status: z.enum(["open", "in_progress", "blocked", "closed"]).optional().describe("Filter by status"),
     priority: z.number().min(0).max(4).optional().describe("Filter by priority (0=critical, 4=backlog)"),
   },
   async ({ status, priority }) => {
-    const beads = await api("/beads");
-    let filtered = Array.isArray(beads) ? beads : [];
+    const tasks = await api("/tasks");
+    let filtered = Array.isArray(tasks) ? tasks : [];
     if (status) filtered = filtered.filter((b) => b.status === status);
     if (priority !== undefined) filtered = filtered.filter((b) => b.priority === priority);
     return { content: [{ type: "text", text: JSON.stringify(filtered, null, 2) }] };
   }
 );
 
-// --- klaudii_create_bead ---
+// --- klaudii_create_task ---
 
 server.tool(
-  "klaudii_create_bead",
-  "Create a new bead (task/issue) for tracking work",
+  "klaudii_create_task",
+  "Create a new task (task/issue) for tracking work",
   {
-    title: z.string().describe("Bead title"),
+    title: z.string().describe("Task title"),
     description: z.string().describe("Full description with Goal, Specs, Verification, Safety"),
     priority: z.number().min(0).max(4).optional().describe("Priority 0-4 (default: 2)"),
     type: z.enum(["task", "bug", "feature", "epic", "chore"]).optional().describe("Issue type (default: task)"),
@@ -162,18 +162,18 @@ server.tool(
     if (priority !== undefined) body.priority = priority;
     if (type) body.type = type;
     if (deps) body.deps = deps;
-    const result = await api("/beads", { method: "POST", body });
+    const result = await api("/tasks", { method: "POST", body });
     return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }] };
   }
 );
 
-// --- klaudii_update_bead ---
+// --- klaudii_update_task ---
 
 server.tool(
-  "klaudii_update_bead",
-  "Update an existing bead's status, assignee, or add a comment",
+  "klaudii_update_task",
+  "Update an existing task's status, assignee, or add a comment",
   {
-    id: z.string().describe("Bead ID (e.g. 'klaudii-abc')"),
+    id: z.string().describe("Task ID (e.g. 'klaudii-abc')"),
     status: z.enum(["open", "in_progress", "blocked", "closed"]).optional().describe("New status"),
     comment: z.string().optional().describe("Comment to add"),
     assignee: z.string().optional().describe("Assign to someone"),
@@ -183,7 +183,7 @@ server.tool(
     if (status) body.status = status;
     if (comment) body.comment = comment;
     if (assignee) body.assignee = assignee;
-    const result = await api(`/beads/${encodeURIComponent(id)}`, { method: "PATCH", body });
+    const result = await api(`/tasks/${encodeURIComponent(id)}`, { method: "PATCH", body });
     return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }] };
   }
 );

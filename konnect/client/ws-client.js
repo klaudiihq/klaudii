@@ -34,7 +34,8 @@ function connect(config, messageHandler, connectHandler) {
 
   ws.on("open", () => {
     console.log("[cloud] Connected to relay");
-    reconnectDelay = 1000; // Reset backoff on successful connection
+    // Don't reset backoff here — transport-level open doesn't mean the relay
+    // accepted us. Reset only after successful authentication (auth_result.ok).
   });
 
   ws.on("message", (raw) => {
@@ -56,6 +57,7 @@ function connect(config, messageHandler, connectHandler) {
     if (msg.type === "auth_result") {
       if (msg.ok) {
         console.log("[cloud] Authenticated with relay");
+        reconnectDelay = 1000; // Reset backoff only after successful auth
         startHeartbeat();
         if (onConnect) onConnect();
       } else {

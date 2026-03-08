@@ -8,15 +8,20 @@
     "install-service": "./install.sh",
     "test": "vitest run",
     "test:watch": "vitest",
-    "test:contracts": "vitest run test/contracts/"
+    "test:contracts": "vitest run test/contracts/",
+    "test:functional": "vitest run test/functional/",
+    "test:e2e": "npx playwright test"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.27.1",
+    "better-sqlite3": "^11.10.0",
     "express": "^5.1.0",
     "qrcode": "^1.5.4",
     "ws": "^8.19.0"
   },
   "devDependencies": {
+    "@playwright/test": "^1.58.2",
+    "@vitest/coverage-v8": "^4.0.18",
     "supertest": "^7.2.2",
     "vitest": "^4.0.18"
   },

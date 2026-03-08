@@ -121,21 +121,21 @@ describe("claude-chat.js invariants", () => {
     ].join("\n")).toBe(true);
   });
 
-  it("appendMessage must call flushTurn before writing to the relay socket", () => {
+  it("sendMessage must call flushTurn before writing to the relay socket", () => {
     // Without flushTurn(), text-only assistant responses (no tool use) between
     // two user messages are never persisted. Tool-use turns get a synthetic result
     // from normalizeEvent's "user" case, but text-only turns don't because the
-    // next user message comes from appendMessage, not from Claude's event stream.
+    // next user message comes from sendMessage, not from Claude's event stream.
     //
     // flushTurn() emits a synthetic { type: "result", _flush: true } to trigger
     // persistence of the accumulated content before the new message starts.
-    const appendFn = claudeChat.match(/function\s+appendMessage\s*\([^)]*\)\s*\{([\s\S]*?)\n\}/);
-    expect(appendFn, "appendMessage function must exist").toBeTruthy();
+    const sendFn = claudeChat.match(/function\s+sendMessage\s*\([^)]*\)\s*\{([\s\S]*?)\n\}/);
+    expect(sendFn, "sendMessage function must exist").toBeTruthy();
 
-    const body = appendFn[1];
+    const body = sendFn[1];
     const hasFlushCall = /flushTurn\s*\(\s*\)/.test(body);
     expect(hasFlushCall, [
-      "FATAL: appendMessage() does not call flushTurn() before writing.",
+      "FATAL: sendMessage() does not call flushTurn() before writing.",
       "Text-only assistant responses (no tool use) are never persisted without this.",
       "The previous turn's content sits in memory and is overwritten by the new turn.",
     ].join("\n")).toBe(true);
@@ -285,7 +285,7 @@ describe("server.js invariants", () => {
   it("result handler must check _flush flag before broadcasting done", () => {
     // flushTurn() emits { type: "result", _flush: true }. The server's result
     // handler must NOT broadcast "done" or clear streaming state for _flush results.
-    // Without this check, every appendMessage() causes a premature "done" broadcast.
+    // Without this check, every sendMessage() causes a premature "done" broadcast.
     const hasFlushCheck = /event\._flush|event\s*\[\s*["']_flush["']\s*\]/.test(serverJs);
     expect(hasFlushCheck, [
       "server.js result handler must check event._flush before broadcasting 'done'.",

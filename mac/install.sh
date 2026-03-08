@@ -98,7 +98,20 @@ npm install
 
 # --- config.json ---
 
-if [ ! -f "$PROJECT_DIR/config.json" ]; then
+CONFIG_DIR="$HOME/Library/Application Support/com.klaudii"
+CONFIG_PATH="$CONFIG_DIR/config.json"
+LEGACY_CONFIG="$PROJECT_DIR/config.json"
+
+# Migrate legacy config if it exists in repo root but not in App Support
+if [ -f "$LEGACY_CONFIG" ] && [ ! -f "$CONFIG_PATH" ]; then
+  echo ""
+  echo "Migrating config.json to $CONFIG_DIR..."
+  mkdir -p "$CONFIG_DIR"
+  mv "$LEGACY_CONFIG" "$CONFIG_PATH"
+  echo "  Moved: config.json → $CONFIG_PATH"
+fi
+
+if [ ! -f "$CONFIG_PATH" ]; then
   echo ""
   echo "Creating config.json..."
 
@@ -114,7 +127,7 @@ if [ ! -f "$PROJECT_DIR/config.json" ]; then
   if [ -z "$REPOS_DIR" ]; then
     REPOS_DIR="$HOME/repos"
     echo "  No repos directory found, defaulting to $REPOS_DIR"
-    echo "  Edit config.json to set your reposDir."
+    echo "  Edit $CONFIG_PATH to set your reposDir."
   else
     echo "  Detected repos directory: $REPOS_DIR"
   fi
@@ -124,7 +137,8 @@ if [ ! -f "$PROJECT_DIR/config.json" ]; then
   TMUX_SOCKET="$HOME/.claude/klaudii-tmux.sock"
   mkdir -p "$(dirname "$TMUX_SOCKET")"
 
-  cat > "$PROJECT_DIR/config.json" <<CONF
+  mkdir -p "$CONFIG_DIR"
+  cat > "$CONFIG_PATH" <<CONF
 {
   "port": 9876,
   "ttydBasePort": 9877,
@@ -133,10 +147,10 @@ if [ ! -f "$PROJECT_DIR/config.json" ]; then
   "projects": []
 }
 CONF
-  echo "  Created: config.json"
+  echo "  Created: $CONFIG_PATH"
 else
   echo ""
-  echo "config.json already exists, keeping it."
+  echo "config.json already exists at $CONFIG_PATH, keeping it."
 fi
 
 # --- Menu bar app ---
@@ -220,7 +234,7 @@ echo "=== Install complete ==="
 echo ""
 echo "  Dashboard:  http://localhost:9876"
 echo "  Logs:       /tmp/klaudii.log"
-echo "  Config:     $PROJECT_DIR/config.json"
+echo "  Config:     $CONFIG_PATH"
 if ! $SKIP_MENUBAR; then
   echo "  Menu bar:   Run ./mac/menubar/KlaudiiMenu to start"
 fi
@@ -231,4 +245,4 @@ if ! $SKIP_MENUBAR; then
   echo "into System Settings > General > Login Items."
 fi
 echo ""
-echo "Add workspaces via the dashboard or edit config.json directly."
+echo "Add workspaces via the dashboard or edit $CONFIG_PATH directly."

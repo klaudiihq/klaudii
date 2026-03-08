@@ -163,8 +163,8 @@ function createMockDeps(overrides = {}) {
       getSessionIds: () => ["sess-001", "sess-002", "sess-003"],
       getClaudeUrl: () => null,
       addSession: () => {},
-      detectAndTrack: () => {},
-      captureClaudeUrl: () => {},
+      detectAndTrack: () => Promise.resolve(),
+      captureClaudeUrl: () => Promise.resolve(),
       clearClaudeUrl: () => {},
     },
 

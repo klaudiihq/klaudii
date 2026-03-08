@@ -112,7 +112,7 @@ The big one. Klaudii becomes a conductor, not just a dashboard. Multiple Claudes
 
 ### Planning Claude
 - [ ] A dedicated Claude instance that takes a high-level goal and breaks it into concrete tasks
-- [ ] Planning Claude reads the codebase, writes a plan, and creates tasks (as GitHub issues, Beads, or internal task queue items)
+- [ ] Planning Claude reads the codebase, writes a plan, and creates tasks (as GitHub issues, Tasks, or internal task queue items)
 - [ ] Plan review UI — human approves/edits the plan before execution begins
 - [ ] Iterative planning — Planning Claude can revise the plan based on results from execution
 

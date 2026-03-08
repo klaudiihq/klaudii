@@ -1,8 +1,11 @@
 .DS_Store
 node_modules/
 mac/menubar/KlaudiiMenu
+menubar/KlaudiiMenu
+mcp/package-lock.json
 *.log
 config.json
+workspace-state.json
 sessions.json
 gemini-sessions.json
 claude-chat-sessions.json
@@ -10,6 +13,19 @@ connect/server/relay.db
 connect/server/relay.db-shm
 connect/server/relay.db-wal
 .klaudii-tmux.sock
+.scrubbed-backups/
+metadata.json
+
+# Internal / private — do not sync to public repo
+planning/
+AGENTS.md
+ARCHITECT_STARTUP.md
+lib/shepherd-prompt.md
+bin/shepherd.sh
+
+# Playwright
+test-results/
+playwright-report/
 
 # Dolt database files (added by bd init)
 .dolt/
