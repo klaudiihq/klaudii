@@ -1,6 +1,7 @@
 import Foundation
 import SwiftUI
 import PhotosUI
+import Combine
 
 // MARK: - Model Info
 
@@ -61,17 +62,17 @@ class ChatViewModel: ObservableObject {
     @Published var availableModels: [ModelInfo] = []
     @Published var selectedModel: String = ""  // empty = Auto
     @Published var pendingImages: [(id: UUID, dataUrl: String, name: String)] = []
+    @Published var draft: String = ""
 
     let relay: KloudRelay
     let workspace: String
 
-    private var channel: KloudRelay.RelayChannel?
     private var streamingMessageId: UUID?
     private var thinkingMessageId: UUID?
-    private var connectTask: Task<Void, Never>?
-    private var isManualDisconnect = false
-    private var reconnectDelay: Double = 2.0
+    private var initTask: Task<Void, Never>?
     private var toolTimers: [String: (start: Date, timer: Timer)] = [:]
+    private var draftSaveTask: Task<Void, Never>?
+    private var relaySub: AnyCancellable?
 
     init(relay: KloudRelay, workspace: String) {
         self.relay = relay
@@ -91,23 +92,50 @@ class ChatViewModel: ObservableObject {
         let cachedHistory = mgr.cachedHistory(for: workspace)
         self.messages = Self.parseHistory(cachedHistory)
 
-        // Take the pre-warmed channel or open a fresh one
-        connectTask = Task {
-            if let ch = mgr.takeChannel(for: workspace) {
-                self.attachChannel(ch)
-            } else {
-                await openChannel()
+        // Connection state derives from relay state
+        isConnected = relay.isConnected && relay.serverOnline
+        print("[ChatVM] init: relay.isConnected=\(relay.isConnected) relay.serverOnline=\(relay.serverOnline) → isConnected=\(isConnected)")
+        relaySub = Publishers.CombineLatest(relay.$isConnected, relay.$serverOnline)
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] connected, online in
+                guard let self else { return }
+                let was = self.isConnected
+                self.isConnected = connected && online
+                if !connected {
+                    self.connectionError = "Relay disconnected"
+                } else if !online {
+                    self.connectionError = "Server offline"
+                } else {
+                    self.connectionError = nil
+                }
+                if was != self.isConnected {
+                    print("[ChatVM] relay state changed: connected=\(connected) online=\(online) → isConnected=\(self.isConnected)")
+                }
             }
+
+        // Register for multiplexed chat events on this workspace
+        relay.subscribeChatEvents(workspace: workspace) { [weak self] text in
+            Task { @MainActor [weak self] in self?.handleRawMessage(text) }
+        }
+
+        initTask = Task {
+            // Fetch workspace state first (gets correct session number + mode)
+            await fetchWorkspaceState()
             // Refresh models in background if cache was empty
             if cachedModels.isEmpty { fetchModels() }
+            // Load history + draft in parallel
+            async let h: () = loadHistory()
+            async let d: () = loadDraft()
+            _ = await (h, d)
         }
     }
 
     func disconnect() {
-        isManualDisconnect = true
-        connectTask?.cancel()
-        channel?.close()
-        channel = nil
+        initTask?.cancel()
+        draftSaveTask?.cancel()
+        relaySub?.cancel()
+        saveDraftNow(draft)
+        relay.unsubscribeChatEvents(workspace: workspace)
         isConnected = false
     }
 
@@ -122,7 +150,7 @@ class ChatViewModel: ObservableObject {
     }
 
     func sendMessage(_ text: String) {
-        guard isConnected, let channel = channel else { return }
+        guard isConnected else { return }
 
         messages.append(.user(text))
         let streamMsg = ChatMessage.assistantStreaming()
@@ -143,9 +171,7 @@ class ChatViewModel: ObservableObject {
         let imageUrls = pendingImages.map { $0.dataUrl }
         if !imageUrls.isEmpty { payload["images"] = imageUrls }
 
-        guard let data = try? JSONSerialization.data(withJSONObject: payload),
-              let json = String(data: data, encoding: .utf8) else { return }
-        channel.send(json)
+        sendChatJSON(payload)
         pendingImages.removeAll()
     }
 
@@ -205,56 +231,41 @@ class ChatViewModel: ObservableObject {
     func setModel(_ modelId: String) {
         selectedModel = modelId
         // Send runtime model switch
-        if !modelId.isEmpty, launchMode.cli == "claude", let channel = channel {
-            let payload: [String: Any] = [
+        if !modelId.isEmpty, launchMode.cli == "claude" {
+            sendChatJSON([
                 "type": "set_model",
                 "workspace": workspace,
                 "model": modelId
-            ]
-            sendJSON(payload, via: channel)
+            ])
         }
     }
 
     func stop() {
-        guard let channel = channel else { return }
-        let payload: [String: Any] = ["type": "stop", "workspace": workspace, "cli": launchMode.cli]
-        guard let data = try? JSONSerialization.data(withJSONObject: payload),
-              let json = String(data: data, encoding: .utf8) else { return }
-        channel.send(json)
+        sendChatJSON(["type": "stop", "workspace": workspace, "cli": launchMode.cli])
     }
 
     // MARK: - Permission Actions
 
     func approvePermission(requestId: String, updatedInput: [String: Any]? = nil) {
-        guard let channel = channel else { return }
-
         var payload: [String: Any] = [
             "type": "permission_response",
             "workspace": workspace,
             "request_id": requestId,
             "behavior": "allow",
         ]
-        if let input = updatedInput {
-            payload["updatedInput"] = input
-        } else {
-            payload["updatedInput"] = [String: Any]()
-        }
+        payload["updatedInput"] = updatedInput ?? [String: Any]()
 
-        sendJSON(payload, via: channel)
+        sendChatJSON(payload)
         resolvePermission(requestId: requestId, behavior: "allow")
     }
 
     func denyPermission(requestId: String) {
-        guard let channel = channel else { return }
-
-        let payload: [String: Any] = [
+        sendChatJSON([
             "type": "permission_response",
             "workspace": workspace,
             "request_id": requestId,
             "behavior": "deny",
-        ]
-
-        sendJSON(payload, via: channel)
+        ])
         resolvePermission(requestId: requestId, behavior: "deny")
     }
 
@@ -266,13 +277,51 @@ class ChatViewModel: ObservableObject {
         approvePermission(requestId: requestId, updatedInput: ["plan": plan])
     }
 
+    // MARK: - Draft Sync
+
+    /// Called by the view whenever the text field changes. Debounces server saves.
+    /// Note: does NOT set `draft` — the view binding handles that via $vm.draft.
+    func draftDidChange(_ text: String) {
+        saveDraft(text)
+    }
+
+    private func saveDraft(_ text: String) {
+        draftSaveTask?.cancel()
+        draftSaveTask = Task {
+            try? await Task.sleep(for: .milliseconds(300))
+            guard !Task.isCancelled else { return }
+            await saveDraftNow(text)
+        }
+    }
+
+    private func saveDraftNow(_ text: String) {
+        let encoded = workspace.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? workspace
+        let draftMode = launchMode.rawValue
+        let body: [String: Any] = ["draft": text, "draftMode": draftMode, "draftSession": currentSession]
+        Task {
+            _ = try? await relay.apiCall(method: "PATCH", path: "/api/workspace-state/\(encoded)", body: body)
+        }
+    }
+
+    private func loadDraft() async {
+        let encoded = workspace.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? workspace
+        guard let state = try? await relay.apiCall(path: "/api/workspace-state/\(encoded)") else { return }
+        draft = state["draft"] as? String ?? ""
+    }
+
     // MARK: - Session Management
 
     func switchSession(_ sessionNum: Int) {
         guard sessionNum != currentSession else { return }
+        // Save current draft before switching
+        saveDraft(draft)
         currentSession = sessionNum
         messages = []
-        Task { await loadHistory() }
+        draft = ""
+        Task {
+            await loadHistory()
+            await loadDraft()
+        }
     }
 
     func newSession() {
@@ -284,84 +333,27 @@ class ChatViewModel: ObservableObject {
 
     // MARK: - Private
 
-    private func attachChannel(_ ch: KloudRelay.RelayChannel) {
-        channel = ch
-        isConnected = true
-        connectionError = nil
-        reconnectDelay = 2.0
-
-        ch.onMessage = { [weak self] text in
-            Task { @MainActor [weak self] in self?.handleRawMessage(text) }
-        }
-        ch.onClose = { [weak self] in
-            Task { @MainActor [weak self] in
-                guard let self else { return }
-                self.channel = nil
-                self.isConnected = false
-                self.isStreaming = false
-                self.streamingMessageId = nil
-                self.thinkingMessageId = nil
-                guard !self.isManualDisconnect else { return }
-                self.scheduleChannelReconnect()
-            }
-        }
-        ch.onSendError = { [weak self] errorMsg in
-            Task { @MainActor [weak self] in
-                guard let self else { return }
-                self.finalizeStreaming()
-                self.finalizeThinking()
-                self.isStreaming = false
-                self.streamingMessageId = nil
-                self.messages.append(.errorMessage("Send failed: \(errorMsg)"))
-            }
-        }
+    private func sendChatJSON(_ payload: [String: Any]) {
+        guard let data = try? JSONSerialization.data(withJSONObject: payload),
+              let json = String(data: data, encoding: .utf8) else { return }
+        relay.sendChat(json, workspace: workspace)
     }
 
-    private func openChannel() async {
-        guard !isManualDisconnect else { return }
-        guard relay.isConnected else {
-            scheduleChannelReconnect()
-            return
+    private func fetchWorkspaceState() async {
+        // Wait for relay to be connected before fetching (up to 10s)
+        for _ in 0..<20 {
+            if relay.isConnected && relay.serverOnline { break }
+            try? await Task.sleep(for: .milliseconds(500))
         }
-        do {
-            let ch = try await relay.openChannel(path: "/ws/chat")
-            attachChannel(ch)
-        } catch {
-            connectionError = error.localizedDescription
-            guard !isManualDisconnect else { return }
-            scheduleChannelReconnect()
-        }
-    }
-
-    private func scheduleChannelReconnect() {
-        let delay = reconnectDelay
-        reconnectDelay = min(reconnectDelay * 2, 30)
-        connectTask = Task { [weak self] in
-            try? await Task.sleep(for: .seconds(delay))
-            guard !Task.isCancelled, let self else { return }
-
-            // Wait for the relay WebSocket to be connected before trying to open a channel.
-            // Without this, openChannel fails immediately with .notConnected and we spin
-            // in a tight reconnect loop burning backoff budget.
-            var waited = 0
-            while !relay.isConnected, waited < 30 {
-                try? await Task.sleep(for: .seconds(1))
-                guard !Task.isCancelled else { return }
-                waited += 1
-            }
-            guard relay.isConnected else { return }
-
-            await self.loadHistory()
-            await self.openChannel()
-        }
-    }
-
-    private func fetchWorkspaceMode() async {
         let encoded = workspace.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? workspace
-        guard let result = try? await relay.apiCall(path: "/api/workspace-state/\(encoded)"),
-              let modeStr = result["mode"] as? String,
-              let mode = LaunchMode(rawValue: modeStr) else { return }
-        launchMode = mode
+        guard let result = try? await relay.apiCall(path: "/api/workspace-state/\(encoded)") else { return }
+        if let modeStr = result["mode"] as? String,
+           let mode = LaunchMode(rawValue: modeStr) {
+            launchMode = mode
+        }
+        if let sessionNum = result["sessionNum"] as? Int {
+            currentSession = sessionNum
+        }
     }
 
     private func saveWorkspaceMode(_ mode: LaunchMode) async {
@@ -371,12 +363,17 @@ class ChatViewModel: ObservableObject {
     }
 
     private func loadHistory() async {
+        guard relay.isConnected && relay.serverOnline else { return }
         let encoded = workspace.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? workspace
-        let path = "\(launchMode.historyEndpoint)/history/\(encoded)"
-        guard let raw = try? await relay.getArray(path) else { return }
-        messages = Self.parseHistory(raw)
-        // Persist to disk for instant load next time
-        LocalCache.saveChatHistory(raw, workspace: workspace)
+        let path = "\(launchMode.historyEndpoint)/history/\(encoded)?session=\(currentSession)&limit=200"
+        do {
+            let result = try await relay.apiCall(path: path)
+            guard let rawMessages = result["messages"] as? [[String: Any]] else { return }
+            messages = Self.parseHistory(rawMessages)
+            LocalCache.saveChatHistory(rawMessages, workspace: workspace)
+        } catch {
+            print("[ChatVM] loadHistory failed: \(error)")
+        }
     }
 
     static func parseHistory(_ raw: [[String: Any]]) -> [ChatMessage] {
@@ -718,9 +715,4 @@ class ChatViewModel: ObservableObject {
         messages[idx].toolElapsedSeconds = seconds
     }
 
-    private func sendJSON(_ payload: [String: Any], via channel: KloudRelay.RelayChannel) {
-        guard let data = try? JSONSerialization.data(withJSONObject: payload),
-              let json = String(data: data, encoding: .utf8) else { return }
-        channel.send(json)
-    }
 }

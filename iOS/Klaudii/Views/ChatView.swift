@@ -5,7 +5,6 @@ import PhotosUI
 
 struct ChatView: View {
     @StateObject private var vm: ChatViewModel
-    @State private var input = ""
     @State private var selectedPhotos: [PhotosPickerItem] = []
     @State private var showModelPicker = false
     private let bottomId = "chat-bottom"
@@ -19,9 +18,6 @@ struct ChatView: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            // Session bar
-            sessionBar
-
             ScrollViewReader { proxy in
                 ScrollView {
                     LazyVStack(alignment: .leading, spacing: 8) {
@@ -54,16 +50,23 @@ struct ChatView: View {
 
             inputBar
         }
-        .navigationTitle(session.displayName)
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
             ToolbarItem(placement: .principal) {
-                modePicker
-            }
-            ToolbarItem(placement: .navigationBarTrailing) {
-                HStack(spacing: 8) {
-                    modelPickerButton
-                    connectionIndicator
+                HStack(spacing: 6) {
+                    Circle()
+                        .fill(vm.isConnected ? KTheme.success : KTheme.textTertiary)
+                        .frame(width: 7, height: 7)
+                    VStack(spacing: 0) {
+                        Text(session.displayName)
+                            .font(.system(size: 14, weight: .semibold))
+                            .foregroundColor(KTheme.textPrimary)
+                        if !session.displayBranch.isEmpty {
+                            Text(session.displayBranch)
+                                .font(.system(size: 10))
+                                .foregroundColor(KTheme.textTertiary)
+                        }
+                    }
                 }
             }
         }
@@ -72,93 +75,6 @@ struct ChatView: View {
         }
         .background(KTheme.background.ignoresSafeArea())
         .onDisappear { vm.disconnect() }
-    }
-
-    // MARK: - Session Bar
-
-    private var sessionBar: some View {
-        ScrollView(.horizontal, showsIndicators: false) {
-            HStack(spacing: 4) {
-                ForEach(1...vm.sessionCount, id: \.self) { num in
-                    Button {
-                        Haptics.light()
-                        vm.switchSession(num)
-                    } label: {
-                        Text("Chat \(num)")
-                            .font(.system(size: 11, weight: vm.currentSession == num ? .semibold : .regular))
-                            .foregroundColor(vm.currentSession == num ? KTheme.accent : KTheme.textTertiary)
-                            .padding(.horizontal, 10)
-                            .padding(.vertical, 4)
-                            .background(vm.currentSession == num ? KTheme.accentBg : Color.clear)
-                            .clipShape(Capsule())
-                    }
-                    .buttonStyle(.plain)
-                }
-
-                Button {
-                    Haptics.light()
-                    vm.newSession()
-                } label: {
-                    Image(systemName: "plus")
-                        .font(.system(size: 10, weight: .semibold))
-                        .foregroundColor(KTheme.textTertiary)
-                        .frame(width: 22, height: 22)
-                        .background(KTheme.cardBackground)
-                        .clipShape(Circle())
-                        .overlay(Circle().stroke(KTheme.border, lineWidth: 1))
-                }
-                .buttonStyle(.plain)
-            }
-            .padding(.horizontal, 12)
-            .padding(.vertical, 6)
-        }
-        .background(KTheme.background)
-        .overlay(Rectangle().fill(KTheme.border).frame(height: 1), alignment: .bottom)
-    }
-
-    // MARK: - Mode Picker
-
-    private var modePicker: some View {
-        HStack(spacing: 2) {
-            ForEach(LaunchMode.allCases, id: \.self) { mode in
-                Button {
-                    guard !vm.isStreaming else { return }
-                    Haptics.light()
-                    vm.setMode(mode)
-                } label: {
-                    Text(mode.displayName)
-                        .font(.system(size: 11, weight: vm.launchMode == mode ? .semibold : .regular))
-                        .foregroundColor(vm.launchMode == mode ? modeAccent(mode) : KTheme.textTertiary)
-                        .padding(.horizontal, 7)
-                        .padding(.vertical, 3)
-                        .background(vm.launchMode == mode ? modeAccentBg(mode) : Color.clear)
-                        .clipShape(Capsule())
-                }
-                .buttonStyle(.plain)
-                .disabled(vm.isStreaming)
-            }
-        }
-        .padding(3)
-        .background(KTheme.cardBackground)
-        .clipShape(Capsule())
-        .overlay(Capsule().stroke(KTheme.border, lineWidth: 1))
-        .opacity(vm.isStreaming ? 0.5 : 1)
-    }
-
-    private func modeAccent(_ mode: LaunchMode) -> Color {
-        switch mode {
-        case .claude:   return KTheme.accent
-        case .claudeRC: return KTheme.warning
-        case .gemini:   return Color(hex: 0x60A5FA)
-        }
-    }
-
-    private func modeAccentBg(_ mode: LaunchMode) -> Color {
-        switch mode {
-        case .claude:   return KTheme.successBg
-        case .claudeRC: return KTheme.warningBg
-        case .gemini:   return Color(hex: 0x1E3A5F)
-        }
     }
 
     // MARK: - Model Picker
@@ -242,20 +158,6 @@ struct ChatView: View {
         .presentationDetents([.medium])
     }
 
-    // MARK: - Connection Indicator
-
-    private var connectionIndicator: some View {
-        Group {
-            if vm.isConnected {
-                PulsingDot(color: KTheme.success)
-            } else {
-                ProgressView()
-                    .scaleEffect(0.7)
-                    .frame(width: 16, height: 16)
-            }
-        }
-    }
-
     // MARK: - Input Bar
 
     private var inputBar: some View {
@@ -266,12 +168,21 @@ struct ChatView: View {
             }
 
             HStack(alignment: .bottom, spacing: 8) {
-                // Attach image button
-                PhotosPicker(selection: $selectedPhotos, maxSelectionCount: 5, matching: .images) {
-                    Image(systemName: "paperclip")
-                        .font(.system(size: 15))
-                        .foregroundColor(vm.pendingImages.isEmpty ? KTheme.textTertiary : KTheme.accent)
-                        .frame(width: 34, height: 34)
+                // Model picker + Attach image buttons stacked
+                VStack(spacing: 8) {
+                    Button { showModelPicker = true } label: {
+                        Image(systemName: "gearshape")
+                            .font(.system(size: 18))
+                            .foregroundColor(KTheme.textTertiary)
+                            .frame(width: 38, height: 32)
+                    }
+
+                    PhotosPicker(selection: $selectedPhotos, maxSelectionCount: 5, matching: .images) {
+                        Image(systemName: "paperclip")
+                            .font(.system(size: 20))
+                            .foregroundColor(vm.pendingImages.isEmpty ? KTheme.textTertiary : KTheme.accent)
+                            .frame(width: 38, height: 36)
+                    }
                 }
                 .onChange(of: selectedPhotos) { _, newItems in
                     for item in newItems {
@@ -280,7 +191,7 @@ struct ChatView: View {
                     selectedPhotos = []
                 }
 
-                TextField("Message", text: $input, axis: .vertical)
+                TextField("Message", text: $vm.draft, axis: .vertical)
                     .lineLimit(1...5)
                     .font(.system(size: 15))
                     .foregroundColor(KTheme.textWhite)
@@ -293,6 +204,9 @@ struct ChatView: View {
                             .stroke(KTheme.border, lineWidth: 1)
                     )
                     .onSubmit { sendIfReady() }
+                    .onChange(of: vm.draft) { _, newValue in
+                        vm.draftDidChange(newValue)
+                    }
 
                 if vm.isStreaming {
                     Button(action: { vm.stop() }) {
@@ -371,13 +285,14 @@ struct ChatView: View {
     }
 
     private var canSend: Bool {
-        (!input.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || !vm.pendingImages.isEmpty) && vm.isConnected && !vm.isStreaming
+        (!vm.draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || !vm.pendingImages.isEmpty) && vm.isConnected && !vm.isStreaming
     }
 
     private func sendIfReady() {
-        let text = input.trimmingCharacters(in: .whitespacesAndNewlines)
+        let text = vm.draft.trimmingCharacters(in: .whitespacesAndNewlines)
         guard (!text.isEmpty || !vm.pendingImages.isEmpty), vm.isConnected, !vm.isStreaming else { return }
-        input = ""
+        vm.draft = ""
+        vm.draftDidChange("")
         Haptics.light()
         vm.sendMessage(text)
     }
@@ -397,23 +312,18 @@ struct ChatBubbleView: View {
             assistantBubble
         case .toolUse:
             ToolPillView(message: message)
-                .padding(.leading, 30)
         case .error:
             errorRow
         case .status:
             statusRow
         case .permissionRequest:
             PermissionRequestView(message: message, vm: vm)
-                .padding(.leading, 30)
         case .askQuestion:
             AskUserQuestionView(message: message, vm: vm)
-                .padding(.leading, 30)
         case .planReview:
             PlanReviewView(message: message, vm: vm)
-                .padding(.leading, 30)
         case .thinking:
             ThinkingBlockView(message: message)
-                .padding(.leading, 30)
         case .usageResult:
             UsageResultView(message: message)
         }
@@ -421,7 +331,7 @@ struct ChatBubbleView: View {
 
     private var userBubble: some View {
         HStack {
-            Spacer(minLength: 60)
+            Spacer(minLength: 0)
             Text(message.content)
                 .font(.system(size: 15))
                 .foregroundColor(.white)
@@ -429,39 +339,23 @@ struct ChatBubbleView: View {
                 .padding(.vertical, 8)
                 .background(KTheme.accent)
                 .clipShape(RoundedRectangle(cornerRadius: 16))
+                .frame(maxWidth: UIScreen.main.bounds.width * 0.8, alignment: .trailing)
         }
     }
 
     private var assistantBubble: some View {
-        HStack(alignment: .top, spacing: 8) {
-            Text("K")
-                .font(.system(size: 10, weight: .black, design: .rounded))
-                .foregroundColor(KTheme.accent)
-                .frame(width: 20, height: 20)
-                .background(KTheme.successBg)
-                .clipShape(Circle())
-                .padding(.top, 4)
-
+        VStack(alignment: .leading, spacing: 4) {
             if message.content.isEmpty && message.isStreaming {
                 ThinkingDotsView()
-                    .padding(.top, 12)
-                Spacer(minLength: 40)
             } else {
-                VStack(alignment: .leading, spacing: 4) {
-                    MarkdownTextView(text: message.content)
+                MarkdownTextView(text: message.content)
 
-                    if message.isStreaming {
-                        ThinkingDotsView()
-                    }
+                if message.isStreaming {
+                    ThinkingDotsView()
                 }
-                .padding(.horizontal, 12)
-                .padding(.vertical, 8)
-                .background(KTheme.cardBackground)
-                .clipShape(RoundedRectangle(cornerRadius: 16))
-
-                Spacer(minLength: 40)
             }
         }
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 
     private var errorRow: some View {
@@ -494,20 +388,248 @@ struct MarkdownTextView: View {
     let text: String
 
     var body: some View {
-        if let attributed = try? AttributedString(markdown: text,
-                                                   options: .init(interpretedSyntax: .inlineOnlyPreservingWhitespace)) {
-            Text(attributed)
-                .font(.system(size: 15))
-                .foregroundColor(KTheme.textWhite)
-                .textSelection(.enabled)
-                .fixedSize(horizontal: false, vertical: true)
-        } else {
-            Text(text)
-                .font(.system(size: 15))
-                .foregroundColor(KTheme.textWhite)
-                .textSelection(.enabled)
-                .fixedSize(horizontal: false, vertical: true)
+        let blocks = Self.parseBlocks(text)
+        VStack(alignment: .leading, spacing: 4) {
+            ForEach(Array(blocks.enumerated()), id: \.offset) { _, block in
+                blockView(block)
+            }
         }
+    }
+
+    // MARK: - Block types
+
+    enum Block {
+        case paragraph(String)
+        case code(lang: String, code: String)
+        case heading(level: Int, text: String)
+        case unorderedList(items: [String])
+        case orderedList(items: [(Int, String)])
+        case blockquote(String)
+        case separator
+    }
+
+    // MARK: - Block parsing
+
+    static func parseBlocks(_ input: String) -> [Block] {
+        var blocks: [Block] = []
+        let lines = input.split(separator: "\n", omittingEmptySubsequences: false).map(String.init)
+        var i = 0
+        var paragraph: [String] = []
+
+        func flushParagraph() {
+            let text = paragraph.joined(separator: "\n").trimmingCharacters(in: .whitespacesAndNewlines)
+            if !text.isEmpty { blocks.append(.paragraph(text)) }
+            paragraph = []
+        }
+
+        while i < lines.count {
+            let line = lines[i]
+
+            // Fenced code block
+            if line.hasPrefix("```") {
+                flushParagraph()
+                let lang = String(line.dropFirst(3)).trimmingCharacters(in: .whitespaces)
+                var codeLines: [String] = []
+                i += 1
+                while i < lines.count && !lines[i].hasPrefix("```") {
+                    codeLines.append(lines[i])
+                    i += 1
+                }
+                if i < lines.count { i += 1 }
+                blocks.append(.code(lang: lang, code: codeLines.joined(separator: "\n")))
+                continue
+            }
+
+            // Heading
+            if let match = line.prefixMatch(of: /^(#{1,4})\s+(.+)/) {
+                flushParagraph()
+                blocks.append(.heading(level: match.1.count, text: String(match.2)))
+                i += 1
+                continue
+            }
+
+            // Horizontal rule
+            if line.trimmingCharacters(in: .whitespaces).range(of: #"^[-*_]{3,}$"#, options: .regularExpression) != nil {
+                flushParagraph()
+                blocks.append(.separator)
+                i += 1
+                continue
+            }
+
+            // Blockquote
+            if line.hasPrefix("> ") || line == ">" {
+                flushParagraph()
+                var quoteLines: [String] = []
+                while i < lines.count && (lines[i].hasPrefix("> ") || lines[i] == ">") {
+                    let content = lines[i].hasPrefix("> ") ? String(lines[i].dropFirst(2)) : ""
+                    quoteLines.append(content)
+                    i += 1
+                }
+                blocks.append(.blockquote(quoteLines.joined(separator: "\n")))
+                continue
+            }
+
+            // Unordered list
+            if line.range(of: #"^\s*[-*+]\s+"#, options: .regularExpression) != nil {
+                flushParagraph()
+                var items: [String] = []
+                while i < lines.count && lines[i].range(of: #"^\s*[-*+]\s+"#, options: .regularExpression) != nil {
+                    let item = lines[i].replacing(/^\s*[-*+]\s+/, with: "")
+                    items.append(item)
+                    i += 1
+                }
+                blocks.append(.unorderedList(items: items))
+                continue
+            }
+
+            // Ordered list
+            if line.range(of: #"^\s*\d+[.)]\s+"#, options: .regularExpression) != nil {
+                flushParagraph()
+                var items: [(Int, String)] = []
+                while i < lines.count && lines[i].range(of: #"^\s*\d+[.)]\s+"#, options: .regularExpression) != nil {
+                    let num = Int(lines[i].prefix(while: { $0.isNumber })) ?? (items.count + 1)
+                    let item = lines[i].replacing(/^\s*\d+[.)]\s+/, with: "")
+                    items.append((num, item))
+                    i += 1
+                }
+                blocks.append(.orderedList(items: items))
+                continue
+            }
+
+            // Blank line breaks paragraphs
+            if line.trimmingCharacters(in: .whitespaces).isEmpty {
+                flushParagraph()
+                i += 1
+                continue
+            }
+
+            // Regular text
+            paragraph.append(line)
+            i += 1
+        }
+        flushParagraph()
+        return blocks
+    }
+
+    // MARK: - Block renderers
+
+    @ViewBuilder
+    private func blockView(_ block: Block) -> some View {
+        switch block {
+        case .paragraph(let text):
+            inlineMarkdown(text)
+        case .code(let lang, let code):
+            codeBlock(language: lang, code: code)
+        case .heading(let level, let text):
+            headingView(level: level, text: text)
+        case .unorderedList(let items):
+            ulView(items)
+        case .orderedList(let items):
+            olView(items)
+        case .blockquote(let text):
+            blockquoteView(text)
+        case .separator:
+            Divider().background(KTheme.border).padding(.vertical, 4)
+        }
+    }
+
+    private func headingView(level: Int, text: String) -> some View {
+        let size: CGFloat = level == 1 ? 19 : level == 2 ? 17 : level == 3 ? 15.5 : 15
+        return Text(text)
+            .font(.system(size: size, weight: .semibold))
+            .foregroundColor(KTheme.textWhite)
+            .padding(.top, 6)
+            .padding(.bottom, 2)
+    }
+
+    private func ulView(_ items: [String]) -> some View {
+        VStack(alignment: .leading, spacing: 3) {
+            ForEach(Array(items.enumerated()), id: \.offset) { _, item in
+                HStack(alignment: .firstTextBaseline, spacing: 6) {
+                    Text("•")
+                        .font(.system(size: 15))
+                        .foregroundColor(KTheme.textTertiary)
+                    inlineMarkdown(item)
+                }
+            }
+        }
+        .padding(.leading, 4)
+    }
+
+    private func olView(_ items: [(Int, String)]) -> some View {
+        VStack(alignment: .leading, spacing: 3) {
+            ForEach(Array(items.enumerated()), id: \.offset) { _, entry in
+                HStack(alignment: .firstTextBaseline, spacing: 6) {
+                    Text("\(entry.0).")
+                        .font(.system(size: 14, design: .monospaced))
+                        .foregroundColor(KTheme.textTertiary)
+                        .frame(minWidth: 20, alignment: .trailing)
+                    inlineMarkdown(entry.1)
+                }
+            }
+        }
+        .padding(.leading, 4)
+    }
+
+    private func blockquoteView(_ text: String) -> some View {
+        HStack(spacing: 0) {
+            RoundedRectangle(cornerRadius: 1)
+                .fill(KTheme.borderHover)
+                .frame(width: 3)
+            inlineMarkdown(text)
+                .foregroundColor(KTheme.textSecondary)
+                .padding(.leading, 10)
+        }
+        .padding(.vertical, 2)
+    }
+
+    private func inlineMarkdown(_ content: String) -> some View {
+        let opts = AttributedString.MarkdownParsingOptions(
+            interpretedSyntax: .inlineOnlyPreservingWhitespace
+        )
+        var attributed = (try? AttributedString(markdown: content, options: opts)) ?? AttributedString(content)
+        // Style inline code spans with yellow tint to match web
+        for run in attributed.runs {
+            if run.inlinePresentationIntent?.contains(.code) == true {
+                let range = run.range
+                attributed[range].foregroundColor = UIColor(KTheme.warning)
+                attributed[range].backgroundColor = UIColor(KTheme.cardBackgroundDeep)
+            }
+        }
+        return Text(attributed)
+            .font(.system(size: 15))
+            .foregroundColor(KTheme.textWhite)
+            .textSelection(.enabled)
+            .fixedSize(horizontal: false, vertical: true)
+    }
+
+    private func codeBlock(language: String, code: String) -> some View {
+        VStack(alignment: .leading, spacing: 0) {
+            if !language.isEmpty {
+                Text(language)
+                    .font(.system(size: 10, weight: .medium, design: .monospaced))
+                    .foregroundColor(KTheme.textTertiary)
+                    .padding(.horizontal, 10)
+                    .padding(.top, 6)
+                    .padding(.bottom, 2)
+            }
+            ScrollView(.horizontal, showsIndicators: false) {
+                Text(code)
+                    .font(.system(size: 13, design: .monospaced))
+                    .foregroundColor(KTheme.textPrimary)
+                    .textSelection(.enabled)
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, language.isEmpty ? 8 : 4)
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(KTheme.cardBackgroundDeep)
+        .clipShape(RoundedRectangle(cornerRadius: 6))
+        .overlay(
+            RoundedRectangle(cornerRadius: 6)
+                .stroke(KTheme.border, lineWidth: 1)
+        )
+        .padding(.vertical, 2)
     }
 }
 
@@ -770,13 +892,13 @@ struct PlanReviewView: View {
                     .font(.system(size: 12, weight: .semibold))
                     .foregroundColor(KTheme.accent)
                 Spacer()
-                Button {
-                    withAnimation(.easeInOut(duration: 0.2)) { expanded.toggle() }
-                } label: {
-                    Image(systemName: expanded ? "chevron.up" : "chevron.down")
-                        .font(.system(size: 10))
-                        .foregroundColor(KTheme.textTertiary)
-                }
+                Image(systemName: expanded ? "chevron.up" : "chevron.down")
+                    .font(.system(size: 10))
+                    .foregroundColor(KTheme.textTertiary)
+            }
+            .contentShape(Rectangle())
+            .onTapGesture {
+                withAnimation(.easeInOut(duration: 0.2)) { expanded.toggle() }
             }
 
             if expanded, let plan = message.planContent {
@@ -891,6 +1013,7 @@ struct ThinkingBlockView: View {
                 }
                 .padding(.horizontal, 10)
                 .padding(.vertical, 7)
+                .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
 
@@ -1003,6 +1126,7 @@ struct ToolPillView: View {
                 }
                 .padding(.horizontal, 10)
                 .padding(.vertical, 7)
+                .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
 

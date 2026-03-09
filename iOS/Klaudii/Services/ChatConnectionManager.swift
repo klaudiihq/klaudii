@@ -1,13 +1,12 @@
 import Foundation
 
-/// Pre-warms WebSocket channels and caches workspace state so ChatView opens instantly.
+/// Caches workspace state (mode, history, models) so ChatView opens instantly.
 /// Loads from disk cache first for instant display, then fetches fresh data in background.
 @MainActor
 final class ChatConnectionManager {
     static let shared = ChatConnectionManager()
 
     struct CachedWorkspace {
-        var channel: KloudRelay.RelayChannel?
         var mode: LaunchMode = .claude
         var history: [[String: Any]] = []
         var models: [ModelInfo] = []
@@ -59,14 +58,6 @@ final class ChatConnectionManager {
         }
     }
 
-    /// Get the pre-warmed channel for a workspace, detaching it from the cache
-    /// so ChatViewModel owns it. Returns nil if not ready yet.
-    func takeChannel(for workspace: String) -> KloudRelay.RelayChannel? {
-        let ch = cache[workspace]?.channel
-        cache[workspace]?.channel = nil
-        return ch
-    }
-
     /// Get cached workspace mode (in-memory or disk-backed)
     func cachedMode(for workspace: String) -> LaunchMode {
         if let mode = cache[workspace]?.mode { return mode }
@@ -98,10 +89,11 @@ final class ChatConnectionManager {
 
         cache[workspace]?.isConnecting = true
 
-        // Fetch serially to avoid concurrent relay calls
+        // Fetch mode first (history endpoint depends on it), then history + models in parallel
         await fetchMode(workspace, relay: relay)
-        await fetchHistory(workspace, relay: relay)
-        await fetchModels(workspace, relay: relay)
+        async let historyTask: () = fetchHistory(workspace, relay: relay)
+        async let modelsTask: () = fetchModels(workspace, relay: relay)
+        _ = await (historyTask, modelsTask)
 
         cache[workspace]?.lastFetched = Date()
         cache[workspace]?.isConnecting = false
@@ -120,7 +112,9 @@ final class ChatConnectionManager {
         let encoded = workspace.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? workspace
         let mode = cache[workspace]?.mode ?? .claude
         let path = "\(mode.historyEndpoint)/history/\(encoded)"
-        guard let raw = try? await relay.getArray(path) else { return }
+        // Server returns { messages: [...], total: ... } — extract the messages array
+        guard let result = try? await relay.apiCall(path: path),
+              let raw = result["messages"] as? [[String: Any]] else { return }
         cache[workspace]?.history = raw
         LocalCache.saveChatHistory(raw, workspace: workspace)
     }
@@ -135,18 +129,5 @@ final class ChatConnectionManager {
             return ModelInfo(id: id, name: name)
         }
         cache[workspace]?.models = models
-    }
-
-    private func openChannel(_ workspace: String, relay: KloudRelay) async {
-        guard let ch = try? await relay.openChannel(path: "/ws/chat") else { return }
-
-        ch.onClose = { [weak self] in
-            Task { @MainActor [weak self] in
-                // Channel died — mark it nil so next sync re-opens it
-                self?.cache[workspace]?.channel = nil
-            }
-        }
-
-        cache[workspace]?.channel = ch
     }
 }

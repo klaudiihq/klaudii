@@ -22,20 +22,21 @@ private func dynamic(dark: UInt32, light: UInt32) -> Color {
 }
 
 enum KTheme {
-    // MARK: - Background
-    static let background        = dynamic(dark: 0x0F1117, light: 0xF5F5F7)
-    static let cardBackground    = dynamic(dark: 0x1A1D25, light: 0xFFFFFF)
-    static let cardBackgroundDeep = dynamic(dark: 0x0D1019, light: 0xF0F0F2)
-    static let menuBackground    = dynamic(dark: 0x13151C, light: 0xFFFFFF)
-    static let border            = dynamic(dark: 0x2A2D35, light: 0xD1D5DB)
-    static let borderHover       = dynamic(dark: 0x3A3D45, light: 0xB0B5BD)
+    // MARK: - Background (matches web CSS variables)
+    static let background        = dynamic(dark: 0x0F1117, light: 0xD0D4DC)
+    static let cardBackground    = dynamic(dark: 0x1A1D25, light: 0xD8DCE3)
+    static let cardBackgroundDeep = dynamic(dark: 0x0D1019, light: 0xC8CDD6)
+    static let menuBackground    = dynamic(dark: 0x13151C, light: 0xD8DCE3)
+    static let border            = dynamic(dark: 0x2A2D35, light: 0xB5BAC6)
+    static let borderHover       = dynamic(dark: 0x3A3D45, light: 0xA0A8B5)
 
     // MARK: - Text
-    static let textPrimary   = dynamic(dark: 0xE0E0E0, light: 0x1A1A1A)
-    static let textWhite     = dynamic(dark: 0xFFFFFF, light: 0x000000)
-    static let textSecondary = dynamic(dark: 0x888888, light: 0x6B7280)
-    static let textTertiary  = dynamic(dark: 0x555555, light: 0x9CA3AF)
-    static let textMuted     = dynamic(dark: 0x666666, light: 0x6B7280)
+    static let textPrimary   = dynamic(dark: 0xE0E0E0, light: 0x1E2433)
+    static let textWhite     = dynamic(dark: 0xFFFFFF, light: 0x0D1017)
+    static let textSecondary = dynamic(dark: 0xCCCCCC, light: 0x3A4153)
+    static let textTertiary  = dynamic(dark: 0xAAAAAA, light: 0x5A6477)
+    static let textMuted     = dynamic(dark: 0x888888, light: 0x6B7A8D)
+    static let textFaint     = dynamic(dark: 0x666666, light: 0x8890A0)
     static let textLink      = dynamic(dark: 0xAAAAAA, light: 0x4B5563)
 
     // MARK: - Accent
@@ -44,11 +45,11 @@ enum KTheme {
     static let accentBg    = dynamic(dark: 0x1E3A5F, light: 0xDBEAFE)
 
     // MARK: - Status
-    static let success       = dynamic(dark: 0x4ADE80, light: 0x16A34A)
+    static let success       = dynamic(dark: 0x4ADE80, light: 0x15803D)
     static let successBg     = dynamic(dark: 0x1A3A2A, light: 0xDCFCE7)
     static let successBorder = dynamic(dark: 0x2A5A3A, light: 0xBBF7D0)
 
-    static let warning       = dynamic(dark: 0xFBBF24, light: 0xD97706)
+    static let warning       = dynamic(dark: 0xFBBF24, light: 0xB45309)
     static let warningBg     = dynamic(dark: 0x3A2A10, light: 0xFEF3C7)
     static let warningBorder = dynamic(dark: 0x5A3A10, light: 0xFDE68A)
 
@@ -56,7 +57,7 @@ enum KTheme {
     static let dangerBg     = dynamic(dark: 0x3A1A1A, light: 0xFEE2E2)
     static let dangerBorder = dynamic(dark: 0x5A2A2A, light: 0xFECACA)
 
-    static let askBlue   = dynamic(dark: 0x60A5FA, light: 0x2563EB)
+    static let askBlue   = dynamic(dark: 0x60A5FA, light: 0x1D4ED8)
     static let askBg     = dynamic(dark: 0x1E3A5F, light: 0xDBEAFE)
     static let askBorder = dynamic(dark: 0x2A4A7F, light: 0xBFDBFE)
 

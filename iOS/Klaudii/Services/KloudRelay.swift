@@ -28,6 +28,12 @@ class KloudRelay: ObservableObject {
     private var intentionalDisconnect = false
     private var foregroundObserver: Any?
 
+    // Multiplexed chat: per-workspace event handlers
+    private var chatHandlers: [String: (String) -> Void] = [:]
+
+    /// Registered workspace names for relay-level routing (persists across reconnects)
+    private var chatSubscriptions: Set<String> = []
+
     func connect(serverId: String, userId: String, connectionKey: Data, cookie: String?) {
         // Listen for app returning to foreground to verify connection health
         if foregroundObserver == nil {
@@ -57,6 +63,48 @@ class KloudRelay: ObservableObject {
         }
     }
 
+    // MARK: - Multiplexed Chat
+
+    /// Register a handler for chat events for a specific workspace.
+    func subscribeChatEvents(workspace: String, handler: @escaping (String) -> Void) {
+        chatHandlers[workspace] = handler
+        chatSubscriptions.insert(workspace)
+        // Tell the relay to route chat_event messages for this workspace to us
+        sendRaw(["type": "chat_subscribe", "workspace": workspace])
+    }
+
+    /// Remove the chat event handler for a workspace.
+    func unsubscribeChatEvents(workspace: String) {
+        chatHandlers.removeValue(forKey: workspace)
+        chatSubscriptions.remove(workspace)
+        sendRaw(["type": "chat_unsubscribe", "workspace": workspace])
+    }
+
+    /// Send a chat message directly over the relay (no channel needed).
+    func sendChat(_ jsonPayload: String, workspace: String) {
+        guard let connectionKey = connectionKey,
+              let encrypted = try? CryptoService.encrypt(jsonPayload, connectionKey: connectionKey) else { return }
+        sendRaw([
+            "type": "chat_send",
+            "workspace": workspace,
+            "encrypted": ["salt": encrypted.salt, "data": encrypted.data],
+        ])
+    }
+
+    /// Send a raw JSON dict over the relay WebSocket.
+    private func sendRaw(_ message: [String: Any]) {
+        guard let msgData = try? JSONSerialization.data(withJSONObject: message),
+              let msgString = String(data: msgData, encoding: .utf8) else { return }
+        webSocket?.send(.string(msgString)) { _ in }
+    }
+
+    /// Re-subscribe all active workspaces after relay reconnect.
+    private func resubscribeChatWorkspaces() {
+        for workspace in chatSubscriptions {
+            sendRaw(["type": "chat_subscribe", "workspace": workspace])
+        }
+    }
+
     func disconnect() {
         intentionalDisconnect = true
         reconnectTask?.cancel()
@@ -69,6 +117,8 @@ class KloudRelay: ObservableObject {
         webSocket = nil
         isConnected = false
         serverOnline = false
+        chatHandlers.removeAll()
+        chatSubscriptions.removeAll()
         if let obs = foregroundObserver {
             NotificationCenter.default.removeObserver(obs)
             foregroundObserver = nil
@@ -387,12 +437,15 @@ class KloudRelay: ObservableObject {
 
         // First successful receive confirms the WebSocket is alive
         if !isConnected {
+            print("[KloudRelay] first message received, setting isConnected=true")
             isConnected = true
+            resubscribeChatWorkspaces()
         }
 
         switch type {
         case "server_status":
             if let online = json["online"] as? Bool {
+                print("[KloudRelay] server_status: online=\(online) platform=\(json["platform"] as? String ?? "nil")")
                 serverOnline = online
                 serverPlatform = json["platform"] as? String
             }
@@ -483,12 +536,23 @@ class KloudRelay: ObservableObject {
                 channel.notifyClosed()
             }
 
+        case "chat_event":
+            guard let workspace = json["workspace"] as? String,
+                  let encrypted = json["encrypted"] as? [String: String],
+                  let salt = encrypted["salt"],
+                  let encData = encrypted["data"],
+                  let connectionKey = connectionKey else { return }
+            let envelope = CryptoService.EncryptedEnvelope(salt: salt, data: encData)
+            guard let decrypted = try? CryptoService.decrypt(envelope, connectionKey: connectionKey) else { return }
+            chatHandlers[workspace]?(decrypted)
+
         default:
             break
         }
     }
 
     private func handleDisconnect() {
+        print("[KloudRelay] handleDisconnect called")
         isConnected = false
         serverOnline = false
         serverPlatform = nil

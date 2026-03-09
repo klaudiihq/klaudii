@@ -124,17 +124,6 @@ struct SessionCardView: View {
                     .labelStyle(.titleAndIcon)
                 }
 
-                // Permission toggle (when stopped)
-                if session.isStopped {
-                    PermissionToggle(
-                        current: session.permissionMode,
-                        onChange: { mode in
-                            Haptics.light()
-                            Task { await sessionsVM.setPermission(project: session.project, mode: mode) }
-                        }
-                    )
-                }
-
                 // Action row: chat button (always visible)
                 HStack(spacing: 0) {
                     NavigationLink(value: session) {
