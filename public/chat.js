@@ -601,6 +601,16 @@ async function chatRestoreDraft(prefetchedState = null) {
 
 // --- WebSocket ---
 
+/** Send a message over the chat WS, auto-injecting sessionNum for the current chat. */
+function chatWsSend(payload) {
+  if (!chatWs || chatWs.readyState !== WebSocket.OPEN) return;
+  // Always include sessionNum so the server routes to the correct relay/history
+  if (payload.workspace && !payload.sessionNum && chatSessionNum) {
+    payload.sessionNum = chatSessionNum;
+  }
+  chatWs.send(JSON.stringify(payload));
+}
+
 function chatConnect() {
   if (chatWs && chatWs.readyState === WebSocket.OPEN) return;
 
@@ -1016,7 +1026,7 @@ function handleGeminiEvent(event) {
       // Auto-approve EnterPlanMode — it just switches Claude into planning mode
       if (event.tool_name === "EnterPlanMode") {
         if (chatWs && chatWs.readyState === WebSocket.OPEN) {
-          chatWs.send(JSON.stringify({ type: "permission_response", workspace: chatWorkspace, request_id: event.request_id, behavior: "allow", updatedInput: event.tool_input || {} }));
+          chatWsSend({ type: "permission_response", workspace: chatWorkspace, request_id: event.request_id, behavior: "allow", updatedInput: event.tool_input || {} });
         }
         break;
       }
@@ -1222,15 +1232,13 @@ function chatShowPermissionRequest(requestId, toolName, toolInput, description, 
     btns.querySelectorAll("button").forEach(b => { b.disabled = true; });
     const chosen = btns.querySelector(`[data-behavior="${behavior}"]`);
     if (chosen) chosen.textContent += " ✓";
-    if (chatWs && chatWs.readyState === WebSocket.OPEN) {
-      chatWs.send(JSON.stringify({
-        type: "permission_response",
-        workspace: chatWorkspace,
-        request_id: requestId,
-        behavior,
-        updatedInput: behavior === "allow" ? (toolInput || {}) : undefined,
-      }));
-    }
+    chatWsSend({
+      type: "permission_response",
+      workspace: chatWorkspace,
+      request_id: requestId,
+      behavior,
+      updatedInput: behavior === "allow" ? (toolInput || {}) : undefined,
+    });
     glog("permission_request: sent behavior=" + behavior + " request_id=" + requestId);
   };
 
@@ -1301,17 +1309,17 @@ function chatShowPlanApproval(id, planText, isPermissionRequest) {
           behavior: approved ? "allow" : "deny",
         };
         if (approved) payload.updatedInput = { plan: planText };
-        chatWs.send(JSON.stringify(payload));
+        chatWsSend(payload);
       }
     } else {
       // Bypass mode: plan already executed. Send follow-up message to instruct Claude.
-      if (!approved && chatWs && chatWs.readyState === WebSocket.OPEN) {
-        chatWs.send(JSON.stringify({
+      if (!approved) {
+        chatWsSend({
           type: "send",
           workspace: chatWorkspace,
           message: "I reject this plan. Please revise it.",
           backend: "claude",
-        }));
+        });
       }
     }
     glog("plan_approval: " + (approved ? "approved" : "rejected") + " id=" + id);
@@ -1362,15 +1370,13 @@ function chatShowToolQuestions(id, questions, toolInput, isPermissionRequest) {
       });
       const updatedInput = { ...(toolInput || {}), answers: answersMap };
       glog(`tool_questions: sending permission_response request_id=${id} answers=${JSON.stringify(answersMap)}`);
-      if (chatWs && chatWs.readyState === WebSocket.OPEN) {
-        chatWs.send(JSON.stringify({
-          type: "permission_response",
-          workspace: chatWorkspace,
-          request_id: id,
-          behavior: "allow",
-          updatedInput,
-        }));
-      }
+      chatWsSend({
+        type: "permission_response",
+        workspace: chatWorkspace,
+        request_id: id,
+        behavior: "allow",
+        updatedInput,
+      });
     } else {
       // Gemini / bypass mode: answers as a formatted string via tool_result_response
       const content = questions.map((q, i) => {
@@ -1378,14 +1384,12 @@ function chatShowToolQuestions(id, questions, toolInput, isPermissionRequest) {
         return `${prefix}: ${answers[i]}`;
       }).join("\n");
       glog(`tool_questions: sending tool_result_response tool_id=${id}`);
-      if (chatWs && chatWs.readyState === WebSocket.OPEN) {
-        chatWs.send(JSON.stringify({
-          type: "tool_result_response",
-          workspace: chatWorkspace,
-          tool_id: id,
-          content,
-        }));
-      }
+      chatWsSend({
+        type: "tool_result_response",
+        workspace: chatWorkspace,
+        tool_id: id,
+        content,
+      });
     }
   };
 
@@ -2679,7 +2683,7 @@ function chatStartStreamPoll(historyLengthAtOpen) {
   const sn = chatSessionNum;
 
   // Immediately show partial content so the user sees what was generated before they left
-  fetch(`/api/gemini/stream-partial/${encodeURIComponent(ws)}`)
+  fetch(`/api/gemini/stream-partial/${encodeURIComponent(ws)}${sn ? `?session=${sn}` : ""}`)
     .then(r => r.ok ? r.json() : null)
     .then(data => {
       if (!data || !data.text || chatWorkspace !== ws) return;
@@ -2694,7 +2698,7 @@ function chatStartStreamPoll(historyLengthAtOpen) {
       // Fetch history and latest partial content in parallel
       const [history, partialData] = await Promise.all([
         chatFetchHistory(ws, sn),
-        fetch(`/api/gemini/stream-partial/${encodeURIComponent(ws)}`).then(r => r.ok ? r.json() : null).catch(() => null),
+        fetch(`/api/gemini/stream-partial/${encodeURIComponent(ws)}${sn ? `?session=${sn}` : ""}`).then(r => r.ok ? r.json() : null).catch(() => null),
       ]);
 
       // Keep partial bubble in sync with what's been generated so far
@@ -3086,7 +3090,7 @@ async function clearGeminiSession() {
 
   // Stop any active process
   if (chatWs && chatWs.readyState === WebSocket.OPEN) {
-    chatWs.send(JSON.stringify({ type: "stop", workspace: chatWorkspace, cli: chatActiveCli }));
+    chatWsSend({ type: "stop", workspace: chatWorkspace, cli: chatActiveCli });
   }
 
   // Create a new session on the server (preserves old sessions)
@@ -3187,6 +3191,7 @@ function sendGeminiMessage() {
       message,
       model: model || undefined,
       cli: chatActiveCli,
+      sessionNum: chatSessionNum || undefined,
       permissionMode: chatGetPermissionMode(),
       ...(chatThinkingEnabled && chatActiveCli === "claude" ? { thinking: true } : {}),
       ...(images.length ? { images } : {}),
@@ -3200,7 +3205,7 @@ function sendGeminiMessage() {
     }
 
     glog("send: ws.send", JSON.stringify(payload).slice(0, 200));
-    chatWs.send(JSON.stringify(payload));
+    chatWsSend(payload);
     chatClearImages();
   } else {
     glog("send: ws not open, showing error");
@@ -3301,9 +3306,9 @@ function chatStopStreaming() {
     // For Claude: send soft interrupt first. If Claude doesn't respond within
     // 5 seconds, the server will escalate to kill.
     if (chatActiveCli === "claude") {
-      chatWs.send(JSON.stringify({ type: "interrupt", workspace: chatWorkspace }));
+      chatWsSend({ type: "interrupt", workspace: chatWorkspace });
     }
-    chatWs.send(JSON.stringify({ type: "stop", workspace: chatWorkspace, cli: chatActiveCli }));
+    chatWsSend({ type: "stop", workspace: chatWorkspace, cli: chatActiveCli });
   }
   // Immediate feedback — don't wait for server round-trip
   chatRemoveThinking();
@@ -3411,7 +3416,7 @@ window.addEventListener("popstate", () => {
 document.getElementById("chat-permission-mode")?.addEventListener("change", function() {
   chatSavePermissionMode(this.value);
   if (this.value && chatActiveCli === "claude" && chatWs && chatWs.readyState === WebSocket.OPEN) {
-    chatWs.send(JSON.stringify({ type: "set_permission_mode", workspace: chatWorkspace, mode: this.value }));
+    chatWsSend({ type: "set_permission_mode", workspace: chatWorkspace, mode: this.value });
     glog("perm-switch: sent set_permission_mode=" + this.value);
   }
 });
@@ -3445,7 +3450,7 @@ document.getElementById("chat-model")?.addEventListener("change", function() {
   if (chatWorkspace) localStorage.setItem(`klaudii-model-${chatWorkspace}`, newModel);
   // Send runtime model switch to active Claude relay (takes effect on next API call)
   if (newModel && chatActiveCli === "claude" && chatWs && chatWs.readyState === WebSocket.OPEN) {
-    chatWs.send(JSON.stringify({ type: "set_model", workspace: chatWorkspace, model: newModel }));
+    chatWsSend({ type: "set_model", workspace: chatWorkspace, model: newModel });
     glog("model-switch: sent set_model=" + newModel);
   }
 });

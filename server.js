@@ -231,7 +231,8 @@ app.post("/api/gemini/sessions/:project/switch", (req, res) => {
 // Used by clients switching back to a workspace mid-stream so they can show what
 // was generated before they left.
 app.get("/api/gemini/stream-partial/:project", (req, res) => {
-  const text = gemini.getStreamPartial(req.params.project) ?? claudeChat.getStreamPartial(req.params.project);
+  const sessionNum = req.query.session ? Number(req.query.session) : undefined;
+  const text = gemini.getStreamPartial(req.params.project) ?? claudeChat.getStreamPartial(req.params.project, sessionNum);
   if (text === null) return res.status(404).json({ error: "no active stream" });
   res.json({ text });
 });
@@ -598,7 +599,7 @@ wss.on("connection", (ws) => {
       return;
     }
 
-    const { type, workspace, message, model, cli, images: rawImages, permissionMode, systemPrompt, thinking } = msg;
+    const { type, workspace, message, model, cli, images: rawImages, permissionMode, systemPrompt, thinking, sessionNum: clientSessionNum } = msg;
     const backend = cli === "claude" ? "claude" : "gemini";
     const backendModule = backend === "claude" ? claudeChat : gemini;
 
@@ -630,13 +631,14 @@ wss.on("connection", (ws) => {
 
       // For Claude with an active relay, append to the existing session instead of spawning a new one
       if (backend === "claude" && claudeChat.isActive(workspace)) {
+        const relaySessionNum = clientSessionNum || claudeChat.getActiveSessionNum(workspace);
         workspaceState.touchChatActivity(workspace);
         workspaceState.setStreaming(workspace, true);
-        claudeChat.pushHistory(workspace, "user", message, { sender: msg.sender || "user" });
+        claudeChat.pushHistory(workspace, "user", message, { sender: msg.sender || "user" }, relaySessionNum);
         broadcastToWorkspace(workspace, { type: "user_message", workspace, content: message, sender: msg.sender || "user", ts: Date.now() }, clientId);
         broadcastToWorkspace(workspace, { type: "streaming_start", workspace }, clientId);
         wsProcessingAcked[workspace] = false; // reset for new user turn
-        const delivered = claudeChat.sendMessage(workspace, message);
+        const delivered = claudeChat.sendMessage(workspace, message, clientSessionNum);
         // Delivery ack — message piped into CLI stdin
         if (delivered) {
           broadcastToWorkspace(workspace, { type: "ack", workspace, status: "delivered" });
@@ -840,7 +842,7 @@ wss.on("connection", (ws) => {
         } else {
           console.log(`[chat-ws] permission_response workspace=${workspace} request_id=${request_id} behavior=${behavior} client=#${clientId}`);
           workspaceState.setPendingPermission(workspace, null);
-          claudeChat.sendControlResponse(workspace, request_id, behavior, updatedInput);
+          claudeChat.sendControlResponse(workspace, request_id, behavior, updatedInput, clientSessionNum);
           // Notify all other clients that this permission was resolved so they can
           // disable their approval UI (e.g. another tab had the same prompt open).
           broadcastToWorkspace(workspace, {
@@ -858,27 +860,27 @@ wss.on("connection", (ws) => {
       const { tool_id, content } = msg;
       if (workspace && tool_id) {
         console.log(`[chat-ws] tool_result_response workspace=${workspace} tool_id=${tool_id}`);
-        claudeChat.sendToolResult(workspace, tool_id, content);
+        claudeChat.sendToolResult(workspace, tool_id, content, clientSessionNum);
       }
     } else if (type === "set_model") {
       // Runtime model switch — send control_request to Claude relay
       const { model: newModel } = msg;
       if (workspace && newModel) {
         console.log(`[chat-ws] set_model workspace=${workspace} model=${newModel}`);
-        claudeChat.sendControlRequest(workspace, "set_model", { model: newModel });
+        claudeChat.sendControlRequest(workspace, "set_model", { model: newModel }, clientSessionNum);
       }
     } else if (type === "set_permission_mode") {
       // Runtime permission mode switch
       const { mode: newMode } = msg;
       if (workspace && newMode) {
         console.log(`[chat-ws] set_permission_mode workspace=${workspace} mode=${newMode}`);
-        claudeChat.sendControlRequest(workspace, "set_permission_mode", { permissionMode: newMode });
+        claudeChat.sendControlRequest(workspace, "set_permission_mode", { permissionMode: newMode }, clientSessionNum);
       }
     } else if (type === "interrupt") {
       // Soft interrupt — tell Claude to stop current turn gracefully
       if (workspace) {
         console.log(`[chat-ws] interrupt workspace=${workspace}`);
-        claudeChat.sendControlRequest(workspace, "interrupt");
+        claudeChat.sendControlRequest(workspace, "interrupt", {}, clientSessionNum);
       }
     }
   });
@@ -1004,11 +1006,11 @@ function wireRelayEvents(workspace, handle, sessionNum) {
 
 // --- Reconnect to any Claude relay daemons that survived a server restart ---
 
-claudeChat.reconnectActiveRelays(config, (workspace, handle) => {
-  console.log(`[server] reconnected to relay workspace=${workspace}`);
+claudeChat.reconnectActiveRelays(config, (workspace, handle, sessionNum) => {
+  console.log(`[server] reconnected to relay workspace=${workspace} session#${sessionNum}`);
   // Don't assume streaming=true — relay may be idle between turns
   workspaceState.setStreaming(workspace, false);
-  wireRelayEvents(workspace, handle);
+  wireRelayEvents(workspace, handle, sessionNum);
 });
 
 // --- Graceful shutdown: flush partial streams before exit ---

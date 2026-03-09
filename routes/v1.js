@@ -643,7 +643,7 @@ module.exports = function createV1Router(deps) {
     if (!claudeChat) return res.status(501).json({ error: "claude-chat not available" });
 
     const workspace = decodeURIComponent(req.params.workspace);
-    const { message, sender } = req.body;
+    const { message, sender, sessionNum: reqSessionNum } = req.body;
 
     if (!message) return res.status(400).json({ error: "message required" });
 
@@ -654,12 +654,12 @@ module.exports = function createV1Router(deps) {
 
     try {
       const chatSessions = claudeChat.getSessions(workspace);
-      const currentSNum = chatSessions.current || 1;
+      const currentSNum = reqSessionNum || chatSessions.current || 1;
       if (claudeChat.isSessionActive(workspace, currentSNum)) {
-        claudeChat.pushHistory(workspace, "user", message, { sender: senderField });
-        claudeChat.sendMessage(workspace, message);
+        claudeChat.pushHistory(workspace, "user", message, { sender: senderField }, currentSNum);
+        claudeChat.sendMessage(workspace, message, currentSNum);
       } else {
-        claudeChat.pushHistory(workspace, "user", message, { sender: senderField });
+        claudeChat.pushHistory(workspace, "user", message, { sender: senderField }, currentSNum);
         await claudeChat.startChat(workspace, proj.path, message, config);
       }
       res.json({ ok: true, workspace });
