@@ -651,9 +651,13 @@ wss.on("connection", (ws) => {
         broadcastToWorkspace(workspace, { type: "streaming_start", workspace }, clientId);
         wsProcessingAcked[workspace] = false; // reset for new user turn
         const delivered = claudeChat.sendMessage(workspace, message, clientSessionNum);
-        // Delivery ack — message piped into CLI stdin
         if (delivered) {
           broadcastToWorkspace(workspace, { type: "ack", workspace, status: "delivered" });
+        } else {
+          // Write failed — clear streaming state and notify client
+          workspaceState.setStreaming(workspace, false);
+          broadcastToWorkspace(workspace, { type: "error", workspace, message: "Failed to deliver message to Claude relay" });
+          broadcastToWorkspace(workspace, { type: "streaming_end", workspace });
         }
         return;
       }
