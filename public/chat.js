@@ -1103,6 +1103,26 @@ function handleGeminiEvent(event) {
       );
       break;
 
+    case "session_handoff":
+      // Server created a new session via auto-handoff. Switch to it so the user
+      // sees the continuation, and update workspace-state + session dropdown.
+      glog("handle: session_handoff newSession=" + event.newSession);
+      if (event.newSession && event.workspace === chatWorkspace) {
+        chatSessionNum = event.newSession;
+        // Update workspace-state server-side
+        fetch(`/api/workspace-state/${encodeURIComponent(chatWorkspace)}`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ sessionNum: event.newSession, draftMode: chatActiveCli === "claude" ? "claude-local" : "gemini" }),
+        }).catch(() => {});
+        // Update URL
+        const cur = getChatParams();
+        setChatParams({ ...cur, chat: event.newSession });
+        // Refresh session dropdown
+        chatPopulateSessionDropdown();
+      }
+      break;
+
     case "task_started":
       glog("handle: task_started id=" + event.task_id + " desc=" + event.description);
       chatAppendTaskCard(event.task_id, event.description, "running");

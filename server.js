@@ -659,8 +659,8 @@ wss.on("connection", (ws) => {
         workspaceState.setStreaming(workspace, true);
         pendingWorkspaces.add(workspace);
 
-        // Capture session number now — it must not change if sessions are switched during streaming
-        const chatSessionNum = backendModule.currentSessionNum(workspace);
+        // Use the client's explicit session number; fall back to currentSessionNum only for first-ever chat
+        const chatSessionNum = clientSessionNum || backendModule.currentSessionNum(workspace);
 
         // Persist user message
         backendModule.pushHistory(workspace, "user", message, { sender: msg.sender || "user" }, chatSessionNum);
@@ -967,6 +967,8 @@ function wireRelayEvents(workspace, handle, sessionNum) {
                   console.log(`[server] handoff complete workspace=${workspace} newSession=${result.sessionNum}`);
                   // Wire up the new relay's events (pass new session number so history goes to the right place)
                   wireRelayEvents(workspace, result.handle, result.sessionNum);
+                  // Tell clients about the new session so they can switch
+                  broadcastToWorkspace(workspace, { type: "session_handoff", workspace, newSession: result.sessionNum });
                 } else {
                   console.log(`[server] handoff returned null workspace=${workspace}`);
                   broadcastToWorkspace(workspace, { type: "done", workspace, exitCode: 0 });
