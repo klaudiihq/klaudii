@@ -45,6 +45,9 @@ class SessionsViewModel: ObservableObject {
         self.relay = relay
         self.demoMode = demoMode
 
+        // Configure the connection manager with the relay
+        ChatConnectionManager.shared.configure(relay: relay)
+
         // Load cached data immediately so UI isn't empty while connecting
         if !demoMode, let serverId = relay.serverId ?? KeychainService.getLastServerId() {
             let cached = LocalCache.loadSessions(serverId: serverId)

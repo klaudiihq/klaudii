@@ -1,6 +1,10 @@
 import BackgroundTasks
 import SwiftUI
 
+extension Notification.Name {
+    static let appDidBecomeActive = Notification.Name("appDidBecomeActive")
+}
+
 @main
 struct KlaudiiApp: App {
     @Environment(\.scenePhase) private var scenePhase
@@ -10,8 +14,13 @@ struct KlaudiiApp: App {
             ContentView()
         }
         .onChange(of: scenePhase) { phase in
-            if phase == .background {
+            switch phase {
+            case .background:
                 Task { @MainActor in BackgroundSyncManager.schedule() }
+            case .active:
+                NotificationCenter.default.post(name: .appDidBecomeActive, object: nil)
+            default:
+                break
             }
         }
         .backgroundTask(.appRefresh(BackgroundSyncManager.taskId)) {

@@ -76,7 +76,31 @@ class ChatViewModel: ObservableObject {
     init(relay: KloudRelay, workspace: String) {
         self.relay = relay
         self.workspace = workspace
-        connectTask = Task { await connect() }
+
+        // Grab pre-warmed data from the connection manager
+        let mgr = ChatConnectionManager.shared
+        let cachedMode = mgr.cachedMode(for: workspace)
+        let cachedModels = mgr.cachedModels(for: workspace)
+        self.launchMode = cachedMode
+        self.availableModels = cachedModels
+        if !cachedModels.isEmpty && cachedMode.cli == "claude" {
+            self.selectedModel = cachedModels[0].id
+        }
+
+        // Load cached history synchronously
+        let cachedHistory = mgr.cachedHistory(for: workspace)
+        self.messages = Self.parseHistory(cachedHistory)
+
+        // Take the pre-warmed channel or open a fresh one
+        connectTask = Task {
+            if let ch = mgr.takeChannel(for: workspace) {
+                self.attachChannel(ch)
+            } else {
+                await openChannel()
+            }
+            // Refresh models in background if cache was empty
+            if cachedModels.isEmpty { fetchModels() }
+        }
     }
 
     func disconnect() {
@@ -260,37 +284,48 @@ class ChatViewModel: ObservableObject {
 
     // MARK: - Private
 
-    private func connect() async {
-        await fetchWorkspaceMode()
-        await loadHistory()
-        fetchModels()
-        await openChannel()
+    private func attachChannel(_ ch: KloudRelay.RelayChannel) {
+        channel = ch
+        isConnected = true
+        connectionError = nil
+        reconnectDelay = 2.0
+
+        ch.onMessage = { [weak self] text in
+            Task { @MainActor [weak self] in self?.handleRawMessage(text) }
+        }
+        ch.onClose = { [weak self] in
+            Task { @MainActor [weak self] in
+                guard let self else { return }
+                self.channel = nil
+                self.isConnected = false
+                self.isStreaming = false
+                self.streamingMessageId = nil
+                self.thinkingMessageId = nil
+                guard !self.isManualDisconnect else { return }
+                self.scheduleChannelReconnect()
+            }
+        }
+        ch.onSendError = { [weak self] errorMsg in
+            Task { @MainActor [weak self] in
+                guard let self else { return }
+                self.finalizeStreaming()
+                self.finalizeThinking()
+                self.isStreaming = false
+                self.streamingMessageId = nil
+                self.messages.append(.errorMessage("Send failed: \(errorMsg)"))
+            }
+        }
     }
 
     private func openChannel() async {
         guard !isManualDisconnect else { return }
+        guard relay.isConnected else {
+            scheduleChannelReconnect()
+            return
+        }
         do {
-            let ch = try await relay.openChannel(path: "/ws/gemini")
-            channel = ch
-            isConnected = true
-            connectionError = nil
-            reconnectDelay = 2.0
-
-            ch.onMessage = { [weak self] text in
-                Task { @MainActor [weak self] in self?.handleRawMessage(text) }
-            }
-            ch.onClose = { [weak self] in
-                Task { @MainActor [weak self] in
-                    guard let self else { return }
-                    self.channel = nil
-                    self.isConnected = false
-                    self.isStreaming = false
-                    self.streamingMessageId = nil
-                    self.thinkingMessageId = nil
-                    guard !self.isManualDisconnect else { return }
-                    self.scheduleChannelReconnect()
-                }
-            }
+            let ch = try await relay.openChannel(path: "/ws/chat")
+            attachChannel(ch)
         } catch {
             connectionError = error.localizedDescription
             guard !isManualDisconnect else { return }
@@ -304,6 +339,18 @@ class ChatViewModel: ObservableObject {
         connectTask = Task { [weak self] in
             try? await Task.sleep(for: .seconds(delay))
             guard !Task.isCancelled, let self else { return }
+
+            // Wait for the relay WebSocket to be connected before trying to open a channel.
+            // Without this, openChannel fails immediately with .notConnected and we spin
+            // in a tight reconnect loop burning backoff budget.
+            var waited = 0
+            while !relay.isConnected, waited < 30 {
+                try? await Task.sleep(for: .seconds(1))
+                guard !Task.isCancelled else { return }
+                waited += 1
+            }
+            guard relay.isConnected else { return }
+
             await self.loadHistory()
             await self.openChannel()
         }
@@ -327,8 +374,13 @@ class ChatViewModel: ObservableObject {
         let encoded = workspace.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? workspace
         let path = "\(launchMode.historyEndpoint)/history/\(encoded)"
         guard let raw = try? await relay.getArray(path) else { return }
+        messages = Self.parseHistory(raw)
+        // Persist to disk for instant load next time
+        LocalCache.saveChatHistory(raw, workspace: workspace)
+    }
 
-        messages = raw.compactMap { item -> ChatMessage? in
+    static func parseHistory(_ raw: [[String: Any]]) -> [ChatMessage] {
+        raw.compactMap { item -> ChatMessage? in
             guard let role = item["role"] as? String,
                   let content = item["content"] as? String else { return nil }
             let ts = (item["ts"] as? Double).map { Date(timeIntervalSince1970: $0 / 1000) } ?? Date()
@@ -350,7 +402,6 @@ class ChatViewModel: ObservableObject {
                                    toolName: name, toolId: toolId, toolParameters: params,
                                    toolStatus: .success, isStreaming: false, timestamp: ts)
             case "tool_result":
-                // Tool results update existing tool_use messages, skip standalone
                 return nil
             default:
                 return nil

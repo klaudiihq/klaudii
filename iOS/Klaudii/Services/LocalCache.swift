@@ -48,9 +48,31 @@ enum LocalCache {
         load([ProcessInfo].self, key: "processes-\(serverId)") ?? []
     }
 
-    // MARK: - Chat Messages (namespaced by workspace, added when ChatViewModel is built)
+    // MARK: - Chat History (raw JSON, namespaced by workspace)
 
-    // saveChatMessages / loadChatMessages will be added here alongside ChatViewModel.
+    static func saveChatHistory(_ raw: [[String: Any]], workspace: String) {
+        ensureDir()
+        guard let data = try? JSONSerialization.data(withJSONObject: raw) else { return }
+        try? data.write(to: url(for: "chat-\(workspace)"), options: .atomic)
+    }
+
+    static func loadChatHistory(workspace: String) -> [[String: Any]]? {
+        guard let data = try? Data(contentsOf: url(for: "chat-\(workspace)")),
+              let arr = try? JSONSerialization.jsonObject(with: data) as? [[String: Any]] else { return nil }
+        return arr
+    }
+
+    // MARK: - Workspace Mode (per workspace)
+
+    static func saveWorkspaceMode(_ mode: String, workspace: String) {
+        ensureDir()
+        try? mode.data(using: .utf8)?.write(to: url(for: "mode-\(workspace)"), options: .atomic)
+    }
+
+    static func loadWorkspaceMode(workspace: String) -> String? {
+        guard let data = try? Data(contentsOf: url(for: "mode-\(workspace)")) else { return nil }
+        return String(data: data, encoding: .utf8)
+    }
 
     // MARK: - Housekeeping
 

@@ -26,8 +26,17 @@ class KloudRelay: ObservableObject {
     private var reconnectDelay: TimeInterval = 1.0
     private let maxReconnectDelay: TimeInterval = 60.0
     private var intentionalDisconnect = false
+    private var foregroundObserver: Any?
 
     func connect(serverId: String, userId: String, connectionKey: Data, cookie: String?) {
+        // Listen for app returning to foreground to verify connection health
+        if foregroundObserver == nil {
+            foregroundObserver = NotificationCenter.default.addObserver(
+                forName: .appDidBecomeActive, object: nil, queue: .main
+            ) { [weak self] _ in
+                self?.checkConnectionOnForeground()
+            }
+        }
         self.serverId = serverId
         self.userId = userId
         self.connectionKey = connectionKey
@@ -60,6 +69,10 @@ class KloudRelay: ObservableObject {
         webSocket = nil
         isConnected = false
         serverOnline = false
+        if let obs = foregroundObserver {
+            NotificationCenter.default.removeObserver(obs)
+            foregroundObserver = nil
+        }
         failAllPending(error: RelayError.disconnected)
         closeAllChannels()
     }
@@ -193,7 +206,10 @@ class KloudRelay: ObservableObject {
               let wrapperData = try? JSONSerialization.data(withJSONObject: ["data": text]),
               let wrapperString = String(data: wrapperData, encoding: .utf8),
               let encrypted = try? CryptoService.encrypt(wrapperString, connectionKey: connectionKey)
-        else { return }
+        else {
+            openChannels[channelId]?.deliverSendError("Failed to encrypt message")
+            return
+        }
 
         let message: [String: Any] = [
             "type": "ws_message",
@@ -201,8 +217,17 @@ class KloudRelay: ObservableObject {
             "encrypted": ["salt": encrypted.salt, "data": encrypted.data],
         ]
         guard let msgData = try? JSONSerialization.data(withJSONObject: message),
-              let msgString = String(data: msgData, encoding: .utf8) else { return }
-        webSocket?.send(.string(msgString)) { _ in }
+              let msgString = String(data: msgData, encoding: .utf8) else {
+            openChannels[channelId]?.deliverSendError("Failed to serialize message")
+            return
+        }
+        webSocket?.send(.string(msgString)) { [weak self] error in
+            if let error = error {
+                Task { @MainActor [weak self] in
+                    self?.openChannels[channelId]?.deliverSendError(error.localizedDescription)
+                }
+            }
+        }
     }
 
     func closeChannel(channelId: String) {
@@ -289,6 +314,23 @@ class KloudRelay: ObservableObject {
 
     private var arrayPendingRequests: [String: CheckedContinuation<Any, Error>] = [:]
 
+    /// Call when the app returns to foreground. Verifies the WebSocket is still
+    /// alive by sending a ping — if the send fails, tears down and reconnects.
+    func checkConnectionOnForeground() {
+        guard !intentionalDisconnect, webSocket != nil else { return }
+        webSocket?.sendPing { [weak self] error in
+            Task { @MainActor [weak self] in
+                guard let self else { return }
+                if error != nil {
+                    // WebSocket died while backgrounded — tear down and reconnect
+                    self.webSocket?.cancel(with: .abnormalClosure, reason: nil)
+                    self.webSocket = nil
+                    self.handleDisconnect()
+                }
+            }
+        }
+    }
+
     // MARK: - Private
 
     private func doConnect() {
@@ -314,7 +356,8 @@ class KloudRelay: ObservableObject {
         webSocket = session.webSocketTask(with: request)
         webSocket?.resume()
 
-        isConnected = true
+        // Don't set isConnected here — wait for first successful receive
+        // to confirm the WebSocket handshake actually completed.
         reconnectDelay = 1.0
         startReceiving()
         startHeartbeat()
@@ -341,6 +384,11 @@ class KloudRelay: ObservableObject {
               let data = text.data(using: .utf8),
               let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
               let type = json["type"] as? String else { return }
+
+        // First successful receive confirms the WebSocket is alive
+        if !isConnected {
+            isConnected = true
+        }
 
         switch type {
         case "server_status":
@@ -514,6 +562,8 @@ class KloudRelay: ObservableObject {
         var onMessage: ((String) -> Void)?
         /// Called when the channel is closed (by either side or on disconnect).
         var onClose: (() -> Void)?
+        /// Called when a send operation fails (encryption or WebSocket write error).
+        var onSendError: ((String) -> Void)?
 
         init(channelId: String, relay: KloudRelay) {
             self.channelId = channelId
@@ -534,10 +584,12 @@ class KloudRelay: ObservableObject {
 
         // Called by KloudRelay only
         func deliver(_ text: String) { onMessage?(text) }
+        func deliverSendError(_ msg: String) { onSendError?(msg) }
         func notifyClosed() {
             onClose?()
             onMessage = nil
             onClose = nil
+            onSendError = nil
         }
     }
 
