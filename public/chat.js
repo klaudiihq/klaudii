@@ -858,8 +858,11 @@ function handleGeminiEvent(event) {
       chatCurrentMsgEl = null;
       chatCurrentMsgText = "";
       if (toolName === "ExitPlanMode") {
-        // Plan approval: render the plan as markdown with approve/reject buttons
-        chatShowPlanApproval(toolId, params.plan || "");
+        // Don't render here — the permission_request handler renders the
+        // interactive plan approval card. Rendering here causes a duplicate.
+        // Store as pending so tool_result can find the plan text later.
+        pendingToolUses.set(toolId, { tool_name: toolName, tool_id: toolId, parameters: params });
+        glog("handle: ExitPlanMode (skipped, waiting for permission_request) toolId=" + toolId);
       } else if (toolName === "EnterPlanMode") {
         // Planning mode entry — just show a small indicator, no action needed
         chatAppendToolUse(toolName, toolId, params);
@@ -888,8 +891,12 @@ function handleGeminiEvent(event) {
       // AskUserQuestion results are already shown in the question card — skip rendering.
       // Check both tool_name (if present) and our tracked set (CLI often omits tool_name on results).
       const isAskResult = /ask.*question/i.test(toolName) || chatAskToolIds.has(toolId);
+      // ExitPlanMode results are handled by the plan approval card — skip rendering.
+      const isPlanResult = /ExitPlanMode/i.test(toolName) || (pendingToolUses.has(toolId) && pendingToolUses.get(toolId).tool_name === "ExitPlanMode");
       if (isAskResult) {
         chatAskToolIds.delete(toolId);
+      } else if (isPlanResult) {
+        pendingToolUses.delete(toolId);
       } else {
         chatUpdateToolResult(toolId, status, output, error);
       }
