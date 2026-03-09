@@ -1,12 +1,32 @@
 import SwiftUI
 import PhotosUI
 
+// MARK: - Tool Display Mode
+
+enum ToolDisplayMode: String {
+    case hidden     = "hidden"
+    case collapsed  = "collapsed"
+    case expanded   = "expanded"
+
+    var label: String {
+        switch self {
+        case .hidden:    return "Hidden"
+        case .collapsed: return "Collapsed"
+        case .expanded:  return "Expanded"
+        }
+    }
+}
+
 // MARK: - Chat View
 
 struct ChatView: View {
     @StateObject private var vm: ChatViewModel
     @State private var selectedPhotos: [PhotosPickerItem] = []
-    @State private var showModelPicker = false
+    @State private var showChatSettings = false
+    @AppStorage("toolDisplayMode") private var toolDisplayModeRaw = "collapsed"
+    private var toolDisplayMode: ToolDisplayMode {
+        ToolDisplayMode(rawValue: toolDisplayModeRaw) ?? .collapsed
+    }
     private let bottomId = "chat-bottom"
 
     let session: Session
@@ -21,8 +41,15 @@ struct ChatView: View {
             ScrollViewReader { proxy in
                 ScrollView {
                     LazyVStack(alignment: .leading, spacing: 8) {
-                        ForEach(vm.messages) { msg in
-                            ChatBubbleView(message: msg, vm: vm)
+                        ForEach(vm.displayItems) { item in
+                            switch item {
+                            case .single(let msg):
+                                ChatBubbleView(message: msg, vm: vm)
+                            case .toolGroup(let msgs):
+                                if toolDisplayMode != .hidden {
+                                    ToolGroupView(messages: msgs, displayMode: toolDisplayMode)
+                                }
+                            }
                         }
                         Color.clear.frame(height: 1).id(bottomId)
                     }
@@ -70,88 +97,83 @@ struct ChatView: View {
                 }
             }
         }
-        .sheet(isPresented: $showModelPicker) {
-            modelPickerSheet
+        .sheet(isPresented: $showChatSettings) {
+            chatSettingsSheet
         }
         .background(KTheme.background.ignoresSafeArea())
         .onDisappear { vm.disconnect() }
     }
 
-    // MARK: - Model Picker
+    // MARK: - Chat Settings Sheet
 
-    private var modelPickerButton: some View {
-        Button {
-            showModelPicker = true
-        } label: {
-            HStack(spacing: 3) {
-                Image(systemName: "cpu")
-                    .font(.system(size: 10))
-                Text(modelDisplayName)
-                    .font(.system(size: 10, weight: .medium))
-                    .lineLimit(1)
-            }
-            .foregroundColor(KTheme.textSecondary)
-            .padding(.horizontal, 6)
-            .padding(.vertical, 3)
-            .background(KTheme.cardBackground)
-            .clipShape(Capsule())
-            .overlay(Capsule().stroke(KTheme.border, lineWidth: 1))
-        }
-    }
-
-    private var modelDisplayName: String {
-        if vm.selectedModel.isEmpty { return "Auto" }
-        return vm.availableModels.first(where: { $0.id == vm.selectedModel })?.name ?? vm.selectedModel
-    }
-
-    private var modelPickerSheet: some View {
+    private var chatSettingsSheet: some View {
         NavigationView {
             List {
-                if vm.launchMode.cli != "claude" {
-                    Button {
-                        vm.setModel("")
-                        showModelPicker = false
-                    } label: {
-                        HStack {
-                            Text("Auto")
-                                .foregroundColor(KTheme.textPrimary)
-                            Spacer()
-                            if vm.selectedModel.isEmpty {
-                                Image(systemName: "checkmark")
-                                    .foregroundColor(KTheme.accent)
+                Section("Tool Display") {
+                    ForEach(["hidden", "collapsed", "expanded"], id: \.self) { mode in
+                        Button {
+                            toolDisplayModeRaw = mode
+                        } label: {
+                            HStack {
+                                Text(ToolDisplayMode(rawValue: mode)?.label ?? mode)
+                                    .foregroundColor(KTheme.textPrimary)
+                                Spacer()
+                                if toolDisplayModeRaw == mode {
+                                    Image(systemName: "checkmark")
+                                        .foregroundColor(KTheme.accent)
+                                }
                             }
                         }
                     }
                 }
 
-                ForEach(vm.availableModels) { model in
-                    Button {
-                        vm.setModel(model.id)
-                        showModelPicker = false
-                    } label: {
-                        HStack {
-                            VStack(alignment: .leading, spacing: 2) {
-                                Text(model.name)
+                Section("Model") {
+                    if vm.launchMode.cli != "claude" {
+                        Button {
+                            vm.setModel("")
+                            showChatSettings = false
+                        } label: {
+                            HStack {
+                                Text("Auto")
                                     .foregroundColor(KTheme.textPrimary)
-                                Text(model.id)
-                                    .font(.system(size: 11, design: .monospaced))
-                                    .foregroundColor(KTheme.textTertiary)
+                                Spacer()
+                                if vm.selectedModel.isEmpty {
+                                    Image(systemName: "checkmark")
+                                        .foregroundColor(KTheme.accent)
+                                }
                             }
-                            Spacer()
-                            if vm.selectedModel == model.id {
-                                Image(systemName: "checkmark")
-                                    .foregroundColor(KTheme.accent)
+                        }
+                    }
+
+                    ForEach(vm.availableModels) { model in
+                        Button {
+                            vm.setModel(model.id)
+                            showChatSettings = false
+                        } label: {
+                            HStack {
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text(model.name)
+                                        .foregroundColor(KTheme.textPrimary)
+                                    Text(model.id)
+                                        .font(.system(size: 11, design: .monospaced))
+                                        .foregroundColor(KTheme.textTertiary)
+                                }
+                                Spacer()
+                                if vm.selectedModel == model.id {
+                                    Image(systemName: "checkmark")
+                                        .foregroundColor(KTheme.accent)
+                                }
                             }
                         }
                     }
                 }
             }
             .listStyle(.insetGrouped)
-            .navigationTitle("Model")
+            .navigationTitle("Chat Settings")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .navigationBarTrailing) {
-                    Button("Done") { showModelPicker = false }
+                    Button("Done") { showChatSettings = false }
                 }
             }
         }
@@ -170,7 +192,7 @@ struct ChatView: View {
             HStack(alignment: .bottom, spacing: 8) {
                 // Model picker + Attach image buttons stacked
                 VStack(spacing: 8) {
-                    Button { showModelPicker = true } label: {
+                    Button { showChatSettings = true } label: {
                         Image(systemName: "gearshape")
                             .font(.system(size: 18))
                             .foregroundColor(KTheme.textTertiary)
@@ -1084,6 +1106,71 @@ struct UsageResultView: View {
             return String(format: "%.1fm", Double(ms) / 60000.0)
         }
         return String(format: "%.1fs", Double(ms) / 1000.0)
+    }
+}
+
+// MARK: - Tool Group (coalesced tool calls)
+
+struct ToolGroupView: View {
+    let messages: [ChatMessage]
+    let displayMode: ToolDisplayMode
+    @State private var groupExpanded = false
+
+    var body: some View {
+        let hasPending = messages.contains { $0.toolStatus == .pending }
+        let showDetails = displayMode == .expanded || groupExpanded
+
+        VStack(alignment: .leading, spacing: 0) {
+            Button {
+                if displayMode == .collapsed {
+                    withAnimation(.easeInOut(duration: 0.2)) { groupExpanded.toggle() }
+                }
+            } label: {
+                HStack(spacing: 6) {
+                    if hasPending {
+                        ProgressView()
+                            .scaleEffect(0.55)
+                            .frame(width: 14, height: 14)
+                    } else {
+                        Image(systemName: "checkmark")
+                            .font(.system(size: 9, weight: .bold))
+                            .foregroundColor(KTheme.success)
+                            .frame(width: 14, height: 14)
+                    }
+
+                    Text(ChatViewModel.toolGroupSummary(messages))
+                        .font(.system(size: 12, weight: .medium, design: .monospaced))
+                        .foregroundColor(KTheme.textSecondary)
+                        .lineLimit(1)
+
+                    Spacer()
+
+                    if displayMode == .collapsed {
+                        Image(systemName: showDetails ? "chevron.up" : "chevron.down")
+                            .font(.system(size: 10))
+                            .foregroundColor(KTheme.textTertiary)
+                    }
+                }
+                .padding(.horizontal, 10)
+                .padding(.vertical, 7)
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+
+            if showDetails {
+                Divider().background(KTheme.border)
+                VStack(spacing: 4) {
+                    ForEach(messages) { msg in
+                        ToolPillView(message: msg)
+                    }
+                }
+                .padding(6)
+            }
+        }
+        .background(KTheme.cardBackground)
+        .clipShape(RoundedRectangle(cornerRadius: 8))
+        .overlay(RoundedRectangle(cornerRadius: 8).stroke(KTheme.border, lineWidth: 1))
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 }
 

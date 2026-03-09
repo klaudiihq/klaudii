@@ -48,6 +48,20 @@ enum LaunchMode: String, CaseIterable {
     }
 }
 
+// MARK: - Display Item (groups consecutive tool calls)
+
+enum DisplayItem: Identifiable {
+    case single(ChatMessage)
+    case toolGroup([ChatMessage])
+
+    var id: UUID {
+        switch self {
+        case .single(let msg): return msg.id
+        case .toolGroup(let msgs): return msgs.first?.id ?? UUID()
+        }
+    }
+}
+
 // MARK: - ChatViewModel
 
 @MainActor
@@ -73,6 +87,57 @@ class ChatViewModel: ObservableObject {
     private var toolTimers: [String: (start: Date, timer: Timer)] = [:]
     private var draftSaveTask: Task<Void, Never>?
     private var relaySub: AnyCancellable?
+
+    // MARK: - Display grouping
+
+    /// Groups consecutive toolUse messages into .toolGroup items for coalesced rendering.
+    var displayItems: [DisplayItem] {
+        var result: [DisplayItem] = []
+        var group: [ChatMessage] = []
+        for msg in messages {
+            if msg.role == .toolUse {
+                group.append(msg)
+            } else {
+                if !group.isEmpty {
+                    result.append(.toolGroup(group))
+                    group = []
+                }
+                result.append(.single(msg))
+            }
+        }
+        if !group.isEmpty { result.append(.toolGroup(group)) }
+        return result
+    }
+
+    static func toolGroupSummary(_ tools: [ChatMessage]) -> String {
+        var bash = 0, reads = 0, edits = 0, searches = 0, web = 0, other = 0
+        for t in tools {
+            let name = (t.toolName ?? t.content).lowercased()
+            if name.contains("bash") || name.contains("computer") || name.contains("terminal") {
+                bash += 1
+            } else if name.contains("read") {
+                reads += 1
+            } else if name.contains("edit") || name.contains("write") || name.contains("notebook") {
+                edits += 1
+            } else if name.contains("glob") || name.contains("grep") || name.contains("search") {
+                searches += 1
+            } else if name.contains("web") || name.contains("fetch") || name.contains("url") {
+                web += 1
+            } else {
+                other += 1
+            }
+        }
+        var parts: [String] = []
+        if bash > 0    { parts.append("ran \(bash) command\(bash == 1 ? "" : "s")") }
+        if reads > 0   { parts.append("read \(reads == 1 ? "a file" : "\(reads) files")") }
+        if edits > 0   { parts.append("edited \(edits == 1 ? "a file" : "\(edits) files")") }
+        if searches > 0 { parts.append("searched") }
+        if web > 0     { parts.append("fetched \(web == 1 ? "a URL" : "\(web) URLs")") }
+        if other > 0   { parts.append("\(other) other tool\(other == 1 ? "" : "s")") }
+        guard !parts.isEmpty else { return "\(tools.count) tool\(tools.count == 1 ? "" : "s")" }
+        let joined = parts.joined(separator: ", ")
+        return joined.prefix(1).uppercased() + joined.dropFirst()
+    }
 
     init(relay: KloudRelay, workspace: String) {
         self.relay = relay
@@ -389,7 +454,7 @@ class ChatViewModel: ObservableObject {
                 return ChatMessage(id: UUID(), role: .assistant, content: content,
                                    toolStatus: .none, isStreaming: false, timestamp: ts)
             case "tool_use":
-                let name = item["tool_name"] as? String ?? "tool"
+                let name = item["tool_name"] as? String ?? item["name"] as? String ?? (content.isEmpty ? "tool" : content)
                 let toolId = item["tool_id"] as? String ?? ""
                 let params: String? = item["parameters"].flatMap { p -> String? in
                     guard let d = try? JSONSerialization.data(withJSONObject: p) else { return nil }
