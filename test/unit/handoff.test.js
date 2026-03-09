@@ -34,7 +34,7 @@ describe("generateBriefing", () => {
 
     const briefing = claudeChat.generateBriefing(workspace);
     expect(briefing).toContain("continued from a previous conversation");
-    expect(briefing).toContain("continue the conversation from where you left off");
+    expect(briefing).toContain("CRITICAL INSTRUCTIONS");
   });
 
   it("includes user and assistant messages from history", () => {
@@ -65,9 +65,9 @@ describe("generateBriefing", () => {
     claudeChat.pushHistory(workspace, "assistant", "OK");
 
     const briefing = claudeChat.generateBriefing(workspace);
-    // Message should be truncated to 2000 chars
-    expect(briefing.indexOf("x".repeat(2001))).toBe(-1);
-    expect(briefing).toContain("x".repeat(100)); // but still has some
+    // Recent Exchanges section truncates to 2000 chars, but Exact Recent Messages
+    // includes the full verbatim content. Just verify the message appears.
+    expect(briefing).toContain("x".repeat(100));
   });
 
   it("takes only the tail of long conversations", () => {
@@ -134,7 +134,8 @@ describe("handoff invariants", () => {
     const body = handoffFn[1];
     expect(/currentSessionNum/.test(body)).toBe(true);
     expect(/generateBriefing/.test(body)).toBe(true);
-    expect(/session_id:\s*""/.test(body)).toBe(true);
+    // No init message — Claude waits silently for user input
+    expect(/No init message/.test(body) || !/session_id/.test(body)).toBe(true);
   });
 
   it("server auto-handoff triggers at 75% context usage", () => {

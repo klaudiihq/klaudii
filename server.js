@@ -442,7 +442,9 @@ app.post("/api/claude-chat/sessions/:project/switch", (req, res) => {
 
 app.get("/api/claude-chat/history/:project", (req, res) => {
   const sessionNum = req.query.session ? Number(req.query.session) : undefined;
-  res.json(claudeChat.getHistory(req.params.project, sessionNum));
+  const history = claudeChat.getHistory(req.params.project, sessionNum);
+  const limit = req.query.limit ? Number(req.query.limit) : 0;
+  res.json(limit > 0 ? history.slice(-limit) : history);
 });
 
 app.post("/api/claude-chat/history/:project", (req, res) => {
@@ -457,7 +459,8 @@ app.get("/api/claude-chat/stats/:project", (req, res) => {
 });
 
 app.get("/api/claude-chat/briefing/:project", (req, res) => {
-  const briefing = claudeChat.generateBriefing(req.params.project);
+  const proj = getProject(req.params.project);
+  const briefing = claudeChat.generateBriefing(req.params.project, proj ? proj.path : null);
   res.json({ briefing: briefing || "(No conversation history — nothing to hand off)" });
 });
 
