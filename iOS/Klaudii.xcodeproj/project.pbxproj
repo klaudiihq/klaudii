@@ -7,198 +7,222 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
-		A000000000000001 /* KlaudiiApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = A000000000000101 /* KlaudiiApp.swift */; };
-		A000000000000002 /* Session.swift in Sources */ = {isa = PBXBuildFile; fileRef = A000000000000102 /* Session.swift */; };
-		A000000000000003 /* Server.swift in Sources */ = {isa = PBXBuildFile; fileRef = A000000000000103 /* Server.swift */; };
-		A000000000000004 /* HistoryEntry.swift in Sources */ = {isa = PBXBuildFile; fileRef = A000000000000104 /* HistoryEntry.swift */; };
-		A000000000000005 /* CryptoService.swift in Sources */ = {isa = PBXBuildFile; fileRef = A000000000000105 /* CryptoService.swift */; };
-		A000000000000006 /* KeychainService.swift in Sources */ = {isa = PBXBuildFile; fileRef = A000000000000106 /* KeychainService.swift */; };
-		A000000000000007 /* AuthService.swift in Sources */ = {isa = PBXBuildFile; fileRef = A000000000000107 /* AuthService.swift */; };
-		A000000000000008 /* KloudRelay.swift in Sources */ = {isa = PBXBuildFile; fileRef = A000000000000108 /* KloudRelay.swift */; };
-		A000000000000009 /* AppViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = A000000000000109 /* AppViewModel.swift */; };
-		A00000000000000A /* SessionsViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000010A /* SessionsViewModel.swift */; };
-		A00000000000000B /* PairingViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000010B /* PairingViewModel.swift */; };
-		A00000000000000C /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000010C /* ContentView.swift */; };
-		A00000000000000D /* LoginView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000010D /* LoginView.swift */; };
-		A00000000000000E /* ServerPickerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000010E /* ServerPickerView.swift */; };
-		A00000000000000F /* PairingView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000010F /* PairingView.swift */; };
-		A000000000000010 /* DashboardView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A000000000000110 /* DashboardView.swift */; };
-		A000000000000011 /* SessionCardView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A000000000000111 /* SessionCardView.swift */; };
-		A000000000000012 /* HistoryListView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A000000000000112 /* HistoryListView.swift */; };
-		A000000000000013 /* ProcessesView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A000000000000113 /* ProcessesView.swift */; };
-		A000000000000014 /* SettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A000000000000114 /* SettingsView.swift */; };
-		A000000000000015 /* Theme.swift in Sources */ = {isa = PBXBuildFile; fileRef = A000000000000115 /* Theme.swift */; };
-		A000000000000016 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = A000000000000116 /* Assets.xcassets */; };
-		A000000000000017 /* CryptoKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = A000000000000201 /* CryptoKit.framework */; settings = {ATTRIBUTES = (Weak, ); }; };
-		A000000000000018 /* AuthenticationServices.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = A000000000000202 /* AuthenticationServices.framework */; };
-		A000000000000019 /* AVFoundation.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = A000000000000203 /* AVFoundation.framework */; };
-		A00000000000001A /* Security.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = A000000000000204 /* Security.framework */; };
-		A00000000000001B /* AddWorkspaceView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A000000000000118 /* AddWorkspaceView.swift */; };
-		A00000000000001C /* ChatMessage.swift in Sources */ = {isa = PBXBuildFile; fileRef = A000000000000119 /* ChatMessage.swift */; };
-		A00000000000001D /* ChatViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000011A /* ChatViewModel.swift */; };
-		A00000000000001E /* ChatView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000011B /* ChatView.swift */; };
-		A00000000000001F /* LocalCache.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000011C /* LocalCache.swift */; };
-		A000000000000020 /* BackgroundSyncManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000011D /* BackgroundSyncManager.swift */; };
-		A000000000000021 /* AddServerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000011E /* AddServerView.swift */; };
-		A000000000000022 /* ChatConnectionManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000011F /* ChatConnectionManager.swift */; };
+		1C7A46D780854862C9F5A665 /* ChatHistoryTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = FFC7413086ED7596861CBD67 /* ChatHistoryTests.swift */; };
+		86424F06B0153204E10399C5 /* ChatMessageRoutingTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C0114BBFBD1F40486FD5A409 /* ChatMessageRoutingTests.swift */; };
+		92D94E96B259A090A3F33BE5 /* ChatConnectionTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 852E4C288401F7B48C3F5C3A /* ChatConnectionTests.swift */; };
+		'A000000000000001' = {isa = PBXBuildFile; fileRef = A000000000000101; };
+		'A000000000000002' = {isa = PBXBuildFile; fileRef = A000000000000102; };
+		'A000000000000003' = {isa = PBXBuildFile; fileRef = A000000000000103; };
+		'A000000000000004' = {isa = PBXBuildFile; fileRef = A000000000000104; };
+		'A000000000000005' = {isa = PBXBuildFile; fileRef = A000000000000105; };
+		'A000000000000006' = {isa = PBXBuildFile; fileRef = A000000000000106; };
+		'A000000000000007' = {isa = PBXBuildFile; fileRef = A000000000000107; };
+		'A000000000000008' = {isa = PBXBuildFile; fileRef = A000000000000108; };
+		'A000000000000009' = {isa = PBXBuildFile; fileRef = A000000000000109; };
+		'A00000000000000A' = {isa = PBXBuildFile; fileRef = A00000000000010A; };
+		'A00000000000000B' = {isa = PBXBuildFile; fileRef = A00000000000010B; };
+		'A00000000000000C' = {isa = PBXBuildFile; fileRef = A00000000000010C; };
+		'A00000000000000D' = {isa = PBXBuildFile; fileRef = A00000000000010D; };
+		'A00000000000000E' = {isa = PBXBuildFile; fileRef = A00000000000010E; };
+		'A00000000000000F' = {isa = PBXBuildFile; fileRef = A00000000000010F; };
+		'A000000000000010' = {isa = PBXBuildFile; fileRef = A000000000000110; };
+		'A000000000000011' = {isa = PBXBuildFile; fileRef = A000000000000111; };
+		'A000000000000012' = {isa = PBXBuildFile; fileRef = A000000000000112; };
+		'A000000000000013' = {isa = PBXBuildFile; fileRef = A000000000000113; };
+		'A000000000000014' = {isa = PBXBuildFile; fileRef = A000000000000114; };
+		'A000000000000015' = {isa = PBXBuildFile; fileRef = A000000000000115; };
+		'A000000000000016' = {isa = PBXBuildFile; fileRef = A000000000000116; };
+		'A000000000000017' = {isa = PBXBuildFile; fileRef = A000000000000201; settings = {ATTRIBUTES = (Weak, ); }; };
+		'A000000000000018' = {isa = PBXBuildFile; fileRef = A000000000000202; };
+		'A000000000000019' = {isa = PBXBuildFile; fileRef = A000000000000203; };
+		'A00000000000001A' = {isa = PBXBuildFile; fileRef = A000000000000204; };
+		'A00000000000001B' = {isa = PBXBuildFile; fileRef = A000000000000118; };
+		'A00000000000001C' = {isa = PBXBuildFile; fileRef = A000000000000119; };
+		'A00000000000001D' = {isa = PBXBuildFile; fileRef = A00000000000011A; };
+		'A00000000000001E' = {isa = PBXBuildFile; fileRef = A00000000000011B; };
+		'A00000000000001F' = {isa = PBXBuildFile; fileRef = A00000000000011C; };
+		'A000000000000020' = {isa = PBXBuildFile; fileRef = A00000000000011D; };
+		'A000000000000021' = {isa = PBXBuildFile; fileRef = A00000000000011E; };
+		'A000000000000022' = {isa = PBXBuildFile; fileRef = A00000000000011F; };
+		'T00000000000000B' /* ChatHistoryTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = FFC7413086ED7596861CBD67 /* ChatHistoryTests.swift */; };
+		'T00000000000000C' /* ChatConnectionTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 852E4C288401F7B48C3F5C3A /* ChatConnectionTests.swift */; };
+		'T00000000000000D' /* ChatMessageRoutingTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C0114BBFBD1F40486FD5A409 /* ChatMessageRoutingTests.swift */; };
 /* End PBXBuildFile section */
 
+
+/* Begin PBXContainerItemProxy section */
+		'T00000000000000A' = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 'A000000000000900';
+			proxyType = 1;
+			remoteGlobalIDString = 'A000000000000600';
+			remoteInfo = Klaudii;
+		};
+/* End PBXContainerItemProxy section */
+
 /* Begin PBXFileReference section */
-		A000000000000101 /* KlaudiiApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KlaudiiApp.swift; sourceTree = "<group>"; };
-		A000000000000102 /* Session.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Session.swift; sourceTree = "<group>"; };
-		A000000000000103 /* Server.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Server.swift; sourceTree = "<group>"; };
-		A000000000000104 /* HistoryEntry.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HistoryEntry.swift; sourceTree = "<group>"; };
-		A000000000000105 /* CryptoService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CryptoService.swift; sourceTree = "<group>"; };
-		A000000000000106 /* KeychainService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeychainService.swift; sourceTree = "<group>"; };
-		A000000000000107 /* AuthService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AuthService.swift; sourceTree = "<group>"; };
-		A000000000000108 /* KloudRelay.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KloudRelay.swift; sourceTree = "<group>"; };
-		A000000000000109 /* AppViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppViewModel.swift; sourceTree = "<group>"; };
-		A00000000000010A /* SessionsViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SessionsViewModel.swift; sourceTree = "<group>"; };
-		A00000000000010B /* PairingViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PairingViewModel.swift; sourceTree = "<group>"; };
-		A00000000000010C /* ContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentView.swift; sourceTree = "<group>"; };
-		A00000000000010D /* LoginView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LoginView.swift; sourceTree = "<group>"; };
-		A00000000000010E /* ServerPickerView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ServerPickerView.swift; sourceTree = "<group>"; };
-		A00000000000010F /* PairingView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PairingView.swift; sourceTree = "<group>"; };
-		A000000000000110 /* DashboardView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DashboardView.swift; sourceTree = "<group>"; };
-		A000000000000111 /* SessionCardView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SessionCardView.swift; sourceTree = "<group>"; };
-		A000000000000112 /* HistoryListView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HistoryListView.swift; sourceTree = "<group>"; };
-		A000000000000113 /* ProcessesView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProcessesView.swift; sourceTree = "<group>"; };
-		A000000000000114 /* SettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsView.swift; sourceTree = "<group>"; };
-		A000000000000115 /* Theme.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Theme.swift; sourceTree = "<group>"; };
-		A000000000000116 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
-		A000000000000117 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
-		A000000000000118 /* AddWorkspaceView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AddWorkspaceView.swift; sourceTree = "<group>"; };
-		A000000000000119 /* ChatMessage.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatMessage.swift; sourceTree = "<group>"; };
-		A00000000000011A /* ChatViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatViewModel.swift; sourceTree = "<group>"; };
-		A00000000000011B /* ChatView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatView.swift; sourceTree = "<group>"; };
-		A00000000000011C /* LocalCache.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LocalCache.swift; sourceTree = "<group>"; };
-		A00000000000011D /* BackgroundSyncManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BackgroundSyncManager.swift; sourceTree = "<group>"; };
-		A00000000000011E /* AddServerView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AddServerView.swift; sourceTree = "<group>"; };
-		A00000000000011F /* ChatConnectionManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatConnectionManager.swift; sourceTree = "<group>"; };
-		A000000000000201 /* CryptoKit.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = CryptoKit.framework; path = System/Library/Frameworks/CryptoKit.framework; sourceTree = SDKROOT; };
-		A000000000000202 /* AuthenticationServices.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = AuthenticationServices.framework; path = System/Library/Frameworks/AuthenticationServices.framework; sourceTree = SDKROOT; };
-		A000000000000203 /* AVFoundation.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = AVFoundation.framework; path = System/Library/Frameworks/AVFoundation.framework; sourceTree = SDKROOT; };
-		A000000000000204 /* Security.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = Security.framework; path = System/Library/Frameworks/Security.framework; sourceTree = SDKROOT; };
-		A000000000000301 /* Klaudii.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Klaudii.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		852E4C288401F7B48C3F5C3A /* ChatConnectionTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = ChatConnectionTests.swift; path = KlaudiiTests/ChatConnectionTests.swift; sourceTree = SOURCE_ROOT; };
+		'A000000000000101' = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KlaudiiApp.swift; sourceTree = "<group>"; };
+		'A000000000000102' = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Session.swift; sourceTree = "<group>"; };
+		'A000000000000103' = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Server.swift; sourceTree = "<group>"; };
+		'A000000000000104' = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HistoryEntry.swift; sourceTree = "<group>"; };
+		'A000000000000105' = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CryptoService.swift; sourceTree = "<group>"; };
+		'A000000000000106' = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeychainService.swift; sourceTree = "<group>"; };
+		'A000000000000107' = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AuthService.swift; sourceTree = "<group>"; };
+		'A000000000000108' = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KloudRelay.swift; sourceTree = "<group>"; };
+		'A000000000000109' = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppViewModel.swift; sourceTree = "<group>"; };
+		'A00000000000010A' = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SessionsViewModel.swift; sourceTree = "<group>"; };
+		'A00000000000010B' = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PairingViewModel.swift; sourceTree = "<group>"; };
+		'A00000000000010C' = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentView.swift; sourceTree = "<group>"; };
+		'A00000000000010D' = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LoginView.swift; sourceTree = "<group>"; };
+		'A00000000000010E' = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ServerPickerView.swift; sourceTree = "<group>"; };
+		'A00000000000010F' = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PairingView.swift; sourceTree = "<group>"; };
+		'A000000000000110' = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DashboardView.swift; sourceTree = "<group>"; };
+		'A000000000000111' = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SessionCardView.swift; sourceTree = "<group>"; };
+		'A000000000000112' = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HistoryListView.swift; sourceTree = "<group>"; };
+		'A000000000000113' = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProcessesView.swift; sourceTree = "<group>"; };
+		'A000000000000114' = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsView.swift; sourceTree = "<group>"; };
+		'A000000000000115' = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Theme.swift; sourceTree = "<group>"; };
+		'A000000000000116' = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
+		'A000000000000117' = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
+		'A000000000000118' = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AddWorkspaceView.swift; sourceTree = "<group>"; };
+		'A000000000000119' = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatMessage.swift; sourceTree = "<group>"; };
+		'A00000000000011A' = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatViewModel.swift; sourceTree = "<group>"; };
+		'A00000000000011B' = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatView.swift; sourceTree = "<group>"; };
+		'A00000000000011C' = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LocalCache.swift; sourceTree = "<group>"; };
+		'A00000000000011D' = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BackgroundSyncManager.swift; sourceTree = "<group>"; };
+		'A00000000000011E' = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AddServerView.swift; sourceTree = "<group>"; };
+		'A00000000000011F' = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatConnectionManager.swift; sourceTree = "<group>"; };
+		'A000000000000201' = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = CryptoKit.framework; path = System/Library/Frameworks/CryptoKit.framework; sourceTree = SDKROOT; };
+		'A000000000000202' = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = AuthenticationServices.framework; path = System/Library/Frameworks/AuthenticationServices.framework; sourceTree = SDKROOT; };
+		'A000000000000203' = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = AVFoundation.framework; path = System/Library/Frameworks/AVFoundation.framework; sourceTree = SDKROOT; };
+		'A000000000000204' = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = Security.framework; path = System/Library/Frameworks/Security.framework; sourceTree = SDKROOT; };
+		'A000000000000301' = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Klaudii.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		C0114BBFBD1F40486FD5A409 /* ChatMessageRoutingTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = ChatMessageRoutingTests.swift; path = KlaudiiTests/ChatMessageRoutingTests.swift; sourceTree = SOURCE_ROOT; };
+		FFC7413086ED7596861CBD67 /* ChatHistoryTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = ChatHistoryTests.swift; path = KlaudiiTests/ChatHistoryTests.swift; sourceTree = SOURCE_ROOT; };
+		'T000000000000008' /* KlaudiiTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = KlaudiiTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
-		A000000000000401 /* Frameworks */ = {
+		'A000000000000401' = {
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				A000000000000017 /* CryptoKit.framework in Frameworks */,
-				A000000000000018 /* AuthenticationServices.framework in Frameworks */,
-				A000000000000019 /* AVFoundation.framework in Frameworks */,
-				A00000000000001A /* Security.framework in Frameworks */,
+				A000000000000017,
+				A000000000000018,
+				A000000000000019,
+				A00000000000001A,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 /* End PBXFrameworksBuildPhase section */
 
 /* Begin PBXGroup section */
-		A000000000000500 = {
+		'A000000000000500' = {
 			isa = PBXGroup;
 			children = (
-				A000000000000501 /* Klaudii */,
-				A000000000000508 /* Frameworks */,
-				A000000000000509 /* Products */,
+				A000000000000501,
+				A000000000000508,
+				A000000000000509,
+				FFC7413086ED7596861CBD67 /* ChatHistoryTests.swift */,
+				852E4C288401F7B48C3F5C3A /* ChatConnectionTests.swift */,
+				C0114BBFBD1F40486FD5A409 /* ChatMessageRoutingTests.swift */,
 			);
 			sourceTree = "<group>";
 		};
-		A000000000000501 /* Klaudii */ = {
+		'A000000000000501' = {
 			isa = PBXGroup;
 			children = (
-				A000000000000101 /* KlaudiiApp.swift */,
-				A000000000000502 /* Models */,
-				A000000000000503 /* Services */,
-				A000000000000504 /* ViewModels */,
-				A000000000000505 /* Views */,
-				A000000000000506 /* Theme */,
-				A000000000000116 /* Assets.xcassets */,
-				A000000000000117 /* Info.plist */,
+				A000000000000101,
+				A000000000000502,
+				A000000000000503,
+				A000000000000504,
+				A000000000000505,
+				A000000000000506,
+				A000000000000116,
+				A000000000000117,
 			);
 			path = Klaudii;
 			sourceTree = "<group>";
 		};
-		A000000000000502 /* Models */ = {
+		'A000000000000502' = {
 			isa = PBXGroup;
 			children = (
-				A000000000000102 /* Session.swift */,
-				A000000000000103 /* Server.swift */,
-				A000000000000104 /* HistoryEntry.swift */,
-				A000000000000119 /* ChatMessage.swift */,
+				A000000000000102,
+				A000000000000103,
+				A000000000000104,
+				A000000000000119,
 			);
 			path = Models;
 			sourceTree = "<group>";
 		};
-		A000000000000503 /* Services */ = {
+		'A000000000000503' = {
 			isa = PBXGroup;
 			children = (
-				A000000000000105 /* CryptoService.swift */,
-				A000000000000106 /* KeychainService.swift */,
-				A000000000000107 /* AuthService.swift */,
-				A000000000000108 /* KloudRelay.swift */,
-				A00000000000011C /* LocalCache.swift */,
-				A00000000000011D /* BackgroundSyncManager.swift */,
-				A00000000000011F /* ChatConnectionManager.swift */,
+				A000000000000105,
+				A000000000000106,
+				A000000000000107,
+				A000000000000108,
+				A00000000000011C,
+				A00000000000011D,
+				A00000000000011F,
 			);
 			path = Services;
 			sourceTree = "<group>";
 		};
-		A000000000000504 /* ViewModels */ = {
+		'A000000000000504' = {
 			isa = PBXGroup;
 			children = (
-				A000000000000109 /* AppViewModel.swift */,
-				A00000000000010A /* SessionsViewModel.swift */,
-				A00000000000010B /* PairingViewModel.swift */,
-				A00000000000011A /* ChatViewModel.swift */,
+				A000000000000109,
+				A00000000000010A,
+				A00000000000010B,
+				A00000000000011A,
 			);
 			path = ViewModels;
 			sourceTree = "<group>";
 		};
-		A000000000000505 /* Views */ = {
+		'A000000000000505' = {
 			isa = PBXGroup;
 			children = (
-				A00000000000010C /* ContentView.swift */,
-				A00000000000010D /* LoginView.swift */,
-				A00000000000010E /* ServerPickerView.swift */,
-				A00000000000010F /* PairingView.swift */,
-				A000000000000110 /* DashboardView.swift */,
-				A000000000000111 /* SessionCardView.swift */,
-				A000000000000112 /* HistoryListView.swift */,
-				A000000000000113 /* ProcessesView.swift */,
-				A000000000000114 /* SettingsView.swift */,
-				A000000000000118 /* AddWorkspaceView.swift */,
-				A00000000000011E /* AddServerView.swift */,
-				A00000000000011B /* ChatView.swift */,
+				A00000000000010C,
+				A00000000000010D,
+				A00000000000010E,
+				A00000000000010F,
+				A000000000000110,
+				A000000000000111,
+				A000000000000112,
+				A000000000000113,
+				A000000000000114,
+				A000000000000118,
+				A00000000000011E,
+				A00000000000011B,
 			);
 			path = Views;
 			sourceTree = "<group>";
 		};
-		A000000000000506 /* Theme */ = {
+		'A000000000000506' = {
 			isa = PBXGroup;
 			children = (
-				A000000000000115 /* Theme.swift */,
+				A000000000000115,
 			);
 			path = Theme;
 			sourceTree = "<group>";
 		};
-		A000000000000508 /* Frameworks */ = {
+		'A000000000000508' = {
 			isa = PBXGroup;
 			children = (
-				A000000000000201 /* CryptoKit.framework */,
-				A000000000000202 /* AuthenticationServices.framework */,
-				A000000000000203 /* AVFoundation.framework */,
-				A000000000000204 /* Security.framework */,
+				A000000000000201,
+				A000000000000202,
+				A000000000000203,
+				A000000000000204,
 			);
 			name = Frameworks;
 			sourceTree = "<group>";
 		};
-		A000000000000509 /* Products */ = {
+		'A000000000000509' = {
 			isa = PBXGroup;
 			children = (
-				A000000000000301 /* Klaudii.app */,
+				A000000000000301,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -206,13 +230,13 @@
 /* End PBXGroup section */
 
 /* Begin PBXNativeTarget section */
-		A000000000000600 /* Klaudii */ = {
+		'A000000000000600' = {
 			isa = PBXNativeTarget;
-			buildConfigurationList = A000000000000800 /* Build configuration list for PBXNativeTarget "Klaudii" */;
+			buildConfigurationList = A000000000000800;
 			buildPhases = (
-				A000000000000701 /* Sources */,
-				A000000000000401 /* Frameworks */,
-				A000000000000702 /* Resources */,
+				A000000000000701,
+				A000000000000401,
+				A000000000000702,
 			);
 			buildRules = (
 			);
@@ -220,13 +244,31 @@
 			);
 			name = Klaudii;
 			productName = Klaudii;
-			productReference = A000000000000301 /* Klaudii.app */;
+			productReference = A000000000000301;
 			productType = "com.apple.product-type.application";
+		};
+		'T000000000000001' /* KlaudiiTests */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 'T000000000000005';
+			buildPhases = (
+				'T000000000000002' /* Sources */,
+				'T000000000000003' /* Frameworks */,
+				'T000000000000004' /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				'T000000000000009',
+			);
+			name = KlaudiiTests;
+			productName = KlaudiiTests;
+			productReference = 'T000000000000008';
+			productType = "com.apple.product-type.bundle.unit-test";
 		};
 /* End PBXNativeTarget section */
 
 /* Begin PBXProject section */
-		A000000000000900 /* Project object */ = {
+		'A000000000000900' = {
 			isa = PBXProject;
 			attributes = {
 				BuildIndependentTargetsInParallel = 1;
@@ -237,9 +279,13 @@
 					A000000000000600 = {
 						CreatedOnToolsVersion = 15.0;
 					};
+					'T000000000000001' = {
+						CreatedOnToolsVersion = 15.0;
+						TestTargetID = A000000000000600;
+					};
 				};
 			};
-			buildConfigurationList = A000000000000810 /* Build configuration list for PBXProject "Klaudii" */;
+			buildConfigurationList = A000000000000810;
 			compatibilityVersion = "Xcode 14.0";
 			developmentRegion = en;
 			hasScannedForEncodings = 0;
@@ -248,67 +294,106 @@
 				Base,
 			);
 			mainGroup = A000000000000500;
-			productRefGroup = A000000000000509 /* Products */;
+			productRefGroup = A000000000000509;
 			projectDirPath = "";
 			projectRoot = "";
 			targets = (
-				A000000000000600 /* Klaudii */,
+				A000000000000600,
+				'T000000000000001' /* KlaudiiTests */,
 			);
 		};
 /* End PBXProject section */
 
 /* Begin PBXResourcesBuildPhase section */
-		A000000000000702 /* Resources */ = {
+		'A000000000000702' = {
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				A000000000000016 /* Assets.xcassets in Resources */,
+				A000000000000016,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 /* End PBXResourcesBuildPhase section */
 
-/* Begin PBXSourcesBuildPhase section */
-		A000000000000701 /* Sources */ = {
+
+/* Begin PBXSourcesBuildPhase section (Tests) */
+		'T000000000000002' /* Sources */ = {
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				A000000000000001 /* KlaudiiApp.swift in Sources */,
-				A000000000000002 /* Session.swift in Sources */,
-				A000000000000003 /* Server.swift in Sources */,
-				A000000000000004 /* HistoryEntry.swift in Sources */,
-				A000000000000005 /* CryptoService.swift in Sources */,
-				A000000000000006 /* KeychainService.swift in Sources */,
-				A000000000000007 /* AuthService.swift in Sources */,
-				A000000000000008 /* KloudRelay.swift in Sources */,
-				A000000000000009 /* AppViewModel.swift in Sources */,
-				A00000000000000A /* SessionsViewModel.swift in Sources */,
-				A00000000000000B /* PairingViewModel.swift in Sources */,
-				A00000000000000C /* ContentView.swift in Sources */,
-				A00000000000000D /* LoginView.swift in Sources */,
-				A00000000000000E /* ServerPickerView.swift in Sources */,
-				A00000000000000F /* PairingView.swift in Sources */,
-				A000000000000010 /* DashboardView.swift in Sources */,
-				A000000000000011 /* SessionCardView.swift in Sources */,
-				A000000000000012 /* HistoryListView.swift in Sources */,
-				A000000000000013 /* ProcessesView.swift in Sources */,
-				A000000000000014 /* SettingsView.swift in Sources */,
-				A000000000000015 /* Theme.swift in Sources */,
-				A00000000000001B /* AddWorkspaceView.swift in Sources */,
-				A00000000000001C /* ChatMessage.swift in Sources */,
-				A00000000000001D /* ChatViewModel.swift in Sources */,
-				A00000000000001E /* ChatView.swift in Sources */,
-				A00000000000001F /* LocalCache.swift in Sources */,
-				A000000000000020 /* BackgroundSyncManager.swift in Sources */,
-				A000000000000021 /* AddServerView.swift in Sources */,
-				A000000000000022 /* ChatConnectionManager.swift in Sources */,
+				'T00000000000000B' /* ChatHistoryTests.swift in Sources */,
+				'T00000000000000C' /* ChatConnectionTests.swift in Sources */,
+				'T00000000000000D' /* ChatMessageRoutingTests.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXSourcesBuildPhase section (Tests) */
+
+		'T000000000000003' /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+
+		'T000000000000004' /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* Begin PBXSourcesBuildPhase section */
+		'A000000000000701' = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				A000000000000001,
+				A000000000000002,
+				A000000000000003,
+				A000000000000004,
+				A000000000000005,
+				A000000000000006,
+				A000000000000007,
+				A000000000000008,
+				A000000000000009,
+				A00000000000000A,
+				A00000000000000B,
+				A00000000000000C,
+				A00000000000000D,
+				A00000000000000E,
+				A00000000000000F,
+				A000000000000010,
+				A000000000000011,
+				A000000000000012,
+				A000000000000013,
+				A000000000000014,
+				A000000000000015,
+				A00000000000001B,
+				A00000000000001C,
+				A00000000000001D,
+				A00000000000001E,
+				A00000000000001F,
+				A000000000000020,
+				A000000000000021,
+				A000000000000022,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 /* End PBXSourcesBuildPhase section */
 
+
+/* Begin PBXTargetDependency section */
+		'T000000000000009' = {
+			isa = PBXTargetDependency;
+			target = 'A000000000000600';
+			targetProxy = 'T00000000000000A';
+		};
+/* End PBXTargetDependency section */
+
 /* Begin XCBuildConfiguration section */
-		A000000000000801 /* Debug */ = {
+		'A000000000000801' = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
@@ -334,6 +419,7 @@
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
+				LIBRARY_SEARCH_PATHS = "$(SRCROOT)/KlaudiiTests";
 				MARKETING_VERSION = 1.0;
 				PRODUCT_BUNDLE_IDENTIFIER = com.klaudii;
 				PRODUCT_NAME = "$(TARGET_NAME)";
@@ -347,7 +433,7 @@
 			};
 			name = Debug;
 		};
-		A000000000000802 /* Release */ = {
+		'A000000000000802' = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
@@ -373,6 +459,7 @@
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
+				LIBRARY_SEARCH_PATHS = "$(SRCROOT)/KlaudiiTests";
 				MARKETING_VERSION = 1.0;
 				PRODUCT_BUNDLE_IDENTIFIER = com.klaudii;
 				PRODUCT_NAME = "$(TARGET_NAME)";
@@ -386,7 +473,7 @@
 			};
 			name = Release;
 		};
-		A000000000000811 /* Debug */ = {
+		'A000000000000811' = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				ALWAYS_SEARCH_USER_PATHS = NO;
@@ -449,7 +536,7 @@
 			};
 			name = Debug;
 		};
-		A000000000000812 /* Release */ = {
+		'A000000000000812' = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				ALWAYS_SEARCH_USER_PATHS = NO;
@@ -505,28 +592,73 @@
 			};
 			name = Release;
 		};
+		'T000000000000006' /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				GENERATE_INFOPLIST_FILE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.klaudii.tests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_EMIT_LOC_STRINGS = NO;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/Klaudii.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/Klaudii";
+			};
+			name = Debug;
+		};
+		'T000000000000007' /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				GENERATE_INFOPLIST_FILE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.klaudii.tests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_EMIT_LOC_STRINGS = NO;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/Klaudii.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/Klaudii";
+			};
+			name = Release;
+		};
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
-		A000000000000800 /* Build configuration list for PBXNativeTarget "Klaudii" */ = {
+		'A000000000000800' = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
-				A000000000000801 /* Debug */,
-				A000000000000802 /* Release */,
+				A000000000000801,
+				A000000000000802,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;
 		};
-		A000000000000810 /* Build configuration list for PBXProject "Klaudii" */ = {
+		'A000000000000810' = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
-				A000000000000811 /* Debug */,
-				A000000000000812 /* Release */,
+				A000000000000811,
+				A000000000000812,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		'T000000000000005' /* Build configuration list for PBXNativeTarget "KlaudiiTests" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				'T000000000000006' /* Debug */,
+				'T000000000000007' /* Release */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;
 		};
 /* End XCConfigurationList section */
 	};
-	rootObject = A000000000000900 /* Project object */;
+	rootObject = A000000000000900;
 }
