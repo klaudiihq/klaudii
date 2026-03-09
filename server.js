@@ -642,22 +642,46 @@ wss.on("connection", (ws) => {
       // For Claude with an active relay, append to the existing session instead of spawning a new one
       if (backend === "claude" && claudeChat.isActive(workspace)) {
         const relaySessionNum = clientSessionNum || claudeChat.getActiveSessionNum(workspace);
-        workspaceState.touchChatActivity(workspace);
-        workspaceState.setStreaming(workspace, true);
-        claudeChat.pushHistory(workspace, "user", message, { sender: msg.sender || "user" }, relaySessionNum);
-        broadcastToWorkspace(workspace, { type: "user_message", workspace, content: message, sender: msg.sender || "user", ts: Date.now() }, clientId);
-        broadcastToWorkspace(workspace, { type: "streaming_start", workspace }, clientId);
-        wsProcessingAcked[workspace] = false; // reset for new user turn
         const delivered = claudeChat.sendMessage(workspace, message, clientSessionNum);
         if (delivered) {
+          workspaceState.touchChatActivity(workspace);
+          workspaceState.setStreaming(workspace, true);
+          claudeChat.pushHistory(workspace, "user", message, { sender: msg.sender || "user" }, relaySessionNum);
+          broadcastToWorkspace(workspace, { type: "user_message", workspace, content: message, sender: msg.sender || "user", ts: Date.now() }, clientId);
+          broadcastToWorkspace(workspace, { type: "streaming_start", workspace }, clientId);
+          wsProcessingAcked[workspace] = false;
           broadcastToWorkspace(workspace, { type: "ack", workspace, status: "delivered" });
-        } else {
-          // Write failed — clear streaming state and notify client
-          workspaceState.setStreaming(workspace, false);
-          broadcastToWorkspace(workspace, { type: "error", workspace, message: "Failed to deliver message to Claude relay" });
-          broadcastToWorkspace(workspace, { type: "streaming_end", workspace });
+
+          // Schrodinger timeout: if Claude doesn't produce any event within 30s,
+          // it's functionally dead. Kill the relay and spawn a fresh session with
+          // the same message so the user doesn't have to resend.
+          setTimeout(async () => {
+            if (!wsProcessingAcked[workspace] && workspaceState.isStreaming(workspace)) {
+              console.log(`[chat-ws] response timeout (30s) workspace=${workspace} — killing stuck relay and restarting`);
+              claudeChat.stopProcess(workspace);
+              workspaceState.setStreaming(workspace, false);
+              broadcastToWorkspace(workspace, { type: "status", workspace, message: "Session unresponsive — restarting..." });
+              try {
+                const apiKeyField = "claudeApiKey";
+                const apiKey = proj[apiKeyField] || config[apiKeyField] || undefined;
+                const handle = await claudeChat.startChat(workspace, proj.path, message, config, { apiKey, model, permissionMode });
+                workspaceState.setStreaming(workspace, true);
+                broadcastToWorkspace(workspace, { type: "ack", workspace, status: "delivered" });
+                wireRelayEvents(workspace, handle, claudeChat.currentSessionNum(workspace));
+              } catch (err) {
+                console.error(`[chat-ws] restart after timeout failed workspace=${workspace}: ${err.message}`);
+                broadcastToWorkspace(workspace, { type: "error", workspace, message: "Failed to restart: " + err.message });
+                broadcastToWorkspace(workspace, { type: "done", workspace, exitCode: null, stopped: true });
+              }
+            }
+          }, 30000);
+
+          return;
         }
-        return;
+        // Relay is dead — clean up and fall through to startChat to auto-restart
+        console.log(`[chat-ws] relay dead for workspace=${workspace}, auto-restarting new session`);
+        claudeChat.stopProcess(workspace);
+        workspaceState.setStreaming(workspace, false);
       }
 
       // Reject if another client is already streaming for this workspace (Gemini)

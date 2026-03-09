@@ -3424,24 +3424,18 @@ function chatShowThinking() {
   div.id = "chat-thinking";
 
   const SIZE = 40;
+  const DPR = window.devicePixelRatio || 1;
   const canvas = document.createElement("canvas");
-  canvas.width = SIZE;
-  canvas.height = SIZE;
+  canvas.width = SIZE * DPR;
+  canvas.height = SIZE * DPR;
+  canvas.style.width = SIZE + "px";
+  canvas.style.height = SIZE + "px";
   div.appendChild(canvas);
-  // Animate in — start collapsed, expand
-  div.style.maxHeight = "0";
-  div.style.overflow = "hidden";
-  div.style.opacity = "0";
-  div.style.transition = "max-height 0.25s ease, opacity 0.2s ease, padding 0.25s ease";
-  div.style.padding = "0";
   container.appendChild(div);
-  div.offsetHeight; // force reflow
-  div.style.maxHeight = "60px";
-  div.style.opacity = "1";
-  div.style.padding = "";
   chatScrollToBottom();
 
   const ctx = canvas.getContext("2d");
+  ctx.scale(DPR, DPR);
   const COUNT = 20;
   const cx = SIZE / 2, cy = SIZE / 2;
 
@@ -3456,32 +3450,17 @@ function chatShowThinking() {
   let speedMult = 1;
   let speedTarget = 1;
   let targetCooldown = 0;
-  let collapsing = false; // per-instance flag — not shared with other indicators
-  let collapseAlpha = 1;
-
-  // Expose collapse trigger on element so chatRemoveThinking can call it
-  div._collapse = () => { collapsing = true; };
 
   function frame(t) {
-    if (!collapsing) {
-      // Drift toward a new speed target every 60-150 frames
-      if (--targetCooldown <= 0) {
-        targetCooldown = 60 + Math.random() * 90;
-        const r = Math.random();
-        speedTarget = r < 0.15 ? 0.15 + Math.random() * 0.35
-                   : r < 0.65 ? 0.7  + Math.random() * 0.8
-                   :             2.5  + Math.random() * 2.5;
-      }
-      speedMult += (speedTarget - speedMult) * 0.04;
-    } else {
-      // Collapsing: speed up rotation, shrink radius, fade out
-      speedMult = Math.min(speedMult * 1.03, 8);
-      collapseAlpha = Math.max(0, collapseAlpha - 0.012);
-      for (const p of particles) {
-        p.radius *= 0.97;
-      }
-      if (collapseAlpha <= 0) return; // stop animating
+    // Drift toward a new speed target every 60-150 frames
+    if (--targetCooldown <= 0) {
+      targetCooldown = 60 + Math.random() * 90;
+      const r = Math.random();
+      speedTarget = r < 0.15 ? 0.15 + Math.random() * 0.35
+                 : r < 0.65 ? 0.7  + Math.random() * 0.8
+                 :             2.5  + Math.random() * 2.5;
     }
+    speedMult += (speedTarget - speedMult) * 0.04;
 
     const cs = getComputedStyle(document.documentElement);
     const colors = [
@@ -3491,21 +3470,19 @@ function chatShowThinking() {
     ];
 
     ctx.clearRect(0, 0, SIZE, SIZE);
-    ctx.globalAlpha = collapsing ? collapseAlpha : 1;
     for (const p of particles) {
       p.angle += p.speed * speedMult;
-      const r = p.radius + (collapsing ? 0 : Math.sin(t * 0.003 + p.wobble) * 2.5);
+      const r = p.radius + Math.sin(t * 0.003 + p.wobble) * 2.5;
       const x = cx + Math.cos(p.angle) * r;
       const y = cy + Math.sin(p.angle) * r;
       ctx.fillStyle = colors[p.colorIdx];
       ctx.beginPath();
-      ctx.arc(x, y, 1, 0, Math.PI * 2);
+      ctx.arc(x, y, 1.5, 0, Math.PI * 2);
       ctx.fill();
     }
-    ctx.globalAlpha = 1;
-    requestAnimationFrame(frame);
+    window._chatOrbitalRaf = requestAnimationFrame(frame);
   }
-  requestAnimationFrame(frame);
+  window._chatOrbitalRaf = requestAnimationFrame(frame);
 }
 
 function chatRemoveThinking() {
@@ -3513,25 +3490,11 @@ function chatRemoveThinking() {
   if (el) {
     const elapsed = window._chatThinkingStart ? Date.now() - window._chatThinkingStart : "?";
     glog(`removeThinking: visible for ${elapsed}ms`);
-
-    // Clear ID so a new thinking indicator can be created while this one fades
-    el.removeAttribute("id");
-
-    // Signal the per-instance animation to spiral inward and fade
-    if (el._collapse) el._collapse();
-
-    // Smooth height collapse using inline styles — CSS class can't override inline styles,
-    // so we must transition inline: snapshot current height, then animate to 0.
-    const h = el.offsetHeight;
-    el.style.transition = "max-height 1s ease, opacity 0.8s ease, padding 1s ease";
-    el.style.overflow = "hidden";
-    el.style.maxHeight = h + "px";
-    el.offsetHeight; // force reflow (establish start state)
-    el.style.maxHeight = "0";
-    el.style.opacity = "0";
-    el.style.padding = "0";
-    el.addEventListener("transitionend", () => el.remove(), { once: true });
-    setTimeout(() => { if (el.parentNode) el.remove(); }, 1200);
+    el.remove();
+  }
+  if (window._chatOrbitalRaf) {
+    cancelAnimationFrame(window._chatOrbitalRaf);
+    window._chatOrbitalRaf = null;
   }
   if (window._chatThinkingTimer) {
     clearInterval(window._chatThinkingTimer);
