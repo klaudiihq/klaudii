@@ -15,6 +15,9 @@ const challenges = new Map();
 // WebSocket channel routing: channelId → browserId
 const channelToBrowser = new Map();
 
+// Chat workspace subscriptions: browserId → Set<workspace>
+const browserChatSubs = new Map();
+
 const HEARTBEAT_INTERVAL = 30000;
 const HEARTBEAT_TIMEOUT = 65000;
 
@@ -127,6 +130,20 @@ function handleServerConnection(ws, url) {
       return;
     }
 
+    // Multiplexed chat event from server → subscribed browsers
+    if (msg.type === "chat_event") {
+      const workspace = msg.workspace;
+      for (const [bid, subs] of browserChatSubs) {
+        if (subs.has(workspace)) {
+          const browser = browsers.get(bid);
+          if (browser && browser.ws.readyState === WebSocket.OPEN) {
+            browser.ws.send(JSON.stringify(msg));
+          }
+        }
+      }
+      return;
+    }
+
     // WebSocket channel messages: server → browser
     if (msg.type === "ws_connected" || msg.type === "ws_message" || msg.type === "ws_close") {
       const browserId = channelToBrowser.get(msg.channelId);
@@ -232,6 +249,40 @@ function handleBrowserConnection(ws, url, req) {
       return;
     }
 
+    // Multiplexed chat send: browser → server (no channel needed)
+    if (msg.type === "chat_send") {
+      const serverConn = servers.get(serverId);
+      if (!serverConn || !serverConn.authenticated) {
+        ws.send(JSON.stringify({ type: "chat_event", error: "server_offline" }));
+        return;
+      }
+      // Auto-subscribe to this workspace for response routing
+      if (msg.workspace) {
+        if (!browserChatSubs.has(browserId)) browserChatSubs.set(browserId, new Set());
+        browserChatSubs.get(browserId).add(msg.workspace);
+      }
+      serverConn.ws.send(JSON.stringify({
+        type: "chat_send",
+        browserId,
+        encrypted: msg.encrypted,
+      }));
+      return;
+    }
+
+    // Explicit chat workspace subscription (for listening without sending)
+    if (msg.type === "chat_subscribe") {
+      if (msg.workspace) {
+        if (!browserChatSubs.has(browserId)) browserChatSubs.set(browserId, new Set());
+        browserChatSubs.get(browserId).add(msg.workspace);
+      }
+      return;
+    }
+
+    if (msg.type === "chat_unsubscribe") {
+      browserChatSubs.get(browserId)?.delete(msg.workspace);
+      return;
+    }
+
     // WebSocket frames and close: browser → server
     if (msg.type === "ws_message" || msg.type === "ws_close") {
       const serverConn = servers.get(serverId);
@@ -259,6 +310,7 @@ function handleBrowserConnection(ws, url, req) {
       }
     }
     browsers.delete(browserId);
+    browserChatSubs.delete(browserId);
   });
 
   ws.on("error", (err) => {

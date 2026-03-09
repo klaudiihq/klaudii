@@ -24,7 +24,6 @@ module.exports = function createV1Router(deps) {
     gemini,         // optional — Gemini CLI chat backend
     claudeChat,     // optional — Claude CLI chat backend
     workspaceState, // optional — per-workspace chat mode/session/draft persistence
-    memory,         // optional — persistent memory for architect/shepherd
   } = deps;
 
   const completion = require("../lib/completion");
@@ -39,46 +38,68 @@ module.exports = function createV1Router(deps) {
 
   // --- Health check ---
 
-  router.get("/health", (_req, res) => {
-    const { execSync } = require("child_process");
+  // Cache auth checks — they're expensive (subprocess spawns) and rarely change
+  let _authCache = null;
+  let _authCacheTime = 0;
+  const AUTH_CACHE_TTL = 300000; // 5 minutes
 
-    let ghAuth = null;
-    try {
-      const ghOut = execSync("gh auth status 2>&1", {
-        encoding: "utf-8",
-        stdio: ["pipe", "pipe", "pipe"],
-      });
-      const acctMatch = ghOut.match(/Logged in to .* account (\S+)/);
-      ghAuth = { loggedIn: true, account: acctMatch ? acctMatch[1] : "unknown" };
-    } catch {
-      ghAuth = { loggedIn: false };
-    }
+  async function checkAuthStatus() {
+    const now = Date.now();
+    if (_authCache && now - _authCacheTime < AUTH_CACHE_TTL) return _authCache;
 
-    let claudeAuth = null;
-    const claudeBin = (() => {
-      try {
-        return execSync("which claude 2>/dev/null", { encoding: "utf-8" }).trim();
-      } catch {}
-      const home = require("os").homedir();
-      const candidates = [
-        path.join(home, ".local", "bin", "claude"),
-        "/usr/local/bin/claude",
-        "/opt/homebrew/bin/claude",
-      ];
-      return candidates.find((p) => fs.existsSync(p)) || null;
-    })();
-    if (claudeBin) {
-      try {
-        const claudeOut = execSync(`${JSON.stringify(claudeBin)} auth status 2>&1`, {
-          encoding: "utf-8",
-          stdio: ["pipe", "pipe", "pipe"],
-        });
-        claudeAuth = JSON.parse(claudeOut);
-      } catch {
-        claudeAuth = { loggedIn: false };
-      }
-    }
+    const { execFile } = require("child_process");
+    const { promisify } = require("util");
+    const execFileP = promisify(execFile);
 
+    // Run gh and claude auth checks in parallel, async
+    const [ghAuth, claudeAuth] = await Promise.all([
+      (async () => {
+        try {
+          const { stdout } = await execFileP("gh", ["auth", "status"], {
+            encoding: "utf-8", timeout: 5000,
+          });
+          const acctMatch = stdout.match(/Logged in to .* account (\S+)/);
+          return { loggedIn: true, account: acctMatch ? acctMatch[1] : "unknown" };
+        } catch {
+          return { loggedIn: false };
+        }
+      })(),
+      (async () => {
+        // Find claude binary (sync fs checks are fast)
+        const home = require("os").homedir();
+        const candidates = [
+          path.join(home, ".local", "bin", "claude"),
+          "/usr/local/bin/claude",
+          "/opt/homebrew/bin/claude",
+        ];
+        let claudeBin = null;
+        try {
+          const { stdout } = await execFileP("which", ["claude"], { encoding: "utf-8", timeout: 2000 });
+          claudeBin = stdout.trim();
+        } catch {}
+        if (!claudeBin) claudeBin = candidates.find((p) => fs.existsSync(p)) || null;
+        if (!claudeBin) return null;
+        try {
+          const { stdout } = await execFileP(claudeBin, ["auth", "status"], {
+            encoding: "utf-8", timeout: 5000,
+          });
+          return JSON.parse(stdout);
+        } catch {
+          return { loggedIn: false };
+        }
+      })(),
+    ]);
+
+    _authCache = { ghAuth, claudeAuth };
+    _authCacheTime = now;
+    return _authCache;
+  }
+
+  // Fire initial auth check on startup so first request is fast
+  checkAuthStatus().catch(() => {});
+
+  router.get("/health", async (_req, res) => {
+    const { ghAuth, claudeAuth } = await checkAuthStatus();
     res.json({
       ok: true,
       tmux: tmux.isTmuxInstalled(),
@@ -129,9 +150,7 @@ module.exports = function createV1Router(deps) {
   // --- Processes ---
 
   router.get("/processes", (_req, res) => {
-    const managedPids = tmux.getManagedPids();
-    const allProcs = processes.findClaudeProcesses(managedPids);
-    res.json(allProcs);
+    res.json(_processesCache);
   });
 
   router.post("/processes/kill", (req, res) => {
@@ -160,7 +179,12 @@ module.exports = function createV1Router(deps) {
 
   // --- Sessions ---
 
-  router.get("/sessions", (_req, res) => {
+  // Background cache — sessions + processes are expensive (many subprocess calls).
+  // A timer rebuilds them every 5s; API handlers just read from memory.
+  let _sessionsCache = [];
+  let _processesCache = [];
+
+  function buildSessionsData() {
     const allProjects = projects.getProjects();
     const claudeSessions = tmux.getClaudeSessions();
     const ttydInstances = ttyd.getRunning();
@@ -217,7 +241,11 @@ module.exports = function createV1Router(deps) {
       return result;
     });
 
-    res.json(sessions);
+    return sessions;
+  }
+
+  router.get("/sessions", (_req, res) => {
+    res.json(_sessionsCache);
   });
 
   // --- Workspace chat state (mode / session / draft) ---
@@ -962,130 +990,17 @@ module.exports = function createV1Router(deps) {
     }
   });
 
-  // --- Agent Memory ---
-
-  router.get("/memory/:agent", (req, res) => {
-    if (!memory) return res.status(501).json({ error: "memory not available" });
-    const { agent } = req.params;
-    if (agent !== "architect" && agent !== "shepherd") {
-      return res.status(400).json({ error: "agent must be 'architect' or 'shepherd'" });
-    }
-    const limit = req.query.limit ? Number(req.query.limit) : 50;
-    const workspace = req.query.workspace || undefined;
-    res.json(memory.list(agent, { limit, workspace }));
-  });
-
-  router.post("/memory/:agent", (req, res) => {
-    if (!memory) return res.status(501).json({ error: "memory not available" });
-    const { agent } = req.params;
-    if (agent !== "architect" && agent !== "shepherd") {
-      return res.status(400).json({ error: "agent must be 'architect' or 'shepherd'" });
-    }
-    const { content, category, workspace, session_id } = req.body;
-    if (!content) return res.status(400).json({ error: "content required" });
+  // Background cache refresh — runs every 5s, API handlers just read from memory
+  function refreshCaches() {
+    try { _sessionsCache = buildSessionsData(); } catch (e) { console.error("[v1] sessions cache failed:", e.message); }
     try {
-      const entry = memory.store(agent, { content, category, workspace, session_id });
-      res.json(entry);
-    } catch (err) {
-      res.status(500).json({ error: err.message });
-    }
-  });
-
-  router.get("/memory/:agent/search", (req, res) => {
-    if (!memory) return res.status(501).json({ error: "memory not available" });
-    const { agent } = req.params;
-    if (agent !== "architect" && agent !== "shepherd") {
-      return res.status(400).json({ error: "agent must be 'architect' or 'shepherd'" });
-    }
-    const { q, limit } = req.query;
-    if (!q) return res.status(400).json({ error: "q query param required" });
-    res.json(memory.search(agent, q, { limit: limit ? Number(limit) : 50 }));
-  });
-
-  // --- Agent Chat (Architect / Shepherd dedicated chat) ---
-
-  const klaudiiRoot = path.resolve(__dirname, "..");
-
-  router.post("/agent-chat/:role/start", (req, res) => {
-    const { role } = req.params;
-    if (role !== "architect" && role !== "shepherd") {
-      return res.status(400).json({ error: "role must be 'architect' or 'shepherd'" });
-    }
-
-    // Find or create a workspace for the agent chat
-    const workspaceName = `__${role}__`;
-    let proj = projects.getProject(workspaceName);
-    if (!proj) {
-      try {
-        projects.addProject(workspaceName, klaudiiRoot);
-      } catch {
-        // Already exists is fine
-      }
-      proj = projects.getProject(workspaceName);
-    }
-    if (!proj) {
-      return res.status(500).json({ error: "Could not create agent workspace" });
-    }
-
-    // Load context files
-    let systemPrompt = "";
-    try {
-      if (role === "architect") {
-        const startup = fs.readFileSync(path.join(klaudiiRoot, "ARCHITECT_STARTUP.md"), "utf-8");
-        const planningDir = path.join(klaudiiRoot, "..", "klaudii-planning");
-        const system = fs.readFileSync(path.join(planningDir, "architect-system.md"), "utf-8");
-        systemPrompt = `${startup}\n\n---\n\n${system}`;
-      } else {
-        const prompt = fs.readFileSync(path.join(klaudiiRoot, "lib", "shepherd-prompt.md"), "utf-8");
-        systemPrompt = prompt;
-      }
-    } catch (err) {
-      return res.status(500).json({ error: `Failed to load context files: ${err.message}` });
-    }
-
-    // Load recent memories
-    const memories = memory ? memory.list(role, { limit: 50 }) : [];
-    if (memories.length > 0) {
-      systemPrompt += "\n\n---\n\n## Your Recent Memories\n\n";
-      systemPrompt += "The following are your memories from previous sessions (most recent first).\n";
-      systemPrompt += "These are marked as [HISTORICAL MEMORY] so you know they are from past sessions, not the current one.\n\n";
-      for (const m of memories) {
-        const cat = m.category ? ` [${m.category}]` : "";
-        systemPrompt += `- [HISTORICAL MEMORY] [${m.created_at}]${cat} ${m.content}\n`;
-      }
-    }
-
-    // Add memory instructions
-    systemPrompt += `\n\n## Memory Instructions\n\n`;
-    systemPrompt += `You have access to your memory journal. Store important decisions and observations before ending this session.\n\n`;
-    systemPrompt += `Memory API (use curl):\n`;
-    systemPrompt += `- Store: curl -s -X POST http://localhost:9876/api/memory/${role} -H 'Content-Type: application/json' -d '{"content":"...","category":"decision|observation|context"}'  \n`;
-    systemPrompt += `- List: curl -s http://localhost:9876/api/memory/${role}?limit=50\n`;
-    systemPrompt += `- Search: curl -s "http://localhost:9876/api/memory/${role}/search?q=keyword"\n`;
-    systemPrompt += `- Delete: curl -s -X DELETE http://localhost:9876/api/memory/${role}/<id>\n`;
-
-    res.json({
-      workspace: workspaceName,
-      workspacePath: klaudiiRoot,
-      systemPrompt,
-      memoriesCount: memories.length,
-    });
-  });
-
-  router.delete("/memory/:agent/:id", (req, res) => {
-    if (!memory) return res.status(501).json({ error: "memory not available" });
-    const { agent, id } = req.params;
-    if (agent !== "architect" && agent !== "shepherd") {
-      return res.status(400).json({ error: "agent must be 'architect' or 'shepherd'" });
-    }
-    try {
-      const deleted = memory.remove(agent, Number(id));
-      if (!deleted) return res.status(404).json({ error: "memory not found" });
-      res.json({ ok: true });
-    } catch (err) {
-      res.status(500).json({ error: err.message });
-    }
-  });
+      const managedPids = tmux.getManagedPids();
+      _processesCache = processes.findClaudeProcesses(managedPids);
+    } catch (e) { console.error("[v1] processes cache failed:", e.message); }
+  }
+  // Pre-warm immediately on startup, then refresh every 5s
+  setImmediate(refreshCaches);
+  setInterval(refreshCaches, 5000);
 
   return router;
 };

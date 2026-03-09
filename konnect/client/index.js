@@ -15,7 +15,10 @@ function init(app, config) {
   // If cloud is configured, connect to relay
   if (config.cloud && config.cloud.relayUrl && config.cloud.serverId) {
     clientCrypto.setConnectionKey(config.cloud.connectionKey);
-    wsClient.connect(config, handleRelayMessage, closeAllLocalChannels);
+    wsClient.connect(config, handleRelayMessage, () => {
+      closeAllLocalChannels();
+      connectChatWs();
+    });
     console.log(`[cloud] Connecting to relay at ${config.cloud.relayUrl}`);
   } else {
     console.log("[cloud] Not configured — run pairing to enable cloud access");
@@ -25,10 +28,29 @@ function init(app, config) {
 // Active proxied WebSocket channels: channelId → WebSocket
 const localChannels = new Map();
 
+// Persistent multiplexed chat WS to local /ws/chat
+let chatWs = null;
+let chatWsReconnectTimer = null;
+
 function handleRelayMessage(msg) {
   if (msg.type === "api_request") {
     handleApiRequest(msg)
       .catch((err) => console.error("[cloud] handleApiRequest unhandled:", err.message));
+    return;
+  }
+
+  // Multiplexed chat message from remote client
+  if (msg.type === "chat_send") {
+    try {
+      const chatJson = clientCrypto.decryptPayload(msg.encrypted);
+      if (chatWs && chatWs.readyState === WebSocket.OPEN) {
+        chatWs.send(chatJson);
+      } else {
+        console.error("[cloud] chat_send: local chat WS not connected");
+      }
+    } catch (err) {
+      console.error("[cloud] chat_send decrypt error:", err.message);
+    }
     return;
   }
 
@@ -66,6 +88,45 @@ function closeAllLocalChannels() {
     localWs.close();
   }
   localChannels.clear();
+}
+
+function connectChatWs() {
+  if (chatWs && chatWs.readyState === WebSocket.OPEN) return;
+
+  const localUrl = `ws://127.0.0.1:${localPort}/ws/chat`;
+  chatWs = new WebSocket(localUrl);
+
+  chatWs.on("open", () => {
+    console.log("[cloud] chat WS connected to local server");
+  });
+
+  chatWs.on("message", (raw) => {
+    // Server sends chat events with a workspace field — encrypt and forward to relay
+    const data = raw instanceof Buffer ? raw.toString() : raw;
+    let parsed;
+    try { parsed = JSON.parse(data); } catch { return; }
+    const workspace = parsed.workspace;
+    if (!workspace) return;
+    const encrypted = clientCrypto.encryptPayload(data);
+    wsClient.send({ type: "chat_event", workspace, encrypted });
+  });
+
+  chatWs.on("close", () => {
+    chatWs = null;
+    scheduleChatWsReconnect();
+  });
+
+  chatWs.on("error", (err) => {
+    console.error("[cloud] chat WS error:", err.message);
+  });
+}
+
+function scheduleChatWsReconnect() {
+  if (chatWsReconnectTimer) return;
+  chatWsReconnectTimer = setTimeout(() => {
+    chatWsReconnectTimer = null;
+    connectChatWs();
+  }, 2000);
 }
 
 async function handleWsConnect(msg) {
@@ -201,7 +262,10 @@ function setupRoutes(app) {
       // Reload config and connect
       const { loadConfig } = require("../../lib/projects");
       const config = loadConfig();
-      wsClient.connect(config, handleRelayMessage, closeAllLocalChannels);
+      wsClient.connect(config, handleRelayMessage, () => {
+        closeAllLocalChannels();
+        connectChatWs();
+      });
 
       res.json({
         ok: true,

@@ -4,32 +4,37 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Klaudii — Session Manager</title>
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 512 512'><defs><linearGradient id='kg' x1='256' y1='80' x2='256' y2='432' gradientUnits='userSpaceOnUse'><stop offset='0%25' stop-color='%2386efac'/><stop offset='50%25' stop-color='%234ade80'/><stop offset='100%25' stop-color='%2322c55e'/></linearGradient></defs><rect x='132' y='100' width='40' height='312' rx='20' fill='url(%23kg)'/><line x1='188' y1='256' x2='362' y2='120' stroke='url(%23kg)' stroke-width='40' stroke-linecap='round'/><line x1='188' y1='256' x2='362' y2='392' stroke='url(%23kg)' stroke-width='40' stroke-linecap='round'/></svg>">
   <link rel="stylesheet" href="/style.css">
   <link rel="stylesheet" href="/chat.css?v=7">
 </head>
 <body>
   <header>
-    <h1>Klaudii</h1>
-    <select id="project-switcher" class="project-switcher" onchange="switchProject(this.value)" title="Switch project">
-      <option value="">All Projects</option>
-    </select>
+    <a class="nav-logo" href="/">
+      <svg class="nav-logo-icon" viewBox="0 0 512 512" xmlns="http://www.w3.org/2000/svg">
+        <defs><linearGradient id="lg" x1="256" y1="80" x2="256" y2="432" gradientUnits="userSpaceOnUse"><stop offset="0%" stop-color="#86efac"/><stop offset="50%" stop-color="#4ade80"/><stop offset="100%" stop-color="#22c55e"/></linearGradient></defs>
+        <rect x="132" y="100" width="40" height="312" rx="20" fill="url(#lg)"/>
+        <line x1="188" y1="256" x2="362" y2="120" stroke="url(#lg)" stroke-width="40" stroke-linecap="round"/>
+        <line x1="188" y1="256" x2="362" y2="392" stroke="url(#lg)" stroke-width="40" stroke-linecap="round"/>
+      </svg>
+      <span>Klaudii</span>
+    </a>
     <span id="status-badge" class="badge">checking...</span>
     <div id="auth-status" class="auth-box"></div>
-    <div class="agent-btns" style="margin-left:auto;display:flex;gap:0.25rem">
-      <button class="btn btn-sm agent-btn architect" onclick="openAgentChat('architect')" title="Talk to the Architect agent">Architect</button>
-      <button class="btn btn-sm agent-btn shepherd" onclick="openAgentChat('shepherd')" title="Talk to the Shepherd agent">Shepherd</button>
-    </div>
-    <button class="btn btn-sm" id="cloud-btn" onclick="openCloudModal()">Kloud Konnect</button>
+    <div style="margin-left:auto"></div>
+    <button class="header-chip" id="cloud-btn" onclick="openCloudModal()">Kloud Konnect</button>
     <button class="btn-theme" id="settings-btn" onclick="openSettingsModal()" title="Settings">⚙</button>
     <button class="btn-theme" id="theme-toggle" onclick="toggleTheme()" title="Toggle light/dark">☀</button>
   </header>
 
   <div id="app-layout" class="app-layout">
     <aside id="sidebar" class="sidebar">
+      <select id="project-switcher" class="project-switcher" onchange="switchProject(this.value)" title="Switch project">
+        <option value="">All Projects</option>
+      </select>
       <div class="sidebar-tabs">
-        <button class="sidebar-tab" data-tab="workers" onclick="switchSidebarTab('workers')">Workers <span class="sidebar-badge" id="sidebar-badge-workers">0</span></button>
-        <button class="sidebar-tab" data-tab="tasks" onclick="switchSidebarTab('tasks')">Tasks <span class="sidebar-badge" id="sidebar-badge-tasks">0</span></button>
         <button class="sidebar-tab active" data-tab="workspaces" onclick="switchSidebarTab('workspaces')">Workspaces <span class="sidebar-badge" id="sidebar-badge-workspaces">0</span></button>
+        <button class="sidebar-tab" data-tab="tasks" onclick="switchSidebarTab('tasks')">Tasks <span class="sidebar-badge" id="sidebar-badge-tasks">0</span></button>
       </div>
       <div class="sidebar-content" id="sidebar-content"></div>
     </aside>
@@ -132,21 +137,15 @@
         <div class="chat-bar-actions">
           <span id="chat-quota" class="chat-bar-quota"></span>
           <span id="chat-status" class="chat-bar-status"></span>
-          <select id="chat-tool-display" class="chat-chip-select" title="Tool display mode" onchange="chatSetToolDisplayMode(this.value)">
-            <option value="collapsed" selected>Collapsed</option>
-            <option value="expanded">Expanded</option>
-            <option value="hidden">Hidden</option>
-          </select>
           <div id="chat-session-dropdown" class="chat-session-dropdown">
             <button id="chat-session-btn" class="chat-session-btn" onclick="chatToggleSessionMenu()">
-              <span id="chat-session-dot" class="session-dot"></span>
               <span id="chat-session-label">Chat 1</span>
               <svg class="chat-session-chevron" xmlns="http://www.w3.org/2000/svg" width="10" height="6"><path d="M0 0l5 6 5-6z" fill="#888"/></svg>
             </button>
             <div id="chat-session-menu" class="chat-session-menu hidden"></div>
           </div>
           <button class="btn btn-sm" onclick="chatShowHandoffPreview()" title="Preview handoff briefing">Handoff</button>
-          <button class="btn btn-sm" onclick="closeGeminiChat()">Close</button>
+          <button class="btn btn-sm" onclick="closeGeminiChat()" title="Close chat" style="font-size:16px;line-height:1;padding:2px 6px;">&times;</button>
         </div>
       </div>
       <div id="chat-messages" class="chat-messages"></div>

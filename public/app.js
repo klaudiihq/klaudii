@@ -7,9 +7,9 @@ let sortDir = localStorage.getItem("klaudii-sort-dir") || "desc";
 let openPanelProject = null;
 let panelAutoCloseTimer = null;
 let showWorkerWorkspaces = false; // driven by server settings (workerVisibility)
-let currentProject = localStorage.getItem("klaudii-current-project") || "";
+let currentProject = new URLSearchParams(window.location.search).get("project") || "";
 let allProjectsList = [];
-let sidebarTab = localStorage.getItem("klaudii-sidebar-tab") || "workspaces";
+let sidebarTab = new URLSearchParams(window.location.search).get("tab") || "workspaces";
 let lastSessions = [];
 let lastProcs = [];
 let healthFailCount = 0; // consecutive health check failures for backoff
@@ -36,8 +36,17 @@ function cleanPhrase(project) {
 const PERM_BADGE_LABELS = { yolo: "bypass", ask: "ask", strict: "plan" };
 const PERM_MODE_LABELS = { yolo: "Bypass Permissions", ask: "Ask Permissions", strict: "Plan Mode" };
 
-const CHAT_MODES = ["gemini", "claude-local", "claude-remote"];
+const ALL_CHAT_MODES = ["gemini", "claude-local", "claude-remote"];
 const CHAT_MODE_LABELS = { "gemini": "Gemini", "claude-local": "Claude", "claude-remote": "Claude RC" };
+
+function getEnabledChatModes() {
+  const claude = localStorage.getItem("klaudii-enable-claude") !== "false";
+  const gemini = localStorage.getItem("klaudii-enable-gemini") === "true";
+  return ALL_CHAT_MODES.filter(m => {
+    if (m === "gemini") return gemini;
+    return claude; // claude-local and claude-remote
+  });
+}
 
 function relativeTime(ts) {
   if (!ts) return null;
@@ -65,9 +74,11 @@ async function cycleChatMode(event, project) {
   event.stopPropagation();
   const card = document.getElementById(`card-${project}`);
   if (!card) return;
+  const modes = getEnabledChatModes();
+  if (modes.length === 0) return;
   const current = card.dataset.chatMode || "claude-local";
-  const idx = CHAT_MODES.indexOf(current);
-  const next = CHAT_MODES[(idx + 1) % CHAT_MODES.length];
+  const idx = modes.indexOf(current);
+  const next = modes[(idx + 1) % modes.length];
   card.dataset.chatMode = next;
   const pill = card.querySelector(".chat-mode-pill");
   if (pill) {
@@ -127,11 +138,13 @@ async function refreshProjectSwitcher() {
 
 function switchProject(repo) {
   currentProject = repo;
+  const url = new URL(window.location);
   if (repo) {
-    localStorage.setItem("klaudii-current-project", repo);
+    url.searchParams.set("project", repo);
   } else {
-    localStorage.removeItem("klaudii-current-project");
+    url.searchParams.delete("project");
   }
+  window.history.replaceState({}, "", url);
   refresh();
   refreshTasks();
 }
@@ -206,9 +219,6 @@ function renderSessions(sessions, procs) {
   const container = document.getElementById("sessions-list");
   updateSortButtons();
   updateWorkerToggle();
-
-  // Always hide agent chat workspaces (accessed via header buttons)
-  sessions = sessions.filter(s => !s.project.startsWith("__") || !s.project.endsWith("__"));
 
   // Filter by selected project
   if (currentProject) {
@@ -807,46 +817,33 @@ function confirmKill(btn, pid) {
 
 // --- Data loading ---
 
-async function refresh() {
-  try {
-    const [health, sessions, procs, settings] = await Promise.all([
-      api("/api/health"),
-      api("/api/sessions"),
-      api("/api/processes"),
-      api("/api/settings").catch(() => null),
-    ]);
+function renderHealthStatus(health) {
+  lastHealthData = health;
+  const badge = document.getElementById("status-badge");
 
-    // Sync worker visibility from server settings
-    if (settings && settings.workerVisibility) {
-      showWorkerWorkspaces = settings.workerVisibility === "show";
-      currentSettings = settings;
-    }
+  if (health.ok && health.tmux && health.ttyd) {
+    badge.textContent = "connected";
+    badge.className = "badge ok";
+  } else {
+    const missing = [];
+    if (!health.tmux) missing.push("tmux");
+    if (!health.ttyd) missing.push("ttyd");
+    badge.className = "badge missing";
+    badge.innerHTML = `<span class="missing-label">missing:</span>` +
+      missing.map(d => `<span class="dep-missing-pill" onclick="openSetupOverlay()">${esc(d)}</span>`).join("");
+  }
 
-    lastHealthData = health;
-    const badge = document.getElementById("status-badge");
-
-    if (health.ok && health.tmux && health.ttyd) {
-      badge.textContent = "connected";
-      badge.className = "badge ok";
+  // Auth status box
+  const authEl = document.getElementById("auth-status");
+  const authRows = [];
+  if (health.ghAuth) {
+    if (health.ghAuth.loggedIn) {
+      authRows.push(`<span class="auth-row ok" title="${esc(health.ghAuth.account)}"><span class="auth-dot ok"></span>GitHub</span>`);
     } else {
-      const missing = [];
-      if (!health.tmux) missing.push("tmux");
-      if (!health.ttyd) missing.push("ttyd");
-      badge.className = "badge missing";
-      badge.innerHTML = `<span class="missing-label">missing:</span>` +
-        missing.map(d => `<span class="dep-missing-pill" onclick="openSetupOverlay()">${esc(d)}</span>`).join("");
+      authRows.push('<span class="auth-row error" title="Run: gh auth login"><span class="auth-dot error"></span>GitHub</span>');
     }
-
-    // Auth status box
-    const authEl = document.getElementById("auth-status");
-    const authRows = [];
-    if (health.ghAuth) {
-      if (health.ghAuth.loggedIn) {
-        authRows.push(`<span class="auth-row ok" title="${esc(health.ghAuth.account)}"><span class="auth-dot ok"></span>GitHub</span>`);
-      } else {
-        authRows.push('<span class="auth-row error" title="Run: gh auth login"><span class="auth-dot error"></span>GitHub</span>');
-      }
-    }
+  }
+  if (localStorage.getItem("klaudii-enable-claude") !== "false") {
     if (health.claudeAuth) {
       if (health.claudeAuth.loggedIn) {
         const label = health.claudeAuth.email ? esc(health.claudeAuth.email) : (health.claudeAuth.authMethod === "api_key" ? "API key" : "authenticated");
@@ -857,17 +854,38 @@ async function refresh() {
     } else if (health.claudeAuth === null) {
       authRows.push('<span class="auth-row error" title="Claude CLI not installed"><span class="auth-dot error"></span>Claude</span>');
     }
-    if (health.geminiAuth) {
-      if (!health.geminiAuth.installed) {
-        authRows.push('<span class="auth-row error" title="Run: brew install gemini-cli"><span class="auth-dot error"></span>Gemini</span>');
-      } else if (health.geminiAuth.loggedIn) {
-        const geminiTitle = health.geminiAuth.email ? esc(health.geminiAuth.email) : (health.geminiAuth.method === "api_key" ? "API key" : "OAuth");
-        authRows.push(`<span class="auth-row ok" title="${geminiTitle}"><span class="auth-dot ok"></span>Gemini</span>`);
-      } else {
-        authRows.push('<span class="auth-row error clickable" title="Click to authenticate" onclick="openChat(null, null)"><span class="auth-dot error"></span>Gemini</span>');
-      }
+  }
+  if (localStorage.getItem("klaudii-enable-gemini") === "true" && health.geminiAuth) {
+    if (!health.geminiAuth.installed) {
+      authRows.push('<span class="auth-row error" title="Run: brew install gemini-cli"><span class="auth-dot error"></span>Gemini</span>');
+    } else if (health.geminiAuth.loggedIn) {
+      const geminiTitle = health.geminiAuth.email ? esc(health.geminiAuth.email) : (health.geminiAuth.method === "api_key" ? "API key" : "OAuth");
+      authRows.push(`<span class="auth-row ok" title="${geminiTitle}"><span class="auth-dot ok"></span>Gemini</span>`);
+    } else {
+      authRows.push('<span class="auth-row error clickable" title="Click to authenticate" onclick="openChat(null, null)"><span class="auth-dot error"></span>Gemini</span>');
     }
-    authEl.innerHTML = (authRows.length ? '<span class="auth-title">auth</span>' : '') + authRows.join("");
+  }
+  authEl.innerHTML = (authRows.length ? '<span class="auth-title">auth</span>' : '') + authRows.join("");
+
+  if (healthFailCount > 0) {
+    healthFailCount = 0;
+    if (typeof chatUpdateStatus === "function") chatUpdateStatus(true);
+  }
+}
+
+async function refresh() {
+  try {
+    // Fetch sessions+processes+settings first (fast), render immediately
+    const [sessions, procs, settings] = await Promise.all([
+      api("/api/sessions"),
+      api("/api/processes"),
+      api("/api/settings").catch(() => null),
+    ]);
+
+    if (settings && settings.workerVisibility) {
+      showWorkerWorkspaces = settings.workerVisibility === "show";
+      currentSettings = settings;
+    }
 
     lastSessions = sessions;
     lastProcs = procs;
@@ -875,17 +893,18 @@ async function refresh() {
     renderProcesses(procs);
     renderSidebar();
 
-    // Health succeeded — reset failure count and notify chat panel
-    if (healthFailCount > 0) {
-      healthFailCount = 0;
-      if (typeof chatUpdateStatus === "function") chatUpdateStatus(true);
-    }
+    // Health check runs in background — don't block card rendering
+    api("/api/health").then(renderHealthStatus).catch(() => {
+      const badge = document.getElementById("status-badge");
+      badge.textContent = "offline";
+      badge.className = "badge error";
+      healthFailCount++;
+      if (typeof chatUpdateStatus === "function") chatUpdateStatus(false);
+    });
   } catch (err) {
     const badge = document.getElementById("status-badge");
     badge.textContent = "offline";
     badge.className = "badge error";
-
-    // Notify chat panel of server disconnect
     healthFailCount++;
     if (typeof chatUpdateStatus === "function") chatUpdateStatus(false);
   }
@@ -893,26 +912,6 @@ async function refresh() {
 
 // --- New Session Modal ---
 
-// --- Agent Chat (Architect / Shepherd) ---
-
-async function openAgentChat(role) {
-  try {
-    const res = await fetch(`/api/agent-chat/${encodeURIComponent(role)}/start`, { method: "POST" });
-    if (!res.ok) {
-      const err = await res.json().catch(() => ({ error: "Unknown error" }));
-      alert("Failed to start agent chat: " + (err.error || res.statusText));
-      return;
-    }
-    const data = await res.json();
-    // Store system prompt and role for the chat UI to use on first message
-    window._agentSystemPrompt = data.systemPrompt;
-    window._agentRole = role;
-    // Open the chat panel using the agent workspace
-    openChat(data.workspace, data.workspacePath, "claude");
-  } catch (err) {
-    alert("Failed to start agent chat: " + err.message);
-  }
-}
 
 let allRepos = [];
 let selectedRepo = null;
@@ -2226,7 +2225,10 @@ function workerRenderMarkdown(text) {
 
 function switchSidebarTab(tab) {
   sidebarTab = tab;
-  localStorage.setItem("klaudii-sidebar-tab", tab);
+  const url = new URL(window.location);
+  if (tab === "workspaces") url.searchParams.delete("tab");
+  else url.searchParams.set("tab", tab);
+  history.replaceState(null, "", url);
   document.querySelectorAll(".sidebar-tab").forEach(btn => {
     btn.classList.toggle("active", btn.dataset.tab === tab);
   });
@@ -2243,34 +2245,21 @@ function renderSidebar() {
 
   updateSidebarBadges();
 
-  if (sidebarTab === "workers") renderSidebarWorkers();
-  else if (sidebarTab === "tasks") renderSidebarTasks();
+  if (sidebarTab === "tasks") renderSidebarTasks();
   else renderSidebarWorkspaces();
 }
 
 function updateSidebarBadges() {
-  const workers = lastSessions.filter(s => s.workspaceType === "worker");
-  const workspaces = lastSessions.filter(s => s.workspaceType !== "worker");
-
-  const runningWorkers = workers.filter(s => {
-    const st = s.status || (s.running ? "running" : "stopped");
-    return st === "running";
-  });
-  const runningWorkspaces = workspaces.filter(s => {
-    const st = s.status || (s.running ? "running" : "stopped");
-    return st === "running" || s.relayActive;
-  });
+  let workspaces = lastSessions.filter(s => s.workspaceType !== "worker");
+  if (currentProject) {
+    workspaces = workspaces.filter(s => matchesCurrentProject(s.project));
+  }
   const openTasks = tasksData.filter(b => b.status !== "closed");
 
-  const wb = document.getElementById("sidebar-badge-workers");
   const bb = document.getElementById("sidebar-badge-tasks");
   const wsb = document.getElementById("sidebar-badge-workspaces");
-  if (wb) {
-    wb.textContent = runningWorkers.length;
-    wb.classList.toggle("has-activity", runningWorkers.length > 0);
-  }
   if (bb) bb.textContent = openTasks.length;
-  if (wsb) wsb.textContent = runningWorkspaces.length;
+  if (wsb) wsb.textContent = workspaces.length;
 }
 
 function findTaskForWorker(session) {
@@ -2353,40 +2342,19 @@ function renderSidebarTasks() {
 function renderSidebarWorkspaces() {
   const container = document.getElementById("sidebar-content");
 
-  // Agent workspaces (pinned at top)
-  const agents = lastSessions.filter(s =>
-    s.project.startsWith("__") && s.project.endsWith("__")
-  );
-  // Regular workspaces
-  let sessions = lastSessions.filter(s =>
-    s.workspaceType !== "worker" && !(s.project.startsWith("__") && s.project.endsWith("__"))
-  );
+  let sessions = lastSessions.filter(s => s.workspaceType !== "worker");
 
-  if (!sessions.length && !agents.length) {
+  // Filter by selected project
+  if (currentProject) {
+    sessions = sessions.filter(s => matchesCurrentProject(s.project));
+  }
+
+  if (!sessions.length) {
     container.innerHTML = '<div class="sidebar-empty">No workspaces</div>';
     return;
   }
 
   sessions = sortSessions(sessions);
-
-  const agentHtml = agents.map(s => {
-    const role = s.project.replace(/^__|__$/g, "");
-    const label = role.charAt(0).toUpperCase() + role.slice(1);
-    const status = s.status || (s.running ? "running" : "stopped");
-    const displayStatus = (status === "stopped" && s.relayActive) ? "running" : status;
-    const lastAct = s.lastActivity ? relativeTime(s.lastActivity) : "";
-
-    return `<div class="sidebar-card sidebar-card-pinned" data-project="${esc(s.project)}" data-project-path="${esc(s.projectPath || "")}" data-chat-mode="${esc(s.chatMode || "claude-local")}" data-claude-url="${esc(s.claudeUrl || "")}" data-agent-role="${esc(role)}" onclick="sidebarAgentClick(this)">
-      <div class="sidebar-card-accent ${displayStatus}"></div>
-      <div class="sidebar-card-body">
-        <div class="sidebar-card-header">
-          <span class="sidebar-card-title"><span class="agent-role-dot ${esc(role)}"></span>${esc(label)}</span>
-          <span class="card-status ${displayStatus}" style="font-size:9px;padding:1px 5px">${esc(displayStatus)}</span>
-        </div>
-        ${lastAct ? `<span class="sidebar-card-meta">${esc(lastAct)}</span>` : ""}
-      </div>
-    </div>`;
-  }).join("");
 
   const workspaceHtml = sessions.map(s => {
     const parts = s.project.split("--");
@@ -2396,12 +2364,14 @@ function renderSidebarWorkspaces() {
     const displayStatus = (status === "stopped" && s.relayActive) ? "running" : status;
     const lastAct = s.lastActivity ? relativeTime(s.lastActivity) : "";
 
-    return `<div class="sidebar-card" data-project="${esc(s.project)}" data-project-path="${esc(s.projectPath || "")}" data-chat-mode="${esc(s.chatMode || "claude-local")}" data-claude-url="${esc(s.claudeUrl || "")}" onclick="sidebarWorkspaceClick(this)">
+    const isActive = typeof chatWorkspace !== "undefined" && chatWorkspace === s.project;
+    const cardClass = "sidebar-card" + (isActive ? " active-workspace" : "");
+
+    return `<div class="${cardClass}" data-project="${esc(s.project)}" data-project-path="${esc(s.projectPath || "")}" data-chat-mode="${esc(s.chatMode || "claude-local")}" data-claude-url="${esc(s.claudeUrl || "")}" onclick="sidebarWorkspaceClick(this)">
       <div class="sidebar-card-accent ${displayStatus}"></div>
       <div class="sidebar-card-body">
         <div class="sidebar-card-header">
           <span class="sidebar-card-title">${esc(repo)}</span>
-          <span class="card-status ${displayStatus}" style="font-size:9px;padding:1px 5px">${esc(displayStatus)}</span>
         </div>
         ${branch ? `<span class="sidebar-card-sub">${esc(branch)}</span>` : ""}
         ${lastAct ? `<span class="sidebar-card-meta">${esc(lastAct)}</span>` : ""}
@@ -2409,7 +2379,7 @@ function renderSidebarWorkspaces() {
     </div>`;
   }).join("");
 
-  container.innerHTML = agentHtml + workspaceHtml;
+  container.innerHTML = workspaceHtml;
 }
 
 function sidebarWorkspaceClick(el) {
@@ -2431,14 +2401,6 @@ function sidebarWorkspaceClick(el) {
 
   const cli = chatMode === "gemini" ? "gemini" : "claude";
   openChat(project, projectPath, cli);
-}
-
-function sidebarAgentClick(el) {
-  const role = el.dataset.agentRole;
-  if (!role) return;
-  document.querySelectorAll(".sidebar-card.active-workspace, .card.active-workspace").forEach(c => c.classList.remove("active-workspace"));
-  el.classList.add("active-workspace");
-  openAgentChat(role);
 }
 
 function sidebarWorkerClick(project) {
@@ -2519,7 +2481,38 @@ async function renderSettingsModal() {
     currentSettings = { workerVisibility: "hide", theme: "dark" };
   }
 
+  const toolMode = localStorage.getItem("klaudii-tool-display") || "collapsed";
+  const toolHidden = toolMode === "hidden";
+  const debugOn = localStorage.getItem("klaudii-debug") === "true";
+  const claudeOn = localStorage.getItem("klaudii-enable-claude") !== "false";
+  const geminiOn = localStorage.getItem("klaudii-enable-gemini") === "true";
+
   body.innerHTML = `
+    <div style="margin-bottom:1rem">
+      <label style="font-size:0.85rem;font-weight:600;color:var(--text);display:block;margin-bottom:0.5rem">Providers</label>
+      <div class="toggle-row">
+        <div>
+          <div class="toggle-label">Enable Claude</div>
+          <div class="toggle-hint">Claude Code local and remote chat modes</div>
+        </div>
+        <label class="ios-toggle">
+          <input type="checkbox" id="setting-enable-claude" ${claudeOn ? "checked" : ""} onchange="toggleProvider('claude', this.checked)">
+          <span class="toggle-track"></span>
+          <span class="toggle-thumb"></span>
+        </label>
+      </div>
+      <div class="toggle-row">
+        <div>
+          <div class="toggle-label">Enable Gemini</div>
+          <div class="toggle-hint">Gemini CLI chat mode</div>
+        </div>
+        <label class="ios-toggle">
+          <input type="checkbox" id="setting-enable-gemini" ${geminiOn ? "checked" : ""} onchange="toggleProvider('gemini', this.checked)">
+          <span class="toggle-track"></span>
+          <span class="toggle-thumb"></span>
+        </label>
+      </div>
+    </div>
     <div class="form-group">
       <label>Worker workspace visibility</label>
       <select id="setting-worker-visibility" class="settings-select" onchange="saveSettings()">
@@ -2537,6 +2530,42 @@ async function renderSettingsModal() {
         <option value="auto"${currentSettings.theme === "auto" ? " selected" : ""}>Auto</option>
       </select>
       <div class="form-hint">Theme is also toggled via the quick-toggle in the header.</div>
+    </div>
+    <div style="margin-top:1rem">
+      <label style="font-size:0.85rem;font-weight:600;color:var(--text);display:block;margin-bottom:0.5rem">Chat</label>
+      <div class="toggle-row">
+        <div>
+          <div class="toggle-label">Hide tool calls</div>
+          <div class="toggle-hint">Completely hide tool call pills from chat</div>
+        </div>
+        <label class="ios-toggle">
+          <input type="checkbox" id="setting-tool-hidden" ${toolHidden ? "checked" : ""} onchange="toggleToolHidden(this.checked)">
+          <span class="toggle-track"></span>
+          <span class="toggle-thumb"></span>
+        </label>
+      </div>
+      <div class="toggle-row${toolHidden ? " toggle-disabled" : ""}" id="expand-tools-row">
+        <div>
+          <div class="toggle-label">Expand tool calls</div>
+          <div class="toggle-hint">Show tool call details expanded by default</div>
+        </div>
+        <label class="ios-toggle">
+          <input type="checkbox" id="setting-tool-expanded" ${toolMode === "expanded" ? "checked" : ""} ${toolHidden ? "disabled" : ""} onchange="toggleToolDisplay(this.checked)">
+          <span class="toggle-track"></span>
+          <span class="toggle-thumb"></span>
+        </label>
+      </div>
+      <div class="toggle-row">
+        <div>
+          <div class="toggle-label">Debug mode</div>
+          <div class="toggle-hint">Context stats, handoff messages, handoff preview</div>
+        </div>
+        <label class="ios-toggle">
+          <input type="checkbox" id="setting-debug" ${debugOn ? "checked" : ""} onchange="toggleDebugMode(this.checked)">
+          <span class="toggle-track"></span>
+          <span class="toggle-thumb"></span>
+        </label>
+      </div>
     </div>
     <div id="settings-status" class="form-hint" style="margin-top:0.5rem"></div>
   `;
@@ -2558,6 +2587,38 @@ async function saveSettings() {
   } catch (err) {
     if (statusEl) statusEl.textContent = "Failed to save: " + err.message;
   }
+}
+
+function toggleToolHidden(hidden) {
+  if (hidden) {
+    localStorage.setItem("klaudii-tool-display", "hidden");
+    if (typeof chatSetToolDisplayMode === "function") chatSetToolDisplayMode("hidden");
+  } else {
+    const expanded = document.getElementById("setting-tool-expanded");
+    const mode = (expanded && expanded.checked) ? "expanded" : "collapsed";
+    localStorage.setItem("klaudii-tool-display", mode);
+    if (typeof chatSetToolDisplayMode === "function") chatSetToolDisplayMode(mode);
+  }
+  // Grey out / enable the expand toggle
+  const row = document.getElementById("expand-tools-row");
+  const expandInput = document.getElementById("setting-tool-expanded");
+  if (row) row.classList.toggle("toggle-disabled", hidden);
+  if (expandInput) expandInput.disabled = hidden;
+}
+
+function toggleToolDisplay(expanded) {
+  const mode = expanded ? "expanded" : "collapsed";
+  localStorage.setItem("klaudii-tool-display", mode);
+  if (typeof chatSetToolDisplayMode === "function") chatSetToolDisplayMode(mode);
+}
+
+function toggleDebugMode(on) {
+  localStorage.setItem("klaudii-debug", on ? "true" : "false");
+  if (typeof chatApplyDebugMode === "function") chatApplyDebugMode();
+}
+
+function toggleProvider(provider, on) {
+  localStorage.setItem(`klaudii-enable-${provider}`, on ? "true" : "false");
 }
 
 function applyThemeFromSettings(theme) {
@@ -2584,18 +2645,26 @@ if (new URLSearchParams(window.location.search).get("mode") === "chatonly") {
   // Fetch health once (for auth status used by chat.js)
   api("/api/health").then(h => { lastHealthData = h; }).catch(() => {});
 } else {
-  refreshProjectSwitcher();
-  refresh();
-  refreshCloudStatus();
-  refreshScheduler();
-  refreshTasks();
+  // If opening directly into chat, defer dashboard loading until after chat renders
+  const hasWorkspaceParam = new URLSearchParams(window.location.search).has("workspace");
+  const dashboardDelay = hasWorkspaceParam ? 500 : 0;
+
+  setTimeout(() => {
+    refreshProjectSwitcher();
+    refresh().then(() => {
+      refreshCloudStatus();
+      refreshScheduler();
+      refreshTasks();
+      refreshUsage();
+    });
+  }, dashboardDelay);
+
+  // Periodic refreshes
   refreshTimer = setInterval(() => {
     refresh();
     refreshCloudStatus();
   }, 10000);
-  refreshUsage();
   setInterval(refreshUsage, 60000);
   setInterval(() => { refreshScheduler(); refreshTasks(); }, 30000);
-  // Refresh project list periodically (new projects may be added)
   setInterval(refreshProjectSwitcher, 30000);
 }

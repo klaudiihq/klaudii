@@ -101,7 +101,6 @@ app.use(
     gemini,
     claudeChat,
     workspaceState,
-    memory,
   })
 );
 
@@ -120,19 +119,6 @@ mountMcp(app, {
 });
 
 // --- Scheduler ---
-
-const shepherdCtx = {
-  projects: { getProjects, getProject, addProject, removeProject },
-  tmux,
-  ttyd,
-  git,
-  claude,
-  sessionTracker,
-  workspaceState,
-  claudeChat,
-  config,
-};
-scheduler.register("shepherd", 5 * 60 * 1000, () => require("./lib/shepherd").run(shepherdCtx));
 
 app.get("/api/scheduler", (_req, res) => {
   res.json(scheduler.list());
@@ -240,7 +226,16 @@ app.get("/api/gemini/stream-partial/:project", (req, res) => {
 // Chat history (server-side, synced across devices)
 app.get("/api/gemini/history/:project", (req, res) => {
   const sessionNum = req.query.session ? Number(req.query.session) : undefined;
-  res.json(gemini.getHistory(req.params.project, sessionNum));
+  const history = gemini.getHistory(req.params.project, sessionNum);
+  const limit = req.query.limit ? Number(req.query.limit) : 0;
+  const offset = req.query.offset ? Number(req.query.offset) : 0;
+  if (limit > 0) {
+    const start = Math.max(0, history.length - offset - limit);
+    const end = history.length - offset;
+    res.json({ messages: history.slice(start, end), total: history.length });
+  } else {
+    res.json({ messages: history, total: history.length });
+  }
 });
 
 app.post("/api/gemini/history/:project", (req, res) => {
@@ -444,7 +439,14 @@ app.get("/api/claude-chat/history/:project", (req, res) => {
   const sessionNum = req.query.session ? Number(req.query.session) : undefined;
   const history = claudeChat.getHistory(req.params.project, sessionNum);
   const limit = req.query.limit ? Number(req.query.limit) : 0;
-  res.json(limit > 0 ? history.slice(-limit) : history);
+  const offset = req.query.offset ? Number(req.query.offset) : 0;
+  if (limit > 0) {
+    const start = Math.max(0, history.length - offset - limit);
+    const end = history.length - offset;
+    res.json({ messages: history.slice(start, end), total: history.length });
+  } else {
+    res.json({ messages: history, total: history.length });
+  }
 });
 
 app.post("/api/claude-chat/history/:project", (req, res) => {
@@ -628,10 +630,6 @@ wss.on("connection", (ws) => {
       }
 
       let proj = getProject(workspace);
-      // Virtual workspace for Architect (chat-only, no project directory)
-      if (!proj && workspace === "__architect__") {
-        proj = { name: "__architect__", path: os.homedir() };
-      }
       if (!proj) {
         console.log(`[chat-ws] project not found: ${workspace}`);
         ws.send(JSON.stringify({ type: "error", workspace, message: `project "${workspace}" not found` }));
@@ -1120,8 +1118,6 @@ server.listen(PORT, "0.0.0.0", () => {
   // Start periodic claude-chat auth probe (immediate + every 5 min)
   claudeChat.startAuthCheck(config);
 
-  // Start the task scheduler (shepherd, etc.)
-  // DISABLED: shepherd burns quota unsupervised. Re-enable when completion pipeline is in place.
   // scheduler.start();
 });
 

@@ -134,27 +134,42 @@ header {
   flex-shrink: 0;
 }
 
+.nav-logo {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 1.15rem;
+  font-weight: 600;
+  letter-spacing: -0.02em;
+  color: var(--text-strong);
+  text-decoration: none;
+}
+.nav-logo-icon { width: 26px; height: 26px; }
+
 .project-switcher {
+  appearance: none;
+  -webkit-appearance: none;
   background: var(--bg-btn);
-  color: var(--text);
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='8' height='5'%3E%3Cpath d='M0 0l4 5 4-5z' fill='%23888'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 0.5rem center;
   border: 1px solid var(--border-btn);
   border-radius: 6px;
-  padding: 0.35rem 1.8rem 0.35rem 0.6rem;
-  font-size: 0.85rem;
+  color: var(--text-muted);
+  font-size: 0.75rem;
   font-family: inherit;
+  font-weight: 500;
+  padding: 0.35rem 1.6rem 0.35rem 0.6rem;
   cursor: pointer;
-  -webkit-appearance: none;
-  appearance: none;
-  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='10' viewBox='0 0 10 10'%3E%3Cpath d='M2 3.5l3 3 3-3' fill='none' stroke='%23888' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
-  background-repeat: no-repeat;
-  background-position: right 6px center;
-  transition: border-color 0.15s;
-  max-width: 200px;
+  transition: background 0.15s, color 0.15s, border-color 0.15s;
+  width: 100%;
+  box-sizing: border-box;
+  margin-bottom: 6px;
   text-overflow: ellipsis;
 }
 
-.project-switcher:hover { border-color: var(--border-active); }
-.project-switcher:focus { outline: none; border-color: var(--btn-primary); }
+.project-switcher:hover { background: var(--bg-btn-hover); color: var(--text); border-color: var(--border-btn); }
+.project-switcher:focus { outline: none; border-color: var(--btn-primary); color: var(--text); }
 
 .auth-box {
   display: flex;
@@ -756,18 +771,37 @@ h2 {
 
 .btn-sm { font-size: 0.7rem; padding: 0.25rem 0.5rem; }
 
+/* Header chip buttons — matches chat-chip-select aesthetic */
+.header-chip {
+  appearance: none;
+  -webkit-appearance: none;
+  background: var(--bg-btn);
+  border: 1px solid transparent;
+  border-radius: 20px;
+  color: var(--text-muted);
+  font-size: 0.72rem;
+  font-family: inherit;
+  font-weight: 500;
+  padding: 0.22rem 0.6rem;
+  cursor: pointer;
+  line-height: 1.4;
+  transition: background 0.15s, color 0.15s, border-color 0.15s;
+}
+.header-chip:hover { background: var(--bg-btn-hover); color: var(--text); border-color: var(--border-btn); }
+
 /* Theme toggle */
 .btn-theme {
-  font-size: 0.85rem;
-  padding: 0.25rem 0.45rem;
-  border: 1px solid var(--border);
-  border-radius: 6px;
-  background: transparent;
+  font-size: 0.78rem;
+  padding: 0.22rem 0.45rem;
+  border: 1px solid transparent;
+  border-radius: 20px;
+  background: var(--bg-btn);
   color: var(--text-muted);
   cursor: pointer;
   line-height: 1;
+  transition: background 0.15s, color 0.15s, border-color 0.15s;
 }
-.btn-theme:hover { color: var(--text); border-color: var(--border-active); }
+.btn-theme:hover { color: var(--text); background: var(--bg-btn-hover); border-color: var(--border-btn); }
 
 /* =========================================================
    History
@@ -1975,10 +2009,9 @@ body.chat-open .app-layout {
   /* height constrained by body (100vh, overflow:hidden) minus header */
 }
 
+/* Hide main section when chat is open — sidebar tabs are the left panel */
 body.chat-open main {
-  flex: 0 0 360px;
-  max-width: 360px;
-  border-right: 1px solid var(--border);
+  display: none;
 }
 
 body.chat-open .chat-panel {
@@ -1986,37 +2019,10 @@ body.chat-open .chat-panel {
   min-width: 0;
 }
 
-/* Single-column sidebar cards */
-body.chat-open .card-grid {
-  grid-template-columns: 1fr;
-  gap: 6px;
-}
-
-/* Hide usage chart in sidebar */
-body.chat-open #usage-section {
-  display: none;
-}
-
-/* Compact sidebar cards */
-body.chat-open .card-body {
-  padding: 8px 10px;
-}
-
-/* Hide left sidebar when chat is open */
+/* Sidebar stays visible as the left column in chat mode */
 body.chat-open .sidebar {
-  display: none;
-}
-
-/* Sidebar card click affordance */
-body.chat-open .card {
-  cursor: pointer;
-}
-
-/* Highlight the active workspace card in sidebar */
-body.chat-open .card.active-workspace {
-  border-color: var(--s-green);
-  background: var(--s-green-bg);
-  box-shadow: 0 0 0 1px var(--s-green);
+  width: 280px;
+  flex-shrink: 0;
 }
 
 /* =========================================================
@@ -2136,6 +2142,69 @@ body.chatonly .chat-panel {
 .settings-select:hover { border-color: var(--border-active); }
 .settings-select:focus { outline: none; border-color: var(--btn-primary); }
 
+/* iOS-style toggle switch */
+.toggle-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.6rem 0;
+}
+.toggle-row + .toggle-row { border-top: 1px solid var(--border-btn); }
+.toggle-label {
+  font-size: 0.85rem;
+  color: var(--text);
+}
+.toggle-hint {
+  font-size: 0.72rem;
+  color: var(--text-faint);
+  margin-top: 2px;
+}
+.ios-toggle {
+  position: relative;
+  width: 44px;
+  height: 26px;
+  flex-shrink: 0;
+  margin-left: 12px;
+}
+.ios-toggle input {
+  opacity: 0;
+  width: 0;
+  height: 0;
+  position: absolute;
+}
+.ios-toggle .toggle-track {
+  position: absolute;
+  inset: 0;
+  background: var(--bg-input);
+  border: 1px solid var(--border-btn);
+  border-radius: 13px;
+  cursor: pointer;
+  transition: background 0.25s, border-color 0.25s;
+}
+.ios-toggle .toggle-thumb {
+  position: absolute;
+  top: 3px;
+  left: 3px;
+  width: 20px;
+  height: 20px;
+  background: #fff;
+  border-radius: 50%;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.3);
+  transition: transform 0.25s;
+  pointer-events: none;
+}
+.ios-toggle input:checked + .toggle-track {
+  background: var(--s-green, #4ade80);
+  border-color: var(--s-green, #4ade80);
+}
+.ios-toggle input:checked + .toggle-track + .toggle-thumb {
+  transform: translateX(18px);
+}
+.toggle-row.toggle-disabled {
+  opacity: 0.35;
+  pointer-events: none;
+}
+
 /* =========================================================
    Left Sidebar (Workers / Tasks / Workspaces tabs)
    ========================================================= */
@@ -2180,7 +2249,7 @@ body.chatonly .chat-panel {
 
 .sidebar-tab.active {
   color: var(--text-strong);
-  border-bottom-color: var(--btn-primary);
+  border-bottom-color: var(--text);
 }
 
 .sidebar-badge {
@@ -2195,8 +2264,8 @@ body.chatonly .chat-panel {
 }
 
 .sidebar-tab.active .sidebar-badge {
-  background: var(--btn-primary);
-  color: #fff;
+  background: var(--text);
+  color: var(--bg);
 }
 
 .sidebar-badge.has-activity {
@@ -2233,9 +2302,19 @@ body.chatonly .chat-panel {
 }
 
 .sidebar-card.active-workspace {
-  border-color: var(--s-green);
-  background: var(--s-green-bg);
+  border-color: transparent;
+  background: #1a1a1a;
 }
+.sidebar-card.active-workspace .sidebar-card-title { color: #fff; }
+.sidebar-card.active-workspace .sidebar-card-sub,
+.sidebar-card.active-workspace .sidebar-card-meta { color: #aaa; }
+
+.light .sidebar-card.active-workspace {
+  background: #e6e6e6;
+}
+.light .sidebar-card.active-workspace .sidebar-card-title { color: #111; }
+.light .sidebar-card.active-workspace .sidebar-card-sub,
+.light .sidebar-card.active-workspace .sidebar-card-meta { color: #555; }
 
 .sidebar-card-accent {
   width: 3px;
@@ -2248,20 +2327,6 @@ body.chatonly .chat-panel {
 .sidebar-card-accent.exited  { background: var(--s-yellow); }
 .sidebar-card-accent.stopped { background: var(--border); }
 
-.sidebar-card-pinned {
-  border-style: dashed;
-}
-
-.agent-role-dot {
-  display: inline-block;
-  width: 7px;
-  height: 7px;
-  border-radius: 50%;
-  margin-right: 5px;
-  vertical-align: middle;
-}
-.agent-role-dot.architect { background: #166534; }
-.agent-role-dot.shepherd  { background: #92400e; }
 
 .sidebar-card-body {
   flex: 1;
@@ -2376,8 +2441,8 @@ body.chatonly .chat-panel {
    ========================================================= */
 
 @media (max-width: 768px) {
-  /* In chat mode on narrow screens, hide sidebar */
-  body.chat-open main {
+  /* In chat mode on narrow screens, hide sidebar tabs too */
+  body.chat-open .sidebar {
     display: none;
   }
   body.chat-open .chat-panel {
@@ -2385,26 +2450,6 @@ body.chatonly .chat-panel {
   }
 }
 
-/* --- Agent Chat buttons --- */
-
-.agent-btn.architect {
-  background: #166534;
-  color: #fff;
-  border-color: #166534;
-}
-.agent-btn.architect:hover {
-  background: #15803d;
-  border-color: #15803d;
-}
-.agent-btn.shepherd {
-  background: #92400e;
-  color: #fff;
-  border-color: #92400e;
-}
-.agent-btn.shepherd:hover {
-  background: #a16207;
-  border-color: #a16207;
-}
 
 @media (max-width: 900px) {
   .sidebar { display: none; }

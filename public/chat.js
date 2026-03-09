@@ -34,14 +34,45 @@ let chatLocalDraftTimeout = null;
 const chatPageSessionDrafts = new Set(); // workspaces whose drafts were saved this page session
 let chatWasStreamingAtDisconnect = false; // set in onclose, cleared in onopen after recovery check
 let chatHistoryFetchFailed = false;        // set when history fetch fails (server not ready); triggers re-fetch on reconnect
-let chatAgentRole = null;          // "architect" | "shepherd" | null — set when in agent chat mode
+let chatAgentRole = null;
 let chatThinkingEnabled = false;           // extended thinking toggle state
 let chatToolDisplayMode = "collapsed";      // "collapsed" | "expanded" | "hidden"
+let chatThinkingGapTimer = null;             // shows thinking orbital after idle gap during streaming
 
 // Per-workspace message history (in-memory cache, server is source of truth)
 // workspace → [ { role, content } ]  (for current session)
 const chatHistory = {};
+let chatTotalHistoryCount = 0;    // total messages on server for current workspace/session
+let chatLoadedHistoryCount = 0;   // how many we've loaded so far
+let chatHistoryFullyLoaded = false; // true when all messages are loaded
+let chatScrollObserver = null;    // IntersectionObserver for scroll-up loading
+const CHAT_INITIAL_LOAD = 100;    // messages to load on first render
+const CHAT_PAGE_SIZE = 500;       // messages to load per scroll-up page
 const chatAskToolIds = new Set(); // tool_ids for AskUserQuestion — suppress their tool_result pills
+const pendingToolUses = new Map(); // tool_id → {tool_name, tool_id, parameters} for ExitPlanMode tracking
+
+// --- Chat switch overlay (synchronized workspace transition) ---
+
+function chatShowSwitchOverlay() {
+  // Remove any existing overlay
+  const existing = document.querySelector(".chat-switch-overlay");
+  if (existing) existing.remove();
+  const panel = document.getElementById("chat-overlay");
+  if (!panel) return;
+  const overlay = document.createElement("div");
+  overlay.className = "chat-switch-overlay";
+  overlay.innerHTML = '<div class="chat-switch-dots"><div></div><div></div><div></div><div></div><div></div></div>';
+  panel.appendChild(overlay);
+}
+
+function chatDismissSwitchOverlay() {
+  const overlay = document.querySelector(".chat-switch-overlay");
+  if (!overlay) return;
+  overlay.classList.add("fade-out");
+  overlay.addEventListener("transitionend", () => overlay.remove(), { once: true });
+  // Safety fallback in case transitionend doesn't fire
+  setTimeout(() => overlay.remove(), 200);
+}
 
 // --- Tool display mode helpers ---
 
@@ -63,31 +94,35 @@ function isReadOnlyTool(toolName, params) {
 }
 
 function chatGetToolDisplayMode() {
-  if (chatWorkspace) {
-    const stored = localStorage.getItem(`klaudii-tool-display-${chatWorkspace}`);
-    // Migrate old values
-    if (stored === "minimal" || stored === "normal") return "collapsed";
-    if (stored === "full") return "expanded";
-    return stored || "collapsed";
-  }
-  return "collapsed";
+  const stored = localStorage.getItem("klaudii-tool-display");
+  if (stored === "minimal" || stored === "normal") return "collapsed";
+  if (stored === "full") return "expanded";
+  return stored || "collapsed";
 }
 
 function chatSetToolDisplayMode(mode) {
   if (!["collapsed", "expanded", "hidden"].includes(mode)) return;
   chatToolDisplayMode = mode;
-  if (chatWorkspace) {
-    localStorage.setItem(`klaudii-tool-display-${chatWorkspace}`, mode);
-  }
-  const sel = document.getElementById("chat-tool-display");
-  if (sel && sel.value !== mode) sel.value = mode;
+  localStorage.setItem("klaudii-tool-display", mode);
   chatApplyToolDisplayMode();
 }
 
 function chatRestoreToolDisplayMode() {
   chatToolDisplayMode = chatGetToolDisplayMode();
-  const sel = document.getElementById("chat-tool-display");
-  if (sel) sel.value = chatToolDisplayMode;
+}
+
+function chatIsDebugMode() {
+  return localStorage.getItem("klaudii-debug") === "true";
+}
+
+function chatApplyDebugMode() {
+  const debug = chatIsDebugMode();
+  // Context stats
+  const stats = document.getElementById("chat-cumulative-stats");
+  if (stats) stats.style.display = debug ? "" : "none";
+  // Handoff button
+  const handoff = document.querySelector('[onclick="chatShowHandoffPreview()"]');
+  if (handoff) handoff.style.display = debug ? "" : "none";
 }
 
 function chatApplyToolDisplayMode() {
@@ -169,18 +204,191 @@ async function resolveWorkspacePath(name) {
  * @param {string} workspace
  * @param {number} [sessionNum] — session number (default: current)
  */
-async function chatFetchHistory(workspace, sessionNum) {
+async function chatFetchHistory(workspace, sessionNum, limit, offset) {
   try {
     const base = chatActiveCli === "claude" ? "/api/claude-chat" : "/api/gemini";
-    const qs = sessionNum ? `?session=${sessionNum}` : "";
+    const params = new URLSearchParams();
+    if (sessionNum) params.set("session", sessionNum);
+    if (limit) params.set("limit", limit);
+    if (offset) params.set("offset", offset);
+    const qs = params.toString() ? `?${params}` : "";
     const res = await fetch(`${base}/history/${encodeURIComponent(workspace)}${qs}`);
     const data = await res.json();
-    chatHistory[workspace] = Array.isArray(data) ? data : [];
+    // New format: { messages, total } — fall back to bare array for compat
+    const messages = data.messages || (Array.isArray(data) ? data : []);
+    const total = data.total != null ? data.total : messages.length;
+    if (!offset) {
+      chatHistory[workspace] = messages;
+      chatTotalHistoryCount = total;
+      chatLoadedHistoryCount = messages.length;
+      chatHistoryFullyLoaded = messages.length >= total;
+    }
+    return { messages, total };
   } catch {
     chatHistoryFetchFailed = true;
     chatHistory[workspace] = chatHistory[workspace] || [];
+    return { messages: chatHistory[workspace], total: chatHistory[workspace].length };
   }
-  return chatHistory[workspace];
+}
+
+/**
+ * Render a batch of history messages into a DocumentFragment.
+ * Returns the fragment — caller decides whether to append or prepend.
+ */
+function chatRenderHistoryBatch(messages, wsState, deferMarkdown) {
+  const frag = document.createDocumentFragment();
+  const pendingToolUses = new Map();
+  const deferredMdEls = []; // elements needing markdown upgrade
+  for (const msg of messages) {
+    if (msg.role === "tool_use") {
+      try { const d = JSON.parse(msg.content); pendingToolUses.set(d.tool_id, d); } catch {}
+    } else if (msg.role === "tool_result") {
+      try {
+        const d = JSON.parse(msg.content);
+        const tu = d.tool_id ? pendingToolUses.get(d.tool_id) : null;
+        if (tu) pendingToolUses.delete(d.tool_id);
+        const name = tu ? tu.tool_name : (d.tool_name || "tool");
+        if (name === "ExitPlanMode") {
+          chatShowPlanApproval(d.tool_id, (tu ? tu.parameters : {}).plan || d.output || "", false, frag);
+          const card = frag.querySelector(".chat-plan-approval:last-child");
+          if (card) {
+            card.classList.add("approved");
+            card.querySelector(".chat-plan-header").textContent = "Plan";
+            card.querySelectorAll("button").forEach(b => { b.disabled = true; b.style.display = "none"; });
+          }
+        } else if (/ask.*question/i.test(name)) {
+          chatRenderCompletedQuestion(tu ? tu.parameters : {}, d.output || "", d.status, frag);
+        } else {
+          chatRenderCompletedTool(name, d.tool_id, tu ? tu.parameters : {}, d.status, d.output, frag);
+        }
+      } catch {}
+    } else if (deferMarkdown && msg.role === "assistant" && msg.content) {
+      // Fast path: render plain text now, upgrade to markdown in idle time
+      const div = document.createElement("div");
+      div.className = "chat-msg assistant";
+      const md = document.createElement("div");
+      md.className = "md-content";
+      md.textContent = msg.content;
+      md._rawContent = msg.content;
+      deferredMdEls.push(md);
+      div.appendChild(md);
+      const timeStr = chatMsgTime(msg.ts);
+      if (timeStr) {
+        const tsEl = document.createElement("div");
+        tsEl.className = "chat-msg-ts";
+        tsEl.textContent = timeStr;
+        div.appendChild(tsEl);
+      }
+      frag.appendChild(div);
+    } else {
+      chatAppendMessage(msg.role, msg.content, false, null, msg.ts, msg.sender, msg.role === "user" ? "processing" : undefined, frag);
+    }
+  }
+  // Flush orphaned tool_uses
+  const isStreaming = wsState?.streaming || chatStreaming;
+  for (const tu of pendingToolUses.values()) {
+    if (tu.tool_name === "ExitPlanMode") {
+      chatShowPlanApproval(tu.tool_id, tu.parameters.plan || "", false, frag);
+    } else if (isStreaming) {
+      chatAppendToolUse(tu.tool_name, tu.tool_id, tu.parameters, frag);
+    } else {
+      chatRenderCompletedTool(tu.tool_name, tu.tool_id, tu.parameters, "interrupted", "", frag);
+    }
+  }
+  // Schedule deferred markdown rendering in idle time
+  if (deferredMdEls.length) {
+    let idx = 0;
+    function upgradeChunk(deadline) {
+      while (idx < deferredMdEls.length && (deadline.timeRemaining() > 2 || deadline.didTimeout)) {
+        const el = deferredMdEls[idx++];
+        if (el._rawContent && el.isConnected) {
+          el.innerHTML = chatRenderMarkdown(el._rawContent);
+          delete el._rawContent;
+        }
+      }
+      if (idx < deferredMdEls.length) requestIdleCallback(upgradeChunk, { timeout: 100 });
+    }
+    requestIdleCallback(upgradeChunk, { timeout: 200 });
+  }
+  return frag;
+}
+
+/**
+ * Load older messages when user scrolls to top.
+ */
+async function chatLoadOlderMessages() {
+  if (chatHistoryFullyLoaded || !chatWorkspace) return;
+  const container = document.getElementById("chat-messages");
+  if (!container) return;
+
+  // Show loading indicator
+  let spinner = container.querySelector(".chat-history-spinner");
+  if (!spinner) {
+    spinner = document.createElement("div");
+    spinner.className = "chat-history-spinner";
+    spinner.textContent = "Loading older messages...";
+    container.prepend(spinner);
+  }
+
+  const workspace = chatWorkspace;
+  const offset = chatLoadedHistoryCount;
+  const { messages } = await chatFetchHistory(workspace, chatSessionNum, CHAT_PAGE_SIZE, offset);
+  if (workspace !== chatWorkspace) return; // workspace changed
+
+  // Remove spinner
+  spinner = container.querySelector(".chat-history-spinner");
+  if (spinner) spinner.remove();
+
+  if (messages.length === 0) {
+    chatHistoryFullyLoaded = true;
+    return;
+  }
+
+  // Remember scroll position to restore after prepend
+  const scrollBottom = container.scrollHeight - container.scrollTop;
+
+  // Render and prepend
+  const sentinel = container.querySelector(".chat-scroll-sentinel");
+  const frag = chatRenderHistoryBatch(messages);
+  if (sentinel) {
+    sentinel.after(frag);
+  } else {
+    container.prepend(frag);
+  }
+
+  // Update counts
+  chatLoadedHistoryCount += messages.length;
+  chatHistoryFullyLoaded = chatLoadedHistoryCount >= chatTotalHistoryCount;
+  // Prepend to in-memory cache
+  chatHistory[workspace] = [...messages, ...(chatHistory[workspace] || [])];
+
+  // Restore scroll position so the view doesn't jump
+  container.scrollTop = container.scrollHeight - scrollBottom;
+}
+
+/**
+ * Set up IntersectionObserver for scroll-up loading.
+ */
+function chatSetupScrollObserver() {
+  if (chatScrollObserver) chatScrollObserver.disconnect();
+  const container = document.getElementById("chat-messages");
+  if (!container) return;
+
+  // Add sentinel at top
+  let sentinel = container.querySelector(".chat-scroll-sentinel");
+  if (!sentinel) {
+    sentinel = document.createElement("div");
+    sentinel.className = "chat-scroll-sentinel";
+    sentinel.style.height = "1px";
+    container.prepend(sentinel);
+  }
+
+  chatScrollObserver = new IntersectionObserver((entries) => {
+    if (entries[0].isIntersecting && !chatHistoryFullyLoaded) {
+      chatLoadOlderMessages();
+    }
+  }, { root: container, threshold: 0 });
+  chatScrollObserver.observe(sentinel);
 }
 
 /**
@@ -248,11 +456,8 @@ async function chatFetchSessions(workspace) {
     }
     const currentNum = chatSessionNum;
 
-    // Update the button label + dot for the current session
-    const currentSess = sessions.find(s => s.num === currentNum);
-    const dot = document.getElementById("chat-session-dot");
+    // Update the button label for the current session
     const label = document.getElementById("chat-session-label");
-    if (dot) dot.classList.toggle("active", !!(currentSess && currentSess.active));
     if (label) label.textContent = `Chat ${currentNum}`;
 
     // Build menu items (already sorted by activity desc from server)
@@ -614,7 +819,16 @@ function chatWsSend(payload) {
 }
 
 function chatConnect() {
-  if (chatWs && chatWs.readyState === WebSocket.OPEN) return;
+  if (chatWs && (chatWs.readyState === WebSocket.OPEN || chatWs.readyState === WebSocket.CONNECTING)) return;
+
+  // Close stale socket to prevent orphaned event handlers
+  if (chatWs) {
+    chatWs.onclose = null;
+    chatWs.onerror = null;
+    chatWs.onopen = null;
+    chatWs.onmessage = null;
+    if (chatWs.readyState !== WebSocket.CLOSED) chatWs.close();
+  }
 
   const wsUrl = `${location.protocol === "https:" ? "wss:" : "ws:"}//${location.host}/ws/chat`;
   console.log("[chat-ws] connecting to", wsUrl);
@@ -821,6 +1035,7 @@ function handleGeminiEvent(event) {
       if (event.role === "assistant" || !event.role) {
         // First assistant content — remove thinking indicator
         chatRemoveThinking();
+        chatResetThinkingGap();
 
         const text = event.content || "";
         chatCurrentMsgText += text;
@@ -845,6 +1060,7 @@ function handleGeminiEvent(event) {
 
     case "tool_use": {
       chatRemoveThinking();
+      chatResetThinkingGap();
       const toolName = event.tool_name || event.name || "tool";
       const toolId = event.tool_id || "";
       const params = event.parameters || event.args || event.input || {};
@@ -902,14 +1118,15 @@ function handleGeminiEvent(event) {
       } else {
         chatUpdateToolResult(toolId, status, output, error);
       }
-      // Model continues processing after the tool — show thinking indicator so the
-      // UI doesn't appear frozen between tool completion and the next text chunk.
-      if (chatStreaming) chatShowThinking("Thinking\u2026");
+      // Model continues processing after the tool — start gap timer so the
+      // thinking orbital re-appears if there's an idle gap before the next event.
+      chatResetThinkingGap();
       break;
     }
 
     case "error":
       chatRemoveThinking();
+      chatClearThinkingGap();
       glog("handle: error message=" + (event.message || "?"));
       chatAppendError(event.message || "Unknown error");
       chatSetStreaming(false);
@@ -917,6 +1134,7 @@ function handleGeminiEvent(event) {
 
     case "done":
       chatRemoveThinking();
+      chatClearThinkingGap();
       chatStopStreamPoll(); // cancel any open-while-streaming poll — live WS beat it
       glog(`handle: done exitCode=${event.exitCode} stopped=${event.stopped || false} assistantTextLen=${chatCurrentMsgText.length} stderr=${(event.stderr || "").slice(0, 200)}`);
       if (chatCurrentMsgText) {
@@ -942,7 +1160,8 @@ function handleGeminiEvent(event) {
         const doneWs = event.workspace;
         const doneSn = chatSessionNum;
         chatFetchHistory(doneWs, doneSn)
-          .then(hist => {
+          .then(result => {
+            const hist = result.messages || [];
             const lastMsg = hist && [...hist].reverse().find(m => m.role === "assistant");
             if (lastMsg) {
               const mdEl = partialEl.querySelector(".md-content");
@@ -1017,6 +1236,7 @@ function handleGeminiEvent(event) {
 
     case "permission_request":
       chatRemoveThinking();
+      chatClearThinkingGap(); // don't auto-show thinking while waiting for user approval
       glog("handle: permission_request request_id=" + event.request_id + " tool=" + event.tool_name);
       // AskUserQuestion: show interactive question card. The user's answers are
       // sent back as `updatedInput.answers` in the permission_response — NOT as a
@@ -1056,6 +1276,7 @@ function handleGeminiEvent(event) {
 
     case "thinking":
       chatRemoveThinking();
+      chatResetThinkingGap();
       glog("handle: thinking contentLen=" + (event.content || "").length);
       chatAppendThinkingBlock(event.content || "");
       break;
@@ -1100,28 +1321,28 @@ function handleGeminiEvent(event) {
 
     case "compact_boundary":
       glog("handle: compact_boundary pre=" + event.pre_tokens + " post=" + event.post_tokens);
-      chatAppendSystemNote(
+      if (chatIsDebugMode()) chatAppendSystemNote(
         "Context compacted" + (event.pre_tokens ? ` (was ~${Math.round(event.pre_tokens / 1000)}k tokens)` : "")
       );
       break;
 
     case "context_warning":
       glog("handle: context_warning usedPct=" + event.usedPct);
-      chatAppendSystemNote(
+      if (chatIsDebugMode()) chatAppendSystemNote(
         `Context ${event.usedPct}% full \u2014 handoff will trigger at 75%`
       );
       break;
 
     case "context_reload":
       glog("handle: context_reload reason=" + event.reason + " usedPct=" + event.usedPct);
-      chatAppendSystemNote(
+      if (chatIsDebugMode()) chatAppendSystemNote(
         "Context handoff" + (event.usedPct ? ` (was ${event.usedPct}% full)` : "") + " \u2014 swapping to fresh context, conversation continues here..."
       );
       break;
 
     case "handoff_complete":
       glog("handle: handoff_complete workspace=" + event.workspace);
-      chatAppendSystemNote("Handoff complete \u2014 fresh context ready.");
+      if (chatIsDebugMode()) chatAppendSystemNote("Handoff complete \u2014 fresh context ready.");
       break;
 
     case "session_handoff":
@@ -1304,8 +1525,8 @@ function chatShowPermissionRequest(requestId, toolName, toolInput, description, 
  * @param {string} planText - The markdown plan content
  * @param {boolean} isPermissionRequest - true if this is a permission_request (non-bypass mode)
  */
-function chatShowPlanApproval(id, planText, isPermissionRequest) {
-  const container = document.getElementById("chat-messages");
+function chatShowPlanApproval(id, planText, isPermissionRequest, target) {
+  const container = target || document.getElementById("chat-messages");
 
   // Remove any existing running tool pill for this id (the generic one from tool_use)
   const existingPill = container.querySelector(`.chat-tool.running[data-tool-id="${CSS.escape(id)}"]`);
@@ -1376,7 +1597,7 @@ function chatShowPlanApproval(id, planText, isPermissionRequest) {
 
   div.appendChild(btns);
   container.appendChild(div);
-  chatScrollToBottom();
+  if (!target) chatScrollToBottom();
 }
 
 // questions: [{question, header, options:[string|{label,description}], multiSelect?}]
@@ -1483,15 +1704,14 @@ function chatShowToolQuestions(id, questions, toolInput, isPermissionRequest) {
 
 // --- DOM rendering ---
 
-function chatAppendMessage(role, content, streaming, images, ts, sender, msgStatus) {
-  const container = document.getElementById("chat-messages");
+function chatAppendMessage(role, content, streaming, images, ts, sender, msgStatus, target) {
+  const container = target || document.getElementById("chat-messages");
   const div = document.createElement("div");
   div.className = `chat-msg ${role}${streaming ? " chat-streaming" : ""}`;
 
   if (role === "user") {
     const bubble = document.createElement("div");
-    const senderClass = sender === "architect" ? " bubble-architect" : sender === "shepherd" ? " bubble-shepherd" : "";
-    bubble.className = "user-bubble" + senderClass;
+    bubble.className = "user-bubble";
     // Render any attached images above the message text
     if (images && images.length) {
       const imgRow = document.createElement("div");
@@ -1504,12 +1724,6 @@ function chatAppendMessage(role, content, streaming, images, ts, sender, msgStat
         imgRow.appendChild(im);
       });
       bubble.appendChild(imgRow);
-    }
-    if (sender === "architect" || sender === "shepherd") {
-      const label = document.createElement("div");
-      label.className = "bubble-sender-label";
-      label.textContent = sender.charAt(0).toUpperCase() + sender.slice(1);
-      bubble.appendChild(label);
     }
     const textNode = document.createElement("span");
     textNode.textContent = content;
@@ -1539,7 +1753,7 @@ function chatAppendMessage(role, content, streaming, images, ts, sender, msgStat
   }
 
   container.appendChild(div);
-  chatScrollToBottom();
+  if (!target) chatScrollToBottom();
   return div;
 }
 
@@ -1863,8 +2077,8 @@ function chatConfirmTool(callId, outcome) {
  * Render a completed AskUserQuestion in history.
  * Shows the question text, option buttons (disabled, with selected one marked), and status.
  */
-function chatRenderCompletedQuestion(params, output, status) {
-  const container = document.getElementById("chat-messages");
+function chatRenderCompletedQuestion(params, output, status, target) {
+  const container = target || document.getElementById("chat-messages");
   const div = document.createElement("div");
   div.className = "chat-permission-request";
   if (status === "error") div.classList.add("chat-question-error");
@@ -1927,8 +2141,8 @@ function chatRenderCompletedQuestion(params, output, status) {
   container.appendChild(div);
 }
 
-function chatRenderCompletedTool(toolName, toolId, params, status, output) {
-  const container = document.getElementById("chat-messages");
+function chatRenderCompletedTool(toolName, toolId, params, status, output, target) {
+  const container = target || document.getElementById("chat-messages");
 
   // Check if we can group with previous element
   if (chatIsGroupableTool(toolName)) {
@@ -1938,7 +2152,7 @@ function chatRenderCompletedTool(toolName, toolId, params, status, output) {
         const itemsDiv = lastEl.querySelector(".chat-tool-group-items");
         itemsDiv.appendChild(chatMakeSubItem(toolName, toolId, params, false, status, output));
         chatUpdateGroupSummary(lastEl);
-        chatScrollToBottom();
+        if (!target) chatScrollToBottom();
         return;
       }
       if (lastEl.classList.contains("chat-tool") && !lastEl.classList.contains("chat-tool-group")) {
@@ -1951,7 +2165,7 @@ function chatRenderCompletedTool(toolName, toolId, params, status, output) {
         itemsDiv.appendChild(chatMakeSubItem(toolName, toolId, params, false, status, output));
         chatUpdateGroupSummary(group);
         container.replaceChild(group, lastEl);
-        chatScrollToBottom();
+        if (!target) chatScrollToBottom();
         return;
       }
     }
@@ -2015,7 +2229,7 @@ function chatRenderCompletedTool(toolName, toolId, params, status, output) {
   }
 
   container.appendChild(pill);
-  chatScrollToBottom();
+  if (!target) chatScrollToBottom();
 }
 
 /** Start a client-side elapsed timer on a running pill/sub-item element. */
@@ -2044,8 +2258,8 @@ function chatStopPillTimer(el) {
  * Shows tool name + short description inline.
  * Full params are always visible in the body.
  */
-function chatAppendToolUse(toolName, toolId, params) {
-  const container = document.getElementById("chat-messages");
+function chatAppendToolUse(toolName, toolId, params, target) {
+  const container = target || document.getElementById("chat-messages");
 
   // Check if we can group with previous element
   if (chatIsGroupableTool(toolName)) {
@@ -2055,7 +2269,7 @@ function chatAppendToolUse(toolName, toolId, params) {
         const itemsDiv = lastEl.querySelector(".chat-tool-group-items");
         itemsDiv.appendChild(chatMakeSubItem(toolName, toolId, params, true, null, null));
         chatUpdateGroupSummary(lastEl);
-        chatScrollToBottom();
+        if (!target) chatScrollToBottom();
         return;
       }
       if (lastEl.classList.contains("chat-tool") && !lastEl.classList.contains("chat-tool-group")) {
@@ -2072,7 +2286,7 @@ function chatAppendToolUse(toolName, toolId, params) {
         chatUpdateGroupSummary(group);
         chatStopPillTimer(lastEl);
         container.replaceChild(group, lastEl);
-        chatScrollToBottom();
+        if (!target) chatScrollToBottom();
         return;
       }
     }
@@ -2114,7 +2328,7 @@ function chatAppendToolUse(toolName, toolId, params) {
   }
 
   container.appendChild(pill);
-  chatScrollToBottom();
+  if (!target) chatScrollToBottom();
 }
 
 /**
@@ -2430,10 +2644,11 @@ function chatShowResultFooter(stats, subtype, errors) {
   }
 }
 
-/** Update the context remaining % in the input footer. */
+/** Update the context remaining % in the input footer (debug mode only). */
 function chatUpdateCumulativeStats(cumulative) {
   const el = document.getElementById("chat-cumulative-stats");
   if (!el) return;
+  if (!chatIsDebugMode()) { el.textContent = ""; return; }
   if (cumulative.context_remaining_pct != null && cumulative.last_input_tokens > 0) {
     el.textContent = cumulative.context_remaining_pct + "% context remaining";
   } else {
@@ -2676,7 +2891,8 @@ async function chatRenderRecoveredContent() {
   // Give the server a moment to finish recovery before fetching
   await new Promise(r => setTimeout(r, 600));
   try {
-    const history = await chatFetchHistory(ws, sn);
+    const historyResult = await chatFetchHistory(ws, sn);
+    const history = historyResult.messages || [];
     const newMsgs = history.slice(knownLen);
     if (newMsgs.length === 0) {
       glog("recovery-check: no new content");
@@ -2733,10 +2949,11 @@ function chatStartStreamPoll(historyLengthAtOpen) {
   chatStreamPollTimer = setInterval(async () => {
     try {
       // Fetch history and latest partial content in parallel
-      const [history, partialData] = await Promise.all([
+      const [historyResult, partialData] = await Promise.all([
         chatFetchHistory(ws, sn),
         fetch(`/api/gemini/stream-partial/${encodeURIComponent(ws)}${sn ? `?session=${sn}` : ""}`).then(r => r.ok ? r.json() : null).catch(() => null),
       ]);
+      const history = historyResult.messages || [];
 
       // Keep partial bubble in sync with what's been generated so far
       if (partialData && partialData.text) {
@@ -2812,69 +3029,48 @@ async function chatShowChat(wsState = null) {
   container.innerHTML = "";
   // Checkmarks are now inline on user bubbles — no global reset needed
 
-  // Fetch sessions list, conversation history, and cumulative stats in parallel
+  // Fetch history, sessions, and stats in parallel — all must complete before reveal
   if (chatWorkspace) {
     const sessionNumAtCall = chatSessionNum;
-    const [, history] = await Promise.all([
+    chatFetchCumulativeStats(chatWorkspace); // stats are cosmetic, don't block
+    const [historyResult] = await Promise.all([
+      chatFetchHistory(chatWorkspace, sessionNumAtCall, CHAT_INITIAL_LOAD),
       chatFetchSessions(chatWorkspace),
-      chatFetchHistory(chatWorkspace, sessionNumAtCall),
-      chatFetchCumulativeStats(chatWorkspace),
     ]);
     // Bail out if workspace changed during async fetch (user switched workspaces)
     if (chatWorkspace !== workspaceAtCall) {
       glog("showChat: workspace changed during fetch, aborting stale render");
       return;
     }
-    const pendingToolUses = new Map();
-    for (const msg of history) {
-      if (msg.role === "tool_use") {
-        try {
-          const d = JSON.parse(msg.content);
-          pendingToolUses.set(d.tool_id, d);
-        } catch { /* ignore */ }
-      } else if (msg.role === "tool_result") {
-        try {
-          const d = JSON.parse(msg.content);
-          const tu = d.tool_id ? pendingToolUses.get(d.tool_id) : null;
-          if (tu) pendingToolUses.delete(d.tool_id);
-          const name = tu ? tu.tool_name : (d.tool_name || "tool");
-          // ExitPlanMode: render as plan card instead of generic tool pill
-          if (name === "ExitPlanMode") {
-            chatShowPlanApproval(d.tool_id, (tu ? tu.parameters : {}).plan || d.output || "", false);
-            const card = document.querySelector(".chat-plan-approval:last-child");
-            if (card) {
-              card.classList.add("approved");
-              card.querySelector(".chat-plan-header").textContent = "Plan";
-              card.querySelectorAll("button").forEach(b => { b.disabled = true; b.style.display = "none"; });
-            }
-          } else if (/ask.*question/i.test(name)) {
-            // AskUserQuestion: render completed question card with selected answer
-            chatRenderCompletedQuestion(tu ? tu.parameters : {}, d.output || "", d.status);
-          } else {
-            chatRenderCompletedTool(name, d.tool_id, tu ? tu.parameters : {}, d.status, d.output);
-          }
-        } catch { /* ignore */ }
-      } else {
-        // Render non-tool messages immediately but keep pendingToolUses alive —
-        // tool_result may arrive after intervening assistant/user messages due to
-        // batch boundaries from synthetic result events.
-        // History user messages show final "processing" checkmarks (already completed).
-        chatAppendMessage(msg.role, msg.content, false, null, msg.ts, msg.sender, msg.role === "user" ? "processing" : undefined);
-      }
-    }
-    // Flush any tool_uses that never got a result.
-    // If we're not currently streaming, these are orphaned/stale — render as completed.
-    // If we ARE streaming, they may still be in-progress — render as running.
-    const isCurrentlyStreaming = wsState?.streaming || chatStreaming;
-    for (const tu of pendingToolUses.values()) {
-      if (tu.tool_name === "ExitPlanMode") {
-        chatShowPlanApproval(tu.tool_id, tu.parameters.plan || "");
-      } else if (isCurrentlyStreaming) {
-        chatAppendToolUse(tu.tool_name, tu.tool_id, tu.parameters);
-      } else {
-        // Orphaned — render as a completed tool with no output
-        chatRenderCompletedTool(tu.tool_name, tu.tool_id, tu.parameters, "interrupted", "");
-      }
+    const history = historyResult.messages || [];
+    glog(`showChat: loaded ${history.length}/${historyResult.total} messages`);
+
+    // Batch-render into DocumentFragment — defer markdown parsing to idle time
+    const frag = chatRenderHistoryBatch(history, wsState, true);
+    container.appendChild(frag);
+    chatApplyToolDisplayMode();
+    chatScrollToBottom();
+
+    // Set up scroll-up loading for older messages
+    if (!chatHistoryFullyLoaded) {
+      chatSetupScrollObserver();
+      // Background-fill next page after a short delay
+      const bgWorkspace = chatWorkspace;
+      const bgSession = sessionNumAtCall;
+      setTimeout(async () => {
+        if (chatWorkspace !== bgWorkspace) return;
+        const { messages: more } = await chatFetchHistory(bgWorkspace, bgSession, CHAT_PAGE_SIZE, chatLoadedHistoryCount);
+        if (chatWorkspace !== bgWorkspace || more.length === 0) return;
+        const scrollBottom = container.scrollHeight - container.scrollTop;
+        const sentinel = container.querySelector(".chat-scroll-sentinel");
+        const moreFrag = chatRenderHistoryBatch(more, null, true);
+        if (sentinel) { sentinel.after(moreFrag); } else { container.prepend(moreFrag); }
+        chatLoadedHistoryCount += more.length;
+        chatHistoryFullyLoaded = chatLoadedHistoryCount >= chatTotalHistoryCount;
+        chatHistory[bgWorkspace] = [...more, ...(chatHistory[bgWorkspace] || [])];
+        container.scrollTop = container.scrollHeight - scrollBottom;
+        chatApplyToolDisplayMode();
+      }, 50);
     }
 
     // If the server has a pending permission_request (e.g. from relay replay after
@@ -2896,6 +3092,7 @@ async function chatShowChat(wsState = null) {
         // Skip the chatSetStreaming(false) below — poll completion handles it
         const input = document.getElementById("chat-input");
         if (input) await chatRestoreDraft(wsState);
+        chatDismissSwitchOverlay();
         return;
       }
     }
@@ -2908,6 +3105,9 @@ async function chatShowChat(wsState = null) {
     await chatRestoreDraft(wsState);
     input.focus();
   }
+
+  // All UI elements are ready — reveal
+  chatDismissSwitchOverlay();
 }
 
 // --- Overlay controls ---
@@ -2943,17 +3143,12 @@ async function openChat(project, projectPath, cli) {
   chatLocalDraftActive = false;
   clearTimeout(chatLocalDraftTimeout);
 
-  // Check if this is an agent chat (set by openAgentChat in app.js)
-  chatAgentRole = window._agentRole || null;
+  chatAgentRole = null;
 
   const cliLabel = chatActiveCli === "claude" ? "Claude" : "Gemini";
 
-  // Set title — show agent role label when in agent chat mode
-  if (chatAgentRole) {
-    const roleLabel = chatAgentRole.charAt(0).toUpperCase() + chatAgentRole.slice(1);
-    document.getElementById("chat-title").innerHTML =
-      `<span class="agent-role-badge ${chatAgentRole}">${roleLabel}</span>`;
-  } else if (project) {
+  // Set title
+  if (project) {
     const parts = project.split("--");
     const repo = parts[0];
     const branch = parts.length > 1 ? parts.slice(1).join("--") : null;
@@ -2965,10 +3160,10 @@ async function openChat(project, projectPath, cli) {
 
   // Update placeholder
   const inputEl = document.getElementById("chat-input");
-  const placeholderName = chatAgentRole
-    ? chatAgentRole.charAt(0).toUpperCase() + chatAgentRole.slice(1)
-    : cliLabel;
-  if (inputEl) inputEl.placeholder = `Message ${placeholderName}...`;
+  if (inputEl) inputEl.placeholder = `Message ${cliLabel}...`;
+
+  // Show loading overlay immediately so the transition is clean
+  chatShowSwitchOverlay();
 
   // Reset streaming state and image attachments
   chatCurrentMsgEl = null;
@@ -2981,41 +3176,41 @@ async function openChat(project, projectPath, cli) {
   chatRestorePermissionMode();
   chatRestoreThinking();
   chatRestoreToolDisplayMode();
+  chatApplyDebugMode();
 
-  // Restore last session from server state (non-blocking — chatShowChat uses it)
+  // Restore session state — fetch workspace-state and sessions list in parallel
   chatSessionNum = null;
   let wsState = null;
   if (project) {
-    try {
-      const wsRes = await fetch(`/api/workspace-state/${encodeURIComponent(project)}`);
-      wsState = await wsRes.json();
-      const stateMode = chatActiveCli === "claude" ? "claude-local" : "gemini";
-      if (wsState.sessionNum != null) {
-        chatSessionNum = wsState.sessionNum;
+    const base = chatActiveCli === "claude" ? "/api/claude-chat" : "/api/gemini";
+    const [wsData, sessData] = await Promise.all([
+      fetch(`/api/workspace-state/${encodeURIComponent(project)}`).then(r => r.json()).catch(() => null),
+      fetch(`${base}/sessions/${encodeURIComponent(project)}`).then(r => r.json()).catch(() => null),
+    ]);
+    if (wsData) {
+      wsState = wsData;
+      if (wsData.sessionNum != null) {
+        chatSessionNum = wsData.sessionNum;
         glog(`openChat: restoring session#${chatSessionNum} from server state`);
       }
-      chatOpenedWhileStreaming = wsState.streaming || false;
-      // Record that this workspace is in this mode
+      chatOpenedWhileStreaming = wsData.streaming || false;
+      const stateMode = chatActiveCli === "claude" ? "claude-local" : "gemini";
       fetch(`/api/workspace-state/${encodeURIComponent(project)}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ mode: stateMode }),
       }).catch(() => {});
-    } catch { /* non-fatal */ }
-  }
-
-  // If no explicit session (no URL param, no workspace-state), pick the most recently modified one
-  if (chatSessionNum == null && project) {
-    try {
-      const base = chatActiveCli === "claude" ? "/api/claude-chat" : "/api/gemini";
-      const sessRes = await fetch(`${base}/sessions/${encodeURIComponent(project)}`);
-      const sessData = await sessRes.json();
+    }
+    if (chatSessionNum == null && sessData) {
       const sessions = sessData.sessions || [];
       if (sessions.length) {
-        chatSessionNum = sessions[0].num; // sorted by lastActivity desc
+        chatSessionNum = sessions[0].num;
         glog(`openChat: picked MRU session#${chatSessionNum}`);
       }
-    } catch { /* non-fatal */ }
+    }
+    // Set session label immediately so it doesn't flash the old value
+    const label = document.getElementById("chat-session-label");
+    if (label && chatSessionNum != null) label.textContent = `Chat ${chatSessionNum}`;
   }
 
   // Force model list refresh for the new CLI backend
@@ -3046,47 +3241,15 @@ async function openChat(project, projectPath, cli) {
   // Connect WS if needed (only if we have a workspace for chat)
   if (project) chatConnect();
 
-  // Check auth — use cached health data for instant response, fall back to fetch
-  const authField = chatActiveCli === "claude" ? "claudeChatAuth" : "chatAuth";
-  const cachedAuth = (typeof lastHealthData !== "undefined" && lastHealthData && lastHealthData[authField]) || null;
-
   // No workspace — opened from auth dot, always show auth panel
   if (!project) {
     chatShowAuthPanel();
+    chatDismissSwitchOverlay();
     return;
   }
 
-  if (cachedAuth && cachedAuth.loggedIn) {
-    chatShowChat(wsState);
-  } else if (cachedAuth && !cachedAuth.loggedIn) {
-    // Check if workspace has an API key (fast local fetch)
-    try {
-      const keyBase = chatActiveCli === "claude" ? "/api/claude-chat" : "/api/gemini";
-      const keyRes = await fetch(`${keyBase}/apikey/${encodeURIComponent(project)}`);
-      const keyData = await keyRes.json();
-      if (keyData.hasKey) {
-        chatShowChat(wsState);
-      } else {
-        chatShowAuthPanel();
-      }
-    } catch {
-      chatShowAuthPanel();
-    }
-  } else {
-    // No cached data yet — fetch and decide
-    try {
-      const res = await fetch("/api/health");
-      const data = await res.json();
-      const authData = data[authField];
-      if (authData && authData.loggedIn) {
-        chatShowChat(wsState);
-      } else {
-        chatShowAuthPanel();
-      }
-    } catch {
-      chatShowChat(wsState);
-    }
-  }
+  // For workspaces, show chat immediately — if auth is bad the CLI will report it
+  chatShowChat(wsState);
 }
 
 function closeGeminiChat() {
@@ -3265,7 +3428,17 @@ function chatShowThinking() {
   canvas.width = SIZE;
   canvas.height = SIZE;
   div.appendChild(canvas);
+  // Animate in — start collapsed, expand
+  div.style.maxHeight = "0";
+  div.style.overflow = "hidden";
+  div.style.opacity = "0";
+  div.style.transition = "max-height 0.25s ease, opacity 0.2s ease, padding 0.25s ease";
+  div.style.padding = "0";
   container.appendChild(div);
+  div.offsetHeight; // force reflow
+  div.style.maxHeight = "60px";
+  div.style.opacity = "1";
+  div.style.padding = "";
   chatScrollToBottom();
 
   const ctx = canvas.getContext("2d");
@@ -3283,19 +3456,33 @@ function chatShowThinking() {
   let speedMult = 1;
   let speedTarget = 1;
   let targetCooldown = 0;
+  let collapsing = false; // per-instance flag — not shared with other indicators
+  let collapseAlpha = 1;
+
+  // Expose collapse trigger on element so chatRemoveThinking can call it
+  div._collapse = () => { collapsing = true; };
 
   function frame(t) {
-    // Drift toward a new speed target every 60-150 frames
-    if (--targetCooldown <= 0) {
-      targetCooldown = 60 + Math.random() * 90;
-      const r = Math.random();
-      speedTarget = r < 0.15 ? 0.15 + Math.random() * 0.35  // slow drift
-                 : r < 0.65 ? 0.7  + Math.random() * 0.8    // normal
-                 :             2.5  + Math.random() * 2.5;   // energetic burst
+    if (!collapsing) {
+      // Drift toward a new speed target every 60-150 frames
+      if (--targetCooldown <= 0) {
+        targetCooldown = 60 + Math.random() * 90;
+        const r = Math.random();
+        speedTarget = r < 0.15 ? 0.15 + Math.random() * 0.35
+                   : r < 0.65 ? 0.7  + Math.random() * 0.8
+                   :             2.5  + Math.random() * 2.5;
+      }
+      speedMult += (speedTarget - speedMult) * 0.04;
+    } else {
+      // Collapsing: speed up rotation, shrink radius, fade out
+      speedMult = Math.min(speedMult * 1.03, 8);
+      collapseAlpha = Math.max(0, collapseAlpha - 0.012);
+      for (const p of particles) {
+        p.radius *= 0.97;
+      }
+      if (collapseAlpha <= 0) return; // stop animating
     }
-    speedMult += (speedTarget - speedMult) * 0.04;
 
-    // Re-read theme colors each frame so theme switches take effect live
     const cs = getComputedStyle(document.documentElement);
     const colors = [
       cs.getPropertyValue("--s-green").trim(),
@@ -3303,10 +3490,11 @@ function chatShowThinking() {
       cs.getPropertyValue("--text-strong").trim(),
     ];
 
-    ctx.clearRect(0, 0, SIZE, SIZE); // transparent — no background box
+    ctx.clearRect(0, 0, SIZE, SIZE);
+    ctx.globalAlpha = collapsing ? collapseAlpha : 1;
     for (const p of particles) {
       p.angle += p.speed * speedMult;
-      const r = p.radius + Math.sin(t * 0.003 + p.wobble) * 2.5;
+      const r = p.radius + (collapsing ? 0 : Math.sin(t * 0.003 + p.wobble) * 2.5);
       const x = cx + Math.cos(p.angle) * r;
       const y = cy + Math.sin(p.angle) * r;
       ctx.fillStyle = colors[p.colorIdx];
@@ -3314,9 +3502,10 @@ function chatShowThinking() {
       ctx.arc(x, y, 1, 0, Math.PI * 2);
       ctx.fill();
     }
-    window._chatOrbitalRaf = requestAnimationFrame(frame);
+    ctx.globalAlpha = 1;
+    requestAnimationFrame(frame);
   }
-  window._chatOrbitalRaf = requestAnimationFrame(frame);
+  requestAnimationFrame(frame);
 }
 
 function chatRemoveThinking() {
@@ -3324,16 +3513,44 @@ function chatRemoveThinking() {
   if (el) {
     const elapsed = window._chatThinkingStart ? Date.now() - window._chatThinkingStart : "?";
     glog(`removeThinking: visible for ${elapsed}ms`);
-    el.remove();
-  }
-  if (window._chatOrbitalRaf) {
-    cancelAnimationFrame(window._chatOrbitalRaf);
-    window._chatOrbitalRaf = null;
+
+    // Clear ID so a new thinking indicator can be created while this one fades
+    el.removeAttribute("id");
+
+    // Signal the per-instance animation to spiral inward and fade
+    if (el._collapse) el._collapse();
+
+    // Smooth height collapse using inline styles — CSS class can't override inline styles,
+    // so we must transition inline: snapshot current height, then animate to 0.
+    const h = el.offsetHeight;
+    el.style.transition = "max-height 1s ease, opacity 0.8s ease, padding 1s ease";
+    el.style.overflow = "hidden";
+    el.style.maxHeight = h + "px";
+    el.offsetHeight; // force reflow (establish start state)
+    el.style.maxHeight = "0";
+    el.style.opacity = "0";
+    el.style.padding = "0";
+    el.addEventListener("transitionend", () => el.remove(), { once: true });
+    setTimeout(() => { if (el.parentNode) el.remove(); }, 1200);
   }
   if (window._chatThinkingTimer) {
     clearInterval(window._chatThinkingTimer);
     window._chatThinkingTimer = null;
   }
+}
+
+/** Reset the idle-gap timer. Called on every substantive event during streaming.
+ *  If no event arrives within 400ms, the thinking orbital re-appears. */
+function chatResetThinkingGap() {
+  if (chatThinkingGapTimer) clearTimeout(chatThinkingGapTimer);
+  if (!chatStreaming) return;
+  chatThinkingGapTimer = setTimeout(() => {
+    if (chatStreaming) chatShowThinking();
+  }, 400);
+}
+
+function chatClearThinkingGap() {
+  if (chatThinkingGapTimer) { clearTimeout(chatThinkingGapTimer); chatThinkingGapTimer = null; }
 }
 
 function chatStopStreaming() {
@@ -3379,8 +3596,8 @@ function chatSetStreaming(active) {
     chatCurrentMsgEl.classList.remove("chat-streaming");
   }
 
-  // Clean up thinking indicator when streaming ends
-  if (!active) chatRemoveThinking();
+  // Clean up thinking indicator and gap timer when streaming ends
+  if (!active) { chatRemoveThinking(); chatClearThinkingGap(); }
 }
 
 // --- URL-driven initialization ---
