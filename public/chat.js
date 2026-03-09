@@ -275,14 +275,16 @@ async function chatFetchSessions(workspace) {
         item.appendChild(timeEl);
         menu.appendChild(item);
       }
+      // "+ New Chat" at the bottom of the dropdown
+      const newItem = document.createElement("div");
+      newItem.className = "chat-session-item new-chat";
+      newItem.onclick = () => { chatCloseSessionMenu(); clearGeminiSession(); };
+      newItem.textContent = "+ New Chat";
+      menu.appendChild(newItem);
     }
-
-    // Show dropdown only when there are 2+ sessions
-    dropdown.classList.toggle("hidden", sessions.length < 2);
 
     return data;
   } catch {
-    dropdown.classList.add("hidden");
     return null;
   }
 }

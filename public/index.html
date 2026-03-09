@@ -137,7 +137,7 @@
             <option value="expanded">Expanded</option>
             <option value="hidden">Hidden</option>
           </select>
-          <div id="chat-session-dropdown" class="chat-session-dropdown hidden">
+          <div id="chat-session-dropdown" class="chat-session-dropdown">
             <button id="chat-session-btn" class="chat-session-btn" onclick="chatToggleSessionMenu()">
               <span id="chat-session-dot" class="session-dot"></span>
               <span id="chat-session-label">Chat 1</span>
@@ -146,7 +146,6 @@
             <div id="chat-session-menu" class="chat-session-menu hidden"></div>
           </div>
           <button class="btn btn-sm" onclick="chatShowHandoffPreview()" title="Preview handoff briefing">Handoff</button>
-          <button class="btn btn-sm" onclick="clearGeminiSession()">New Chat</button>
           <button class="btn btn-sm" onclick="closeGeminiChat()">Close</button>
         </div>
       </div>
