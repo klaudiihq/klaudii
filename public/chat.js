@@ -1096,29 +1096,37 @@ function handleGeminiEvent(event) {
       );
       break;
 
-    case "context_reload":
-      glog("handle: context_reload reason=" + event.reason + " usedPct=" + event.usedPct);
+    case "context_warning":
+      glog("handle: context_warning usedPct=" + event.usedPct);
       chatAppendSystemNote(
-        "Context reloaded" + (event.usedPct ? ` (was ${event.usedPct}% full)` : "") + " \u2014 session refreshed with conversation history"
+        `Context ${event.usedPct}% full \u2014 handoff will trigger at 75%`
       );
       break;
 
+    case "context_reload":
+      glog("handle: context_reload reason=" + event.reason + " usedPct=" + event.usedPct);
+      chatAppendSystemNote(
+        "Context handoff" + (event.usedPct ? ` (was ${event.usedPct}% full)` : "") + " \u2014 swapping to fresh context, conversation continues here..."
+      );
+      break;
+
+    case "handoff_complete":
+      glog("handle: handoff_complete workspace=" + event.workspace);
+      chatAppendSystemNote("Handoff complete \u2014 fresh context ready.");
+      break;
+
     case "session_handoff":
-      // Server created a new session via auto-handoff. Switch to it so the user
-      // sees the continuation, and update workspace-state + session dropdown.
+      // Legacy: kept for backward compat, but handoff no longer changes session number.
       glog("handle: session_handoff newSession=" + event.newSession);
       if (event.newSession && event.workspace === chatWorkspace) {
         chatSessionNum = event.newSession;
-        // Update workspace-state server-side
         fetch(`/api/workspace-state/${encodeURIComponent(chatWorkspace)}`, {
           method: "PATCH",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ sessionNum: event.newSession, draftMode: chatActiveCli === "claude" ? "claude-local" : "gemini" }),
         }).catch(() => {});
-        // Update URL
         const cur = getChatParams();
         setChatParams({ ...cur, chat: event.newSession });
-        // Refresh session dropdown
         chatPopulateSessionDropdown();
       }
       break;
@@ -3522,6 +3530,45 @@ if (chatPanel) {
 document.addEventListener("visibilitychange", () => {
   if (!document.hidden) chatScrollToBottom();
 });
+
+// --- Handoff Preview Modal ---
+
+function chatShowHandoffPreview() {
+  const body = document.getElementById("handoff-modal-body");
+  body.textContent = "Loading briefing...";
+  document.getElementById("handoff-modal").classList.remove("hidden");
+
+  if (!chatWorkspace) {
+    body.textContent = "(No workspace selected)";
+    return;
+  }
+
+  fetch(`/api/claude-chat/briefing/${encodeURIComponent(chatWorkspace)}`)
+    .then(r => {
+      if (!r.ok) throw new Error(`HTTP ${r.status}`);
+      const ct = r.headers.get("content-type") || "";
+      if (!ct.includes("application/json")) throw new Error("Server returned non-JSON response — try restarting the server");
+      return r.json();
+    })
+    .then(data => {
+      const text = data.briefing || "(empty)";
+      // Render as markdown if marked is available, otherwise plain text
+      if (typeof marked !== "undefined" && marked.parse) {
+        body.style.whiteSpace = "normal";
+        body.innerHTML = marked.parse(text);
+      } else {
+        body.style.whiteSpace = "pre-wrap";
+        body.textContent = text;
+      }
+    })
+    .catch(err => {
+      body.textContent = "Failed to load briefing: " + err.message;
+    });
+}
+
+function closeHandoffModal() {
+  document.getElementById("handoff-modal").classList.add("hidden");
+}
 
 // Auto-open chat from URL params on page load
 initFromUrlParams();

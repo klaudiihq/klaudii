@@ -456,6 +456,11 @@ app.get("/api/claude-chat/stats/:project", (req, res) => {
   res.json(workspaceState.getCumulativeStats(req.params.project));
 });
 
+app.get("/api/claude-chat/briefing/:project", (req, res) => {
+  const briefing = claudeChat.generateBriefing(req.params.project);
+  res.json({ briefing: briefing || "(No conversation history — nothing to hand off)" });
+});
+
 // Save Claude API key (global or per-workspace)
 app.post("/api/claude-chat/apikey", (req, res) => {
   const { apiKey, workspace } = req.body;
@@ -619,7 +624,11 @@ wss.on("connection", (ws) => {
         return;
       }
 
-      const proj = getProject(workspace);
+      let proj = getProject(workspace);
+      // Virtual workspace for Architect (chat-only, no project directory)
+      if (!proj && workspace === "__architect__") {
+        proj = { name: "__architect__", path: os.homedir() };
+      }
       if (!proj) {
         console.log(`[chat-ws] project not found: ${workspace}`);
         ws.send(JSON.stringify({ type: "error", workspace, message: `project "${workspace}" not found` }));
@@ -759,7 +768,40 @@ wss.on("connection", (ws) => {
               }
               workspaceState.setStreaming(workspace, false);
               workspaceState.touchChatActivity(workspace);
-              broadcastToWorkspace(workspace, { type: "done", workspace, exitCode: 0 });
+
+              // --- Auto-handoff: check if context is running low ---
+              const cumStats = workspaceState.getCumulativeStats(workspace);
+              const usedPct = cumStats.context_used_pct || 0;
+              if (usedPct >= 75 && backend === "claude") {
+                console.log(`[server] AUTO-HANDOFF triggered workspace=${workspace} usedPct=${usedPct}%`);
+                broadcastToWorkspace(workspace, { type: "context_reload", workspace, reason: "auto", usedPct });
+                const proj = getProject(workspace);
+                if (proj) {
+                  workspaceState.resetCumulativeStats(workspace);
+                  claudeChat.performHandoff(workspace, proj.path, config, { permissionMode: "bypassPermissions" })
+                    .then((result) => {
+                      if (result) {
+                        console.log(`[server] handoff complete workspace=${workspace} session#${result.sessionNum} (same chat)`);
+                        wireRelayEvents(workspace, result.handle, result.sessionNum);
+                        broadcastToWorkspace(workspace, { type: "handoff_complete", workspace });
+                      } else {
+                        console.log(`[server] handoff returned null workspace=${workspace}`);
+                        broadcastToWorkspace(workspace, { type: "done", workspace, exitCode: 0 });
+                      }
+                    })
+                    .catch((err) => {
+                      console.error(`[server] handoff failed workspace=${workspace}: ${err.message}`);
+                      broadcastToWorkspace(workspace, { type: "done", workspace, exitCode: 0 });
+                    });
+                } else {
+                  broadcastToWorkspace(workspace, { type: "done", workspace, exitCode: 0 });
+                }
+              } else {
+                if (usedPct >= 60) {
+                  broadcastToWorkspace(workspace, { type: "context_warning", workspace, usedPct, remaining: 100 - usedPct });
+                }
+                broadcastToWorkspace(workspace, { type: "done", workspace, exitCode: 0 });
+              }
             }
           }
         });
@@ -953,6 +995,9 @@ function wireRelayEvents(workspace, handle, sessionNum) {
         workspaceState.touchChatActivity(workspace);
 
         // --- Auto-handoff: check if context is running low ---
+        // Two tiers:
+        //   60-74%: warn the user (visual indicator, no interruption)
+        //   75%+:   auto-handoff to a fresh session before Claude hits compaction (~80-85%)
         const cumStats = workspaceState.getCumulativeStats(workspace);
         const usedPct = cumStats.context_used_pct || 0;
         if (usedPct >= 75) {
@@ -964,11 +1009,9 @@ function wireRelayEvents(workspace, handle, sessionNum) {
             claudeChat.performHandoff(workspace, proj.path, config, { permissionMode: "bypassPermissions" })
               .then((result) => {
                 if (result) {
-                  console.log(`[server] handoff complete workspace=${workspace} newSession=${result.sessionNum}`);
-                  // Wire up the new relay's events (pass new session number so history goes to the right place)
+                  console.log(`[server] handoff complete workspace=${workspace} session#${result.sessionNum} (same chat)`);
                   wireRelayEvents(workspace, result.handle, result.sessionNum);
-                  // Tell clients about the new session so they can switch
-                  broadcastToWorkspace(workspace, { type: "session_handoff", workspace, newSession: result.sessionNum });
+                  broadcastToWorkspace(workspace, { type: "handoff_complete", workspace });
                 } else {
                   console.log(`[server] handoff returned null workspace=${workspace}`);
                   broadcastToWorkspace(workspace, { type: "done", workspace, exitCode: 0 });
@@ -982,6 +1025,10 @@ function wireRelayEvents(workspace, handle, sessionNum) {
             broadcastToWorkspace(workspace, { type: "done", workspace, exitCode: 0 });
           }
         } else {
+          // Emit a context_warning at 60%+ so the UI can show a visual indicator
+          if (usedPct >= 60) {
+            broadcastToWorkspace(workspace, { type: "context_warning", workspace, usedPct, remaining: 100 - usedPct });
+          }
           broadcastToWorkspace(workspace, { type: "done", workspace, exitCode: 0 });
         }
       }

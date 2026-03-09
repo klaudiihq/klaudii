@@ -145,6 +145,7 @@
             </button>
             <div id="chat-session-menu" class="chat-session-menu hidden"></div>
           </div>
+          <button class="btn btn-sm" onclick="chatShowHandoffPreview()" title="Preview handoff briefing">Handoff</button>
           <button class="btn btn-sm" onclick="clearGeminiSession()">New Chat</button>
           <button class="btn btn-sm" onclick="closeGeminiChat()">Close</button>
         </div>
@@ -297,6 +298,16 @@
         <button class="btn btn-sm" onclick="closeSettingsModal()">X</button>
       </div>
       <div class="modal-body" id="settings-modal-body"></div>
+    </div>
+  </div>
+
+  <div id="handoff-modal" class="modal-overlay hidden" onclick="if(event.target===event.currentTarget)closeHandoffModal()">
+    <div class="modal" style="max-width:720px">
+      <div class="modal-header">
+        <h2>Handoff Briefing Preview</h2>
+        <button class="btn btn-sm" onclick="closeHandoffModal()">X</button>
+      </div>
+      <div class="modal-body" id="handoff-modal-body" style="font-family:var(--font-mono,monospace);font-size:0.82rem;white-space:pre-wrap;line-height:1.5"></div>
     </div>
   </div>
 

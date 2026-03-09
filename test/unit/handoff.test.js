@@ -34,7 +34,7 @@ describe("generateBriefing", () => {
 
     const briefing = claudeChat.generateBriefing(workspace);
     expect(briefing).toContain("continued from a previous conversation");
-    expect(briefing).toContain("continue the conversation from where we left off");
+    expect(briefing).toContain("continue the conversation from where you left off");
   });
 
   it("includes user and assistant messages from history", () => {
@@ -122,56 +122,34 @@ describe("generateBriefing", () => {
 
 describe("handoff invariants", () => {
   it("startChat injects briefing when no session to resume", () => {
-    // startChat must call generateBriefing when there is no sessionId to --resume.
-    // This ensures manual stop+start and server restarts get context continuity.
     const startChatFn = claudeChatSrc.match(/async function startChat\s*\([^)]*\)\s*\{([\s\S]*?)\n\}/);
-    expect(startChatFn, "startChat function must exist").toBeTruthy();
-
+    expect(startChatFn).toBeTruthy();
     const body = startChatFn[1];
-    const callsBriefing = /generateBriefing/.test(body);
-    expect(callsBriefing, [
-      "startChat must call generateBriefing when no session to resume.",
-      "Without this, manual stop+start loses all conversation context.",
-    ].join("\n")).toBe(true);
+    expect(/generateBriefing/.test(body)).toBe(true);
   });
 
-  it("performHandoff creates a new session and starts fresh", () => {
-    // performHandoff must call newSession() and NOT pass a sessionId to --resume,
-    // ensuring the new Claude instance gets a clean context window.
+  it("performHandoff reuses same session number and starts fresh context", () => {
     const handoffFn = claudeChatSrc.match(/async function performHandoff\s*\([^)]*\)\s*\{([\s\S]*?)\n\}/);
-    expect(handoffFn, "performHandoff function must exist").toBeTruthy();
-
+    expect(handoffFn).toBeTruthy();
     const body = handoffFn[1];
-    expect(/newSession/.test(body), "performHandoff must call newSession").toBe(true);
-    expect(/generateBriefing/.test(body), "performHandoff must call generateBriefing").toBe(true);
-    expect(/session_id:\s*""/.test(body), "performHandoff must use empty session_id (no --resume)").toBe(true);
+    expect(/currentSessionNum/.test(body)).toBe(true);
+    expect(/generateBriefing/.test(body)).toBe(true);
+    expect(/session_id:\s*""/.test(body)).toBe(true);
   });
 
   it("server auto-handoff triggers at 75% context usage", () => {
-    // The server must check context_used_pct after turn completion and trigger
-    // a handoff when it reaches the threshold.
     const hasThresholdCheck = /context_used_pct.*>=\s*75|>=\s*75.*context_used_pct/.test(serverSrc) ||
       /usedPct\s*>=\s*75/.test(serverSrc);
-    expect(hasThresholdCheck, [
-      "server.js must trigger auto-handoff at 75% context usage.",
-      "Without this, sessions run until Claude's context window is full",
-      "and the conversation degrades or errors out.",
-    ].join("\n")).toBe(true);
+    expect(hasThresholdCheck).toBe(true);
   });
 
-  it("server broadcasts context_reload event on handoff", () => {
-    const hasContextReload = /type:\s*["']context_reload["']/.test(serverSrc);
-    expect(hasContextReload, [
-      "server.js must broadcast a context_reload event during handoff.",
-      "This tells the frontend to render a visual marker in the chat.",
-    ].join("\n")).toBe(true);
+  it("server broadcasts context_reload and handoff_complete events on handoff", () => {
+    expect(/type:\s*["']context_reload["']/.test(serverSrc)).toBe(true);
+    expect(/type:\s*["']handoff_complete["']/.test(serverSrc)).toBe(true);
   });
 
   it("server calls wireRelayEvents on the new handle after handoff", () => {
     const hasWireAfterHandoff = /performHandoff[\s\S]*?wireRelayEvents/.test(serverSrc);
-    expect(hasWireAfterHandoff, [
-      "server.js must call wireRelayEvents on the new relay handle after handoff.",
-      "Without this, events from the new Claude instance are never routed to clients.",
-    ].join("\n")).toBe(true);
+    expect(hasWireAfterHandoff).toBe(true);
   });
 });
