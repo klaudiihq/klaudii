@@ -30,3 +30,6 @@ playwright-report/
 # Dolt database files (added by bd init)
 .dolt/
 *.db
+
+# Beads backup — contains personal data and internal planning docs
+.beads/backup/

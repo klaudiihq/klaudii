@@ -24,6 +24,8 @@ module.exports = function createV1Router(deps) {
     gemini,         // optional — Gemini CLI chat backend
     claudeChat,     // optional — Claude CLI chat backend
     workspaceState, // optional — per-workspace chat mode/session/draft persistence
+    memory,         // optional — agent memory store
+    authCheck,      // optional — injectable auth fn for testing: () => Promise<{ghAuth, claudeAuth}>
   } = deps;
 
   const completion = require("../lib/completion");
@@ -46,6 +48,12 @@ module.exports = function createV1Router(deps) {
   async function checkAuthStatus() {
     const now = Date.now();
     if (_authCache && now - _authCacheTime < AUTH_CACHE_TTL) return _authCache;
+
+    if (authCheck) {
+      _authCache = await authCheck();
+      _authCacheTime = now;
+      return _authCache;
+    }
 
     const { execFile } = require("child_process");
     const { promisify } = require("util");
@@ -141,6 +149,7 @@ module.exports = function createV1Router(deps) {
     }
     try {
       const result = projects.addProject(name, projectPath);
+      _sessionsCache = buildSessionsData();
       res.json(result);
     } catch (err) {
       res.status(400).json({ error: err.message });
@@ -352,6 +361,7 @@ module.exports = function createV1Router(deps) {
       sessionTracker.captureClaudeUrl(project, tmuxName)
         .catch((err) => console.error("[session-tracker] captureClaudeUrl:", err.message));
 
+      _sessionsCache = buildSessionsData();
       res.json({ ok: true, tmuxSession: tmuxName, ttydPort: port });
     } catch (err) {
       res.status(500).json({ error: err.message });
@@ -376,6 +386,7 @@ module.exports = function createV1Router(deps) {
 
     try {
       tmux.killSession(tmuxName);
+      _sessionsCache = buildSessionsData();
       res.json({ ok: true });
     } catch (err) {
       res.status(500).json({ error: err.message });
@@ -421,6 +432,7 @@ module.exports = function createV1Router(deps) {
 
       sessionTracker.clearClaudeUrl(project);
       projects.removeProject(project);
+      _sessionsCache = buildSessionsData();
 
       res.json({ ok: true, worktreeRemoved: isWorktree });
     } catch (err) {
@@ -435,6 +447,7 @@ module.exports = function createV1Router(deps) {
     }
     try {
       projects.setPermissionMode(project, mode);
+      _sessionsCache = buildSessionsData();
       res.json({ ok: true, mode });
     } catch (err) {
       res.status(400).json({ error: err.message });
@@ -483,6 +496,7 @@ module.exports = function createV1Router(deps) {
       sessionTracker.captureClaudeUrl(project, tmuxName)
         .catch((err) => console.error("[session-tracker] captureClaudeUrl:", err.message));
 
+      _sessionsCache = buildSessionsData();
       res.json({ ok: true, tmuxSession: tmuxName, ttydPort: port });
     } catch (err) {
       res.status(500).json({ error: err.message });
@@ -988,6 +1002,38 @@ module.exports = function createV1Router(deps) {
     } catch (err) {
       res.status(500).json({ error: `Completion pipeline failed: ${err.message}` });
     }
+  });
+
+  // --- Agent memory ---
+
+  const VALID_AGENTS = new Set(["architect", "shepherd"]);
+
+  router.get("/memory/:agent", (req, res) => {
+    if (!memory) return res.status(501).json({ error: "memory not available" });
+    const { agent } = req.params;
+    if (!VALID_AGENTS.has(agent)) return res.status(400).json({ error: `unknown agent "${agent}"` });
+    const { limit, workspace } = req.query;
+    const entries = memory.list(agent, { limit: limit ? parseInt(limit) : 50, workspace });
+    res.json(entries);
+  });
+
+  router.post("/memory/:agent", (req, res) => {
+    if (!memory) return res.status(501).json({ error: "memory not available" });
+    const { agent } = req.params;
+    if (!VALID_AGENTS.has(agent)) return res.status(400).json({ error: `unknown agent "${agent}"` });
+    const { content, category, workspace, session_id } = req.body;
+    if (!content) return res.status(400).json({ error: "content required" });
+    const entry = memory.store(agent, { content, category, workspace, session_id });
+    res.status(201).json(entry);
+  });
+
+  router.delete("/memory/:agent/:id", (req, res) => {
+    if (!memory) return res.status(501).json({ error: "memory not available" });
+    const { agent, id } = req.params;
+    if (!VALID_AGENTS.has(agent)) return res.status(400).json({ error: `unknown agent "${agent}"` });
+    const ok = memory.remove(agent, parseInt(id));
+    if (!ok) return res.status(404).json({ error: "entry not found" });
+    res.json({ ok: true });
   });
 
   // Background cache refresh — runs every 5s, API handlers just read from memory

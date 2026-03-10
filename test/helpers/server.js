@@ -192,6 +192,11 @@ function createMockDeps(overrides = {}) {
       reposDir: "/Users/demo/repos",
     },
 
+    authCheck: () => Promise.resolve({
+      ghAuth: { loggedIn: true, account: "demo" },
+      claudeAuth: { loggedIn: true },
+    }),
+
     ...overrides,
   };
 }
