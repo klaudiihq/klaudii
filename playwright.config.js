@@ -14,7 +14,7 @@ module.exports = defineConfig({
   webServer: {
     command: "node test/e2e/test-server.js",
     port: 9899,
-    reuseExistingServer: false,
+    reuseExistingServer: true,
     timeout: 10000,
   },
 });

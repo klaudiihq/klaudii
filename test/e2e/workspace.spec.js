@@ -20,11 +20,15 @@ test.describe("Workspace Switching", () => {
   });
 
   test("switching workspace changes active card", async ({ page }) => {
-    // Click nova-frontend
+    // Click nova-frontend — opens chat, main is hidden behind overlay
     await clickCard(page, "card-nova-frontend");
     await expect(page.locator("#card-nova-frontend")).toHaveClass(/active-workspace/);
 
-    // Click aurora-api (chat overlay stays open, card switch happens)
+    // Close chat to get back to cards view
+    await page.click('#chat-overlay button[title="Close chat"]');
+    await page.waitForSelector("#chat-overlay", { state: "hidden", timeout: 5000 });
+
+    // Click aurora-api
     await clickCard(page, "card-aurora-api");
     await expect(page.locator("#card-aurora-api")).toHaveClass(/active-workspace/);
 
@@ -35,14 +39,17 @@ test.describe("Workspace Switching", () => {
   test("switching workspace updates chat title", async ({ page }) => {
     // Open nova-frontend
     await clickCard(page, "card-nova-frontend");
-    await page.waitForSelector("#gemini-overlay:not(.hidden)", { timeout: 5000 });
-    await expect(page.locator("#gemini-title")).toContainText("nova-frontend");
+    await page.waitForSelector("#chat-overlay:not(.hidden)", { timeout: 5000 });
+    await expect(page.locator("#chat-title")).toContainText("nova-frontend");
 
-    // Switch to aurora-api
+    // Close and switch to aurora-api
+    await page.click('#chat-overlay button[title="Close chat"]');
+    await page.waitForSelector("#chat-overlay", { state: "hidden", timeout: 5000 });
     await clickCard(page, "card-aurora-api");
+    await page.waitForSelector("#chat-overlay:not(.hidden)", { timeout: 5000 });
 
-    // Title should update
-    await expect(page.locator("#gemini-title")).toContainText("aurora-api");
+    // Title should show aurora-api
+    await expect(page.locator("#chat-title")).toContainText("aurora-api");
   });
 });
 
