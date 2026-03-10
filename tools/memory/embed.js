@@ -11,9 +11,8 @@
 
 const fs = require("fs");
 const path = require("path");
-const os = require("os");
 
-const CONFIG_DIR = path.join(os.homedir(), "Library", "Application Support", "com.klaudii");
+const { CONFIG_DIR } = require("../../lib/paths");
 const CONFIG_PATH = path.join(CONFIG_DIR, "memory-config.json");
 
 let _provider = null;

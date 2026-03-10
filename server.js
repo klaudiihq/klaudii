@@ -1,21 +1,36 @@
+// ── Parse --config before any requires so lib/paths.js picks it up ──
+(function() {
+  const i = process.argv.indexOf("--config");
+  if (i >= 0 && process.argv[i + 1]) {
+    // Use require("path").resolve so relative paths work from any cwd
+    process.env.KLAUDII_CONFIG = require("path").resolve(process.argv[i + 1]);
+  }
+})();
+
 const path = require("path");
 const fs = require("fs");
 const os = require("os");
+const { DATA_DIR } = require("./lib/paths");
 
-// ── PID lockfile: bail immediately if another instance is running ──
+// ── PID lockfile: displace any existing instance ──
 (function checkPidLock() {
-  const dir = path.join(os.homedir(), "Library", "Application Support", "com.klaudii.server");
-  const pidPath = path.join(dir, "server.pid");
+  const pidPath = path.join(DATA_DIR, "server.pid");
   try {
     const pid = parseInt(fs.readFileSync(pidPath, "utf8").trim(), 10);
     if (!isNaN(pid)) {
       try {
-        process.kill(pid, 0);
-        console.error(`[server] Another instance is already running (PID ${pid}). Exiting.`);
-        process.exit(1);
-      } catch {
-        console.log(`[server] Removing stale PID file (PID ${pid} not running)`);
-      }
+        process.kill(pid, 0); // alive?
+        console.log(`[server] Displacing existing instance (PID ${pid})...`);
+        try { process.kill(pid, "SIGTERM"); } catch {}
+        // Give it a moment to release the port; if it doesn't, we'll get EADDRINUSE
+        const deadline = Date.now() + 3000;
+        while (Date.now() < deadline) {
+          try { process.kill(pid, 0); } catch { break; } // gone
+          const buf = new SharedArrayBuffer(4);
+          Atomics.wait(new Int32Array(buf), 0, 0, 100);
+        }
+      } catch { /* already gone — stale pidfile */ }
+      fs.unlinkSync(pidPath);
     }
   } catch { /* no pidfile — first launch */ }
 })();
@@ -72,7 +87,7 @@ app.use((req, res, next) => {
 setup.start();
 
 app.get("/", (_req, res, next) => {
-  if (setup.limpMode) return res.sendFile(path.join(__dirname, "public", "setup.html"));
+  if (setup.limpMode) return res.redirect("/setup.html");
   next();
 });
 app.get("/api/setup/status",   (_req, res) => res.json(setup.getStatus()));
@@ -83,6 +98,12 @@ app.post("/api/setup/install", (_req, res) => {
 });
 
 app.use(express.static(path.join(__dirname, "public")));
+
+// Catch-all for non-API routes: redirect to setup page when in limp mode
+app.get(/^(?!\/api\/).*$/, (_req, res, next) => {
+  if (setup.limpMode) return res.redirect("/setup.html");
+  next();
+});
 
 // --- Mount v1 API routes ---
 
@@ -159,7 +180,7 @@ app.post("/api/gemini/install", async (_req, res) => {
   try {
     const binPath = gemini.install();
     // Persist the resolved path to config so launchd can find it
-    config.geminiBin = binPath;
+    config.geminiPath = binPath;
     const { saveConfig } = require("./lib/projects");
     if (saveConfig) saveConfig(config);
     res.json({ ok: true, binPath });
@@ -542,7 +563,7 @@ connector.init(app, config);
 
 const server = http.createServer(app);
 
-const SUPPORT_DIR = path.join(os.homedir(), "Library", "Application Support", "com.klaudii.server");
+const SUPPORT_DIR = DATA_DIR;
 
 function writePortFile(port) {
   try {

@@ -748,12 +748,8 @@ module.exports = function createV1Router(deps) {
 
   // --- User settings ---
 
-  const SETTINGS_DIR = path.join(
-    require("os").homedir(),
-    "Library",
-    "Application Support",
-    "com.klaudii.server"
-  );
+  const { DATA_DIR } = require("../lib/paths");
+  const SETTINGS_DIR = DATA_DIR;
   const SETTINGS_PATH = path.join(SETTINGS_DIR, "settings.json");
 
   const DEFAULT_SETTINGS = {

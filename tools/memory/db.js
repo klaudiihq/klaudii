@@ -1,20 +1,15 @@
 /**
  * Memory database — SQLite storage for conversation record + turn chunks.
  *
- * Location: ~/Library/Application Support/com.klaudii/memory.db
+ * Location: ~/.klaudii/data/memory.db
  */
 
 const Database = require("better-sqlite3");
 const path = require("path");
-const os = require("os");
 const fs = require("fs");
+const { DATA_DIR } = require("../../lib/paths");
 
-const DB_DIR = path.join(
-  os.homedir(),
-  "Library",
-  "Application Support",
-  "com.klaudii"
-);
+const DB_DIR = DATA_DIR;
 const DB_PATH = path.join(DB_DIR, "memory.db");
 
 let _db = null;

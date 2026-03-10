@@ -27,134 +27,214 @@ OS="$(uname -s)"
 if [ "$OS" = "Darwin" ]; then
 
   REPO="https://github.com/klaudiihq/klaudii.git"
-  INSTALL_DIR="$HOME/.klaudii"
+  KLAUDII_DIR="$HOME/.klaudii"
+  APP_DIR="$KLAUDII_DIR/app"
+  LOGS_DIR="$KLAUDII_DIR/app/logs"
+  ENV_FILE="$KLAUDII_DIR/.env"
+  PORT=9876
+  SERVICE_NAME="com.klaudii.server"
 
-  check_dep() {
-    if command -v "$1" &>/dev/null; then
-      echo -e "  ${GREEN}✓${NC} $2 found"
-      return 0
-    else
-      return 1
-    fi
+  ok()   { echo -e "      ${GREEN}✓${NC} $1"; }
+  info() { echo -e "      → $1"; }
+  fail() { echo -e "      ${RED}✗${NC} $1"; exit 1; }
+
+  step_num=0
+  total_steps=6
+  step() {
+    step_num=$((step_num + 1))
+    echo ""
+    echo -e "${BOLD}[$step_num/$total_steps] $1${NC}"
   }
 
-  echo -e "${BOLD}Checking dependencies...${NC}"
+  # Step 1: System tools via Homebrew
+  step "Checking system dependencies..."
 
-  if ! check_dep node "Node.js $(node --version 2>/dev/null || echo '')"; then
-    echo "  ✗ Node.js 18+ is required. Install from https://nodejs.org"
-    exit 1
+  if ! command -v brew &>/dev/null; then
+    fail "Homebrew is required. Install from https://brew.sh"
   fi
+  ok "Homebrew found"
 
+  if ! command -v node &>/dev/null; then
+    fail "Node.js 18+ is required. Install from https://nodejs.org"
+  fi
   NODE_MAJOR=$(node -e "console.log(process.versions.node.split('.')[0])")
   if [ "$NODE_MAJOR" -lt 18 ]; then
-    echo "  ✗ Node.js 18+ required (found $(node --version))"
-    exit 1
+    fail "Node.js 18+ required (found $(node --version))"
   fi
+  ok "Node.js $(node --version)"
 
-  if ! check_dep brew "Homebrew"; then
-    echo "  ✗ Homebrew is required. Install from https://brew.sh"
-    exit 1
-  fi
+  if ! command -v git &>/dev/null; then fail "git is required"; fi
+  ok "git found"
 
-  if ! check_dep git "git"; then
-    echo "  ✗ git is required"
-    exit 1
-  fi
-
-  if ! check_dep gh "GitHub CLI (gh)"; then
-    echo -e "  ${DIM}Installing GitHub CLI...${NC}"
-    brew install gh
-    check_dep gh "GitHub CLI (gh)"
-  fi
-
-  if ! check_dep claude "Claude Code CLI"; then
-    echo "  ✗ Claude Code CLI is required. Install with: npm install -g @anthropic-ai/claude-code"
-    exit 1
-  fi
-
-  echo ""
-  echo -e "${BOLD}Installing system dependencies...${NC}"
+  # Step 2: tmux + ttyd
+  step "Installing tmux and ttyd..."
 
   if ! command -v tmux &>/dev/null; then
-    echo -e "  ${DIM}Installing tmux...${NC}"
+    info "brew install tmux"
     brew install tmux
   fi
-  check_dep tmux "tmux"
+  ok "tmux $(tmux -V | awk '{print $2}')"
 
   if ! command -v ttyd &>/dev/null; then
-    echo -e "  ${DIM}Installing ttyd...${NC}"
+    info "brew install ttyd"
     brew install ttyd
   fi
-  check_dep ttyd "ttyd"
+  ok "ttyd found"
 
-  echo ""
-  echo -e "${BOLD}Setting up Klaudii...${NC}"
+  # Step 3: GitHub CLI + Claude Code
+  step "Installing GitHub CLI and Claude Code..."
 
-  if [ -d "$INSTALL_DIR" ]; then
-    echo -e "  ${DIM}Updating existing installation...${NC}"
-    cd "$INSTALL_DIR"
-    git pull --ff-only origin main 2>/dev/null || true
+  if ! command -v gh &>/dev/null; then
+    info "brew install gh"
+    brew install gh
+  fi
+  ok "gh $(gh --version | head -1 | awk '{print $3}')"
+
+  if ! command -v claude &>/dev/null; then
+    info "npm install -g @anthropic-ai/claude-code"
+    npm install -g @anthropic-ai/claude-code
+  fi
+  ok "claude $(claude --version 2>/dev/null || echo 'found')"
+
+  # Step 4: Download Klaudii
+  step "Downloading Klaudii..."
+
+  mkdir -p "$KLAUDII_DIR"
+
+  if [ -d "$APP_DIR/.git" ]; then
+    info "Updating existing installation..."
+    cd "$APP_DIR"
+    git pull --ff-only origin main 2>/dev/null || info "Could not fast-forward, keeping current version"
   else
-    echo -e "  ${DIM}Cloning Klaudii...${NC}"
-    git clone "$REPO" "$INSTALL_DIR"
-    cd "$INSTALL_DIR"
+    info "Cloning to $APP_DIR..."
+    git clone "$REPO" "$APP_DIR"
+    cd "$APP_DIR"
   fi
 
-  echo -e "  ${DIM}Installing dependencies...${NC}"
+  info "Installing npm dependencies..."
   npm ci --production --silent 2>/dev/null || npm install --production --silent
+  ok "Klaudii installed at $APP_DIR"
 
-  echo -e "  ${GREEN}✓${NC} Klaudii installed at $INSTALL_DIR"
-  echo ""
+  # Step 5: Config + env
+  step "Creating config..."
 
-  echo -e "${BOLD}Configuring macOS integration...${NC}"
+  CONFIG_FILE="$KLAUDII_DIR/config.json"
+  if [ ! -f "$CONFIG_FILE" ]; then
+    REPOS_DIR=""
+    for candidate in "$HOME/repos" "$HOME/Projects" "$HOME/src" "$HOME/code"; do
+      [ -d "$candidate" ] && REPOS_DIR="$candidate" && break
+    done
+    REPOS_DIR="${REPOS_DIR:-$KLAUDII_DIR/repos}"
 
-  if [ -f "$INSTALL_DIR/mac/install.sh" ]; then
-    bash "$INSTALL_DIR/mac/install.sh"
-  else
-    echo -e "  ${DIM}Creating config...${NC}"
-    SETUP_CONFIG_DIR="$HOME/Library/Application Support/com.klaudii"
-    mkdir -p "$SETUP_CONFIG_DIR"
-    cat > "$SETUP_CONFIG_DIR/config.json" <<CONF
+    TMUX_BIN="$(command -v tmux 2>/dev/null || echo tmux)"
+    TTYD_BIN="$(command -v ttyd 2>/dev/null || echo ttyd)"
+    CLAUDE_BIN="$(command -v claude 2>/dev/null || echo "")"
+    GEMINI_BIN="$(command -v gemini 2>/dev/null || echo "")"
+
+    cat > "$CONFIG_FILE" <<CONF
 {
-  "port": 9876,
+  "port": $PORT,
   "ttydBasePort": 9877,
-  "reposDir": "$HOME/repos",
-  "tmuxSocket": "$HOME/.claude/klaudii-tmux.sock",
+  "reposDir": "$REPOS_DIR",
+  "tmuxSocket": "$KLAUDII_DIR/tmux.sock",
+  "tmuxPath": "$TMUX_BIN",
+  "ttydPath": "$TTYD_BIN",
+  "claudePath": "$CLAUDE_BIN",
+  "geminiPath": "$GEMINI_BIN",
+  "dataDir": "$KLAUDII_DIR/data",
+  "logsDir": "$KLAUDII_DIR/app/logs",
+  "relayDir": "$KLAUDII_DIR/app/relay",
+  "chatsDir": "$KLAUDII_DIR/data/chats",
   "projects": []
 }
 CONF
-    echo -e "  ${GREEN}✓${NC} Config created"
+    ok "Config created at $CONFIG_FILE"
+  else
+    ok "Config already exists"
+  fi
 
-    cd "$INSTALL_DIR"
-    node server.js &
-    SERVER_PID=$!
-    sleep 2
+  if [ ! -f "$ENV_FILE" ]; then
+    cat > "$ENV_FILE" <<'ENVFILE'
+# Klaudii environment
+# ANTHROPIC_API_KEY=sk-ant-...
+# GEMINI_API_KEY=...
+ENVFILE
+    ok "Created $ENV_FILE — add your API keys there"
+  fi
 
-    if kill -0 $SERVER_PID 2>/dev/null; then
-      echo -e "  ${GREEN}✓${NC} Server started (PID $SERVER_PID)"
-    else
-      echo "  ✗ Server failed to start. Check logs."
-      exit 1
-    fi
+  mkdir -p "$LOGS_DIR" "$KLAUDII_DIR/app/relay" "$KLAUDII_DIR/data" "$KLAUDII_DIR/repos"
+
+  # Step 6: launchd service
+  step "Setting up launchd service..."
+
+  NODE_PATH="$(which node)"
+  PLIST_PATH="$HOME/Library/LaunchAgents/${SERVICE_NAME}.plist"
+  mkdir -p "$HOME/Library/LaunchAgents"
+
+  cat > "$PLIST_PATH" <<PLIST
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>${SERVICE_NAME}</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>${NODE_PATH}</string>
+    <string>${APP_DIR}/server.js</string>
+  </array>
+  <key>WorkingDirectory</key>
+  <string>${APP_DIR}</string>
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>HOME</key>
+    <string>${HOME}</string>
+    <key>KLAUDII_CONFIG</key>
+    <string>${CONFIG_FILE}</string>
+    <key>PATH</key>
+    <string>/usr/local/bin:/usr/bin:/bin:/opt/homebrew/bin</string>
+  </dict>
+  <key>StandardOutPath</key>
+  <string>${LOGS_DIR}/server.log</string>
+  <key>StandardErrorPath</key>
+  <string>${LOGS_DIR}/server-error.log</string>
+  <key>RunAtLoad</key>
+  <true/>
+  <key>KeepAlive</key>
+  <true/>
+</dict>
+</plist>
+PLIST
+
+  ok "Created $PLIST_PATH"
+
+  launchctl unload "$PLIST_PATH" 2>/dev/null || true
+  launchctl load "$PLIST_PATH"
+
+  sleep 2
+  if launchctl list "$SERVICE_NAME" &>/dev/null; then
+    ok "Klaudii is running on port $PORT"
+  else
+    info "Service may not have started — check: tail -f $LOGS_DIR/server-error.log"
   fi
 
   echo ""
   echo -e "${GREEN}${BOLD}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
-  echo -e "${GREEN}${BOLD}  Klaudii is ready! → http://localhost:9876${NC}"
+  echo -e "${GREEN}${BOLD}  Klaudii is ready! → http://localhost:$PORT${NC}"
   echo -e "${GREEN}${BOLD}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
   echo ""
   echo -e "  ${BOLD}Next steps:${NC}"
-  echo -e "    1. Open ${DIM}http://localhost:9876${NC} in your browser"
-  echo -e "    2. Add your first project"
+  echo -e "    1. Set your ANTHROPIC_API_KEY in ${DIM}$ENV_FILE${NC}"
+  echo -e "    2. Open ${DIM}http://localhost:$PORT${NC} in your browser"
+  echo -e "    3. Add your first project"
   echo ""
   echo -e "  ${BOLD}Manage:${NC}"
-  echo -e "    ${DIM}launchctl list com.klaudii.server${NC}"
-  echo -e "    ${DIM}launchctl kickstart -k gui/\$(id -u)/com.klaudii.server${NC}"
+  echo -e "    ${DIM}launchctl list $SERVICE_NAME${NC}"
+  echo -e "    ${DIM}launchctl kickstart -k gui/\$(id -u)/$SERVICE_NAME${NC}"
+  echo -e "    ${DIM}tail -f $LOGS_DIR/server.log${NC}"
   echo ""
 
-  if command -v open &>/dev/null; then
-    open "http://localhost:9876"
-  fi
+  open "http://localhost:$PORT"
 
 # ════════════════════════════════════════
 #  Linux
@@ -165,7 +245,7 @@ elif [ "$OS" = "Linux" ]; then
   KLAUDII_DIR="$HOME/.klaudii"
   APP_DIR="$KLAUDII_DIR/app"
   BIN_DIR="$KLAUDII_DIR/bin"
-  LOGS_DIR="$KLAUDII_DIR/logs"
+  LOGS_DIR="$KLAUDII_DIR/app/logs"
   ENV_FILE="$KLAUDII_DIR/.env"
   SYSTEMD_DIR="$HOME/.config/systemd/user"
   SERVICE_NAME="klaudii"
@@ -401,16 +481,27 @@ elif [ "$OS" = "Linux" ]; then
         break
       fi
     done
-    REPOS_DIR="${REPOS_DIR:-$HOME/repos}"
-    TMUX_SOCKET="$HOME/.claude/klaudii-tmux.sock"
-    mkdir -p "$(dirname "$TMUX_SOCKET")"
+    REPOS_DIR="${REPOS_DIR:-$KLAUDII_DIR/repos}"
+
+    TMUX_BIN="$(command -v tmux 2>/dev/null || echo tmux)"
+    TTYD_BIN="$(command -v ttyd 2>/dev/null || echo ttyd)"
+    CLAUDE_BIN="$(command -v claude 2>/dev/null || echo "")"
+    GEMINI_BIN="$(command -v gemini 2>/dev/null || echo "")"
 
     cat > "$CONFIG_FILE" <<CONF
 {
   "port": $PORT,
   "ttydBasePort": 9877,
   "reposDir": "$REPOS_DIR",
-  "tmuxSocket": "$TMUX_SOCKET",
+  "tmuxSocket": "$KLAUDII_DIR/tmux.sock",
+  "tmuxPath": "$TMUX_BIN",
+  "ttydPath": "$TTYD_BIN",
+  "claudePath": "$CLAUDE_BIN",
+  "geminiPath": "$GEMINI_BIN",
+  "dataDir": "$KLAUDII_DIR/data",
+  "logsDir": "$KLAUDII_DIR/app/logs",
+  "relayDir": "$KLAUDII_DIR/app/relay",
+  "chatsDir": "$KLAUDII_DIR/data/chats",
   "projects": []
 }
 CONF
@@ -432,7 +523,7 @@ ENVFILE
     ok "Created $ENV_FILE — add your API keys there"
   fi
 
-  mkdir -p "$LOGS_DIR"
+  mkdir -p "$LOGS_DIR" "$KLAUDII_DIR/app/relay" "$KLAUDII_DIR/data" "$KLAUDII_DIR/repos"
 
   # Step 7: systemd user service
   step "Setting up systemd service..."
@@ -454,6 +545,7 @@ WorkingDirectory=$APP_DIR
 Restart=on-failure
 RestartSec=5
 Environment=NODE_ENV=production
+Environment=KLAUDII_CONFIG=$CONFIG_FILE
 Environment=PATH=$EXTRA_PATH:/usr/local/bin:/usr/bin:/bin
 EnvironmentFile=-$ENV_FILE
 StandardOutput=append:$LOGS_DIR/server.log
