@@ -18,9 +18,13 @@ Options:
 """
 
 import json
+import os
 import sys
 import argparse
 from datetime import datetime, timezone
+
+# Strip repo root from absolute paths in tool-call summaries
+_REPO_ROOT = os.path.abspath(os.path.dirname(__file__)) + os.sep
 
 
 def parse_args():
@@ -59,23 +63,23 @@ def summarize_tool_use(content_str):
         elif tool == "Read":
             fp = params.get("file_path", "?")
             # Shorten path
-            fp = fp.replace("/Volumes/Fast/bryantinsley/repos/klaudii/", "")
+            fp = fp.replace(_REPO_ROOT, "")
             offset = params.get("offset", "")
             limit = params.get("limit", "")
             range_str = f" (lines {offset}-{offset+limit})" if offset and limit else ""
             return f"[Read] {fp}{range_str}"
         elif tool == "Write":
             fp = params.get("file_path", "?")
-            fp = fp.replace("/Volumes/Fast/bryantinsley/repos/klaudii/", "")
+            fp = fp.replace(_REPO_ROOT, "")
             return f"[Write] {fp}"
         elif tool == "Edit":
             fp = params.get("file_path", "?")
-            fp = fp.replace("/Volumes/Fast/bryantinsley/repos/klaudii/", "")
+            fp = fp.replace(_REPO_ROOT, "")
             return f"[Edit] {fp}"
         elif tool == "Grep":
             pat = params.get("pattern", "?")
             path = params.get("path", "")
-            path = path.replace("/Volumes/Fast/bryantinsley/repos/klaudii/", "")
+            path = path.replace(_REPO_ROOT, "")
             return f"[Grep] pattern='{pat}' in {path or '.'}"
         elif tool == "Glob":
             pat = params.get("pattern", "?")

@@ -320,4 +320,4 @@ tail -f ~/Library/Application\ Support/com.klaudii/logs/server.log | grep -v "cl
 npx vitest run
 ```
 
-**CRITICAL**: Launchd plist MUST set `HOME=/Volumes/Fast/bryantinsley` — without it, `os.homedir()` resolves wrong, causing event loop spin on fs.stat.
+**CRITICAL**: Launchd plist MUST set `HOME=/Users/yourname` (your actual home dir) — without it, `os.homedir()` resolves wrong under launchd, causing event loop spin on fs.stat.
