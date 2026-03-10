@@ -136,8 +136,8 @@ jobs:
         env:
           SYNC_TOKEN: ${{ secrets.PUBLIC_REPO_TOKEN }}
         run: |
-          echo "Token length: ${#SYNC_TOKEN}"
-          echo "Token prefix: ${SYNC_TOKEN:0:10}..."
+          # Disable the credential helper that actions/checkout installs (it overrides URL-embedded tokens)
+          git config --unset-all http.https://github.com/.extraheader || true
           git remote set-url public https://x-access-token:${SYNC_TOKEN}@github.com/${PUBLIC_REPO}.git
           git push public ${SOURCE_BRANCH}:main
           echo "### Sync complete" >> "$GITHUB_STEP_SUMMARY"
