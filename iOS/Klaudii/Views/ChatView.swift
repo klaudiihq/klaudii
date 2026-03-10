@@ -1223,10 +1223,7 @@ struct ToolPillView: View {
 
                 VStack(alignment: .leading, spacing: 6) {
                     if let params = message.toolParameters, !params.isEmpty {
-                        Text(params)
-                            .font(.system(size: 11, design: .monospaced))
-                            .foregroundColor(KTheme.textMuted)
-                            .textSelection(.enabled)
+                        ToolParametersView(json: params)
                     }
 
                     if let output = message.toolOutput, !output.isEmpty {
@@ -1270,30 +1267,137 @@ struct ToolPillView: View {
     }
 }
 
-// MARK: - Thinking Dots
+// MARK: - Orbital Thinking Animation
 
 struct ThinkingDotsView: View {
-    @State private var phase: Double = 0
+    private struct Particle {
+        var angle: Double
+        let radius: Double
+        let speed: Double   // rad/frame, sign = direction
+        let colorIdx: Int
+        let wobble: Double
+    }
 
-    var body: some View {
-        HStack(spacing: 4) {
-            ForEach(0..<3, id: \.self) { i in
-                Circle()
-                    .fill(KTheme.textMuted)
-                    .frame(width: 5, height: 5)
-                    .opacity(dotOpacity(index: i))
-            }
-        }
-        .onAppear {
-            withAnimation(.linear(duration: 0.9).repeatForever(autoreverses: false)) {
-                phase = 1
-            }
+    private static func makeParticles() -> [Particle] {
+        let count = 20
+        return (0..<count).map { i in
+            Particle(
+                angle: Double(i) / Double(count) * .pi * 2,
+                radius: 4 + Double.random(in: 0..<10),
+                speed: (i % 2 == 0 ? 1.0 : -1.0) * (0.018 + Double.random(in: 0..<0.022)),
+                colorIdx: i % 3,
+                wobble: Double.random(in: 0..<(.pi * 2))
+            )
         }
     }
 
-    private func dotOpacity(index: Int) -> Double {
-        let offset = Double(index) / 3.0
-        let raw = sin((phase - offset) * .pi * 2)
-        return 0.3 + 0.7 * max(0, raw)
+    @State private var particles: [Particle] = makeParticles()
+    @State private var speedMult: Double = 1
+    @State private var speedTarget: Double = 1
+    @State private var targetCooldown: Int = 80
+    @State private var frameTime: Double = 0
+
+    var body: some View {
+        TimelineView(.animation) { timeline in
+            Canvas { context, size in
+                let t = timeline.date.timeIntervalSinceReferenceDate
+                let cx = size.width / 2
+                let cy = size.height / 2
+
+                let green  = Color(hex: 0x4ADE80)
+                let blue   = Color(hex: 0x60A5FA)
+                let strong = Color.primary
+                let colors = [green, blue, strong]
+
+                for p in particles {
+                    let r = p.radius + sin(t * 3 + p.wobble) * 2.5
+                    let x = cx + cos(p.angle) * r
+                    let y = cy + sin(p.angle) * r
+                    let dot = Path(ellipseIn: CGRect(x: x - 1.5, y: y - 1.5, width: 3, height: 3))
+                    context.fill(dot, with: .color(colors[p.colorIdx]))
+                }
+            }
+            .onChange(of: timeline.date) { _, _ in
+                tick()
+            }
+        }
+        .frame(width: 40, height: 40)
+    }
+
+    private func tick() {
+        targetCooldown -= 1
+        if targetCooldown <= 0 {
+            targetCooldown = 60 + Int.random(in: 0..<90)
+            let r = Double.random(in: 0..<1)
+            speedTarget = r < 0.15 ? 0.15 + Double.random(in: 0..<0.35)
+                        : r < 0.65 ? 0.7  + Double.random(in: 0..<0.8)
+                        :             2.5  + Double.random(in: 0..<2.5)
+        }
+        speedMult += (speedTarget - speedMult) * 0.04
+
+        for i in particles.indices {
+            particles[i].angle += particles[i].speed * speedMult
+        }
+    }
+}
+
+// MARK: - Tool Parameters View
+
+struct ToolParametersView: View {
+    let json: String
+
+    private var rows: [(String, String)] {
+        guard let data = json.data(using: .utf8),
+              let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
+        else { return [("", json)] }
+
+        return obj.sorted { $0.key < $1.key }.map { key, value in
+            let display: String
+            switch value {
+            case let s as String:
+                // Truncate multiline strings to first meaningful line
+                let lines = s.components(separatedBy: .newlines).filter { !$0.isEmpty }
+                if lines.count > 1 {
+                    display = (lines.first ?? "") + "  [\(lines.count) lines]"
+                } else {
+                    display = s.count > 200 ? String(s.prefix(200)) + "…" : s
+                }
+            case let n as NSNumber:
+                display = n.stringValue
+            case let b as Bool:
+                display = b ? "true" : "false"
+            case let a as [Any]:
+                display = "[\(a.count) items]"
+            case let d as [String: Any]:
+                if let encoded = try? JSONSerialization.data(withJSONObject: d),
+                   let str = String(data: encoded, encoding: .utf8) {
+                    display = str.count > 120 ? String(str.prefix(120)) + "…" : str
+                } else {
+                    display = "{…}"
+                }
+            default:
+                display = "\(value)"
+            }
+            return (key, display)
+        }
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 3) {
+            ForEach(rows, id: \.0) { key, value in
+                HStack(alignment: .top, spacing: 0) {
+                    if !key.isEmpty {
+                        Text(key + ": ")
+                            .font(.system(size: 11, weight: .semibold, design: .monospaced))
+                            .foregroundColor(KTheme.textSecondary)
+                    }
+                    Text(value)
+                        .font(.system(size: 11, design: .monospaced))
+                        .foregroundColor(KTheme.textMuted)
+                        .textSelection(.enabled)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+        }
     }
 }
