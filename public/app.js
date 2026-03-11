@@ -94,12 +94,19 @@ async function cycleChatMode(event, project) {
 }
 
 async function api(path, opts = {}) {
-  const res = await fetch(API + path, {
-    headers: { "Content-Type": "application/json" },
-    ...opts,
-    body: opts.body ? JSON.stringify(opts.body) : undefined,
-  });
-  return res.json();
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 10000);
+  try {
+    const res = await fetch(API + path, {
+      headers: { "Content-Type": "application/json" },
+      signal: controller.signal,
+      ...opts,
+      body: opts.body ? JSON.stringify(opts.body) : undefined,
+    });
+    return res.json();
+  } finally {
+    clearTimeout(timeout);
+  }
 }
 
 // --- Project switcher ---
@@ -824,6 +831,11 @@ function renderHealthStatus(health) {
   if (health.ok && health.tmux && health.ttyd) {
     badge.textContent = "connected";
     badge.className = "badge ok";
+    healthFailCount = 0;
+    // Restore chat status if WS is actually open but health failure had forced it to disconnected
+    if (typeof chatUpdateStatus === "function" && typeof chatWs !== "undefined" && chatWs && chatWs.readyState === WebSocket.OPEN) {
+      chatUpdateStatus(true);
+    }
   } else {
     const missing = [];
     if (!health.tmux) missing.push("tmux");
@@ -869,11 +881,38 @@ function renderHealthStatus(health) {
 
   if (healthFailCount > 0) {
     healthFailCount = 0;
-    if (typeof chatUpdateStatus === "function") chatUpdateStatus(true);
   }
 }
 
+// --- WS push handler (replaces most HTTP polling) ---
+
+let lastPushAt = 0;
+
+function handleServerPush(event) {
+  lastPushAt = Date.now();
+
+  if (event.sessions) {
+    lastSessions = event.sessions;
+    renderSessions(event.sessions, event.processes || lastProcs);
+    renderSidebar();
+  }
+  if (event.processes) {
+    lastProcs = event.processes;
+    renderProcesses(event.processes);
+  }
+  if (event.health) {
+    renderHealthStatus(event.health);
+  }
+}
+
+let refreshInFlight = false;
+
 async function refresh() {
+  // Skip if WS pushes are flowing (received within last 15s) — HTTP is backup only
+  if (lastPushAt && Date.now() - lastPushAt < 15000) return;
+  // Guard against concurrent calls exhausting the connection pool
+  if (refreshInFlight) return;
+  refreshInFlight = true;
   try {
     // Fetch sessions+processes+settings first (fast), render immediately
     const [sessions, procs, settings] = await Promise.all([
@@ -899,14 +938,14 @@ async function refresh() {
       badge.textContent = "offline";
       badge.className = "badge error";
       healthFailCount++;
-      if (typeof chatUpdateStatus === "function") chatUpdateStatus(false);
     });
   } catch (err) {
     const badge = document.getElementById("status-badge");
     badge.textContent = "offline";
     badge.className = "badge error";
     healthFailCount++;
-    if (typeof chatUpdateStatus === "function") chatUpdateStatus(false);
+  } finally {
+    refreshInFlight = false;
   }
 }
 
@@ -2416,7 +2455,6 @@ function sidebarWorkerClick(project) {
 function toggleTheme() {
   const isLight = document.documentElement.classList.toggle("light");
   localStorage.setItem("klaudii-theme", isLight ? "light" : "dark");
-  document.getElementById("theme-toggle").textContent = isLight ? "🌙" : "☀";
 }
 
 // --- Card click: open chat in workspace's stored mode ---
@@ -2630,14 +2668,12 @@ function applyThemeFromSettings(theme) {
   }
   document.documentElement.classList.toggle("light", isLight);
   localStorage.setItem("klaudii-theme", isLight ? "light" : "dark");
-  document.getElementById("theme-toggle").textContent = isLight ? "\uD83C\uDF19" : "\u2600";
 }
 
 // --- Init ---
 
 if (localStorage.getItem("klaudii-theme") === "light") {
   document.documentElement.classList.add("light");
-  document.getElementById("theme-toggle").textContent = "🌙";
 }
 
 // Skip all dashboard polling in chatonly mode — only chat overlay is visible

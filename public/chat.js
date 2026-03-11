@@ -8,6 +8,13 @@
 const G = "[chat-ui]";
 function glog(...args) { console.log(G, new Date().toISOString(), ...args); }
 
+// --- Auth error detection ---
+function isAuthError(stderr) {
+  if (!stderr) return false;
+  const s = stderr.toLowerCase();
+  return s.includes("not logged in") || s.includes("/login") || s.includes("not authenticated") || s.includes("auth");
+}
+
 // --- Helpers ---
 function chatMsgTime(ts) {
   if (!ts) return null;
@@ -818,8 +825,10 @@ function chatWsSend(payload) {
   chatWs.send(JSON.stringify(payload));
 }
 
+let chatConnectTimeout = null;
+
 function chatConnect() {
-  if (chatWs && (chatWs.readyState === WebSocket.OPEN || chatWs.readyState === WebSocket.CONNECTING)) return;
+  if (chatWs && chatWs.readyState === WebSocket.OPEN) return;
 
   // Close stale socket to prevent orphaned event handlers
   if (chatWs) {
@@ -830,12 +839,29 @@ function chatConnect() {
     if (chatWs.readyState !== WebSocket.CLOSED) chatWs.close();
   }
 
+  clearTimeout(chatConnectTimeout);
+
   const wsUrl = `${location.protocol === "https:" ? "wss:" : "ws:"}//${location.host}/ws/chat`;
   console.log("[chat-ws] connecting to", wsUrl);
   chatWs = new WebSocket(wsUrl);
 
+  // Timeout: if the socket doesn't reach OPEN within 5s, kill it and retry
+  chatConnectTimeout = setTimeout(() => {
+    if (chatWs && chatWs.readyState === WebSocket.CONNECTING) {
+      glog("ws-connect-timeout: stuck in CONNECTING, forcing close");
+      chatWs.onclose = null;
+      chatWs.onerror = null;
+      chatWs.onopen = null;
+      chatWs.onmessage = null;
+      chatWs.close();
+      chatWs = null;
+      setTimeout(chatConnect, 1000);
+    }
+  }, 5000);
+
   chatWs.onopen = () => {
     glog("ws-open");
+    clearTimeout(chatConnectTimeout);
     chatUpdateStatus(true);
     // If history fetch failed while server was restarting, re-render now that it's up
     if (chatHistoryFetchFailed && chatWorkspace) {
@@ -895,6 +921,13 @@ function chatConnect() {
     }
 
     wsEventCount++;
+
+    // Server push — global data (sessions, processes, health), not workspace-specific
+    if (event.type === "server_push") {
+      if (typeof handleServerPush === "function") handleServerPush(event);
+      return;
+    }
+
     glog(`ws-msg #${wsEventCount} type=${event.type} workspace=${event.workspace}${event.role ? " role=" + event.role : ""}${event.content ? " contentLen=" + event.content.length : ""}${event.exitCode !== undefined ? " exitCode=" + event.exitCode : ""}${event.name ? " tool=" + event.name : ""}`);
 
     // Only render events for the currently open workspace
@@ -921,6 +954,20 @@ function chatUpdateStatus(connected) {
     } else {
       el.textContent = "disconnected";
       el.className = "chat-bar-status";
+    }
+  }
+
+  // Sync the top-level status badge with WS state — this is the authoritative
+  // connection indicator. Prevents the badge from getting stuck "offline" when
+  // HTTP health polls fail but the WS has already reconnected, or vice versa.
+  const badge = document.getElementById("status-badge");
+  if (badge) {
+    if (connected) {
+      badge.textContent = "connected";
+      badge.className = "badge ok";
+    } else {
+      badge.textContent = "disconnected";
+      badge.className = "badge error";
     }
   }
 
@@ -1175,12 +1222,12 @@ function handleGeminiEvent(event) {
           .catch(() => { partialEl.classList.remove("chat-streaming"); });
       }
 
-      // Exit code 41 = auth failure (Gemini), 1 with auth error (Claude) — show auth panel
+      // Exit code 41 = auth failure (Gemini), auth errors (Claude) — show auth panel
       if (event.exitCode === 41) {
-        glog("handle: auth failure, showing auth panel");
+        glog("handle: auth failure (exit 41), showing auth panel");
         chatShowAuthPanel();
-      } else if (event.exitCode && event.exitCode !== 0 && event.stderr && event.stderr.includes("auth")) {
-        glog("handle: possible auth failure, showing auth panel");
+      } else if (event.exitCode && event.exitCode !== 0 && event.stderr && isAuthError(event.stderr)) {
+        glog("handle: auth failure detected in stderr, showing auth panel");
         chatShowAuthPanel();
       } else if (event.exitCode && event.exitCode !== 0 && event.stderr) {
         chatAppendError(`Process exited with code ${event.exitCode}: ${event.stderr.slice(0, 500)}`);
@@ -3761,3 +3808,13 @@ function closeHandoffModal() {
 
 // Auto-open chat from URL params on page load
 initFromUrlParams();
+
+// Safety net: periodically check WS health and reconnect if needed.
+// This catches cases where the reconnect loop breaks (e.g., stuck CONNECTING,
+// exception in handler, or timer getting GC'd).
+setInterval(() => {
+  if (!chatWs || (chatWs.readyState !== WebSocket.OPEN && chatWs.readyState !== WebSocket.CONNECTING)) {
+    glog("ws-watchdog: not connected, triggering reconnect");
+    chatConnect();
+  }
+}, 5000);

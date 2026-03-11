@@ -12,10 +12,21 @@
   <header>
     <a class="nav-logo" href="/">
       <svg class="nav-logo-icon" viewBox="0 0 512 512" xmlns="http://www.w3.org/2000/svg">
-        <defs><linearGradient id="lg" x1="256" y1="80" x2="256" y2="432" gradientUnits="userSpaceOnUse"><stop offset="0%" stop-color="#86efac"/><stop offset="50%" stop-color="#4ade80"/><stop offset="100%" stop-color="#22c55e"/></linearGradient></defs>
-        <rect x="132" y="100" width="40" height="312" rx="20" fill="url(#lg)"/>
-        <line x1="188" y1="256" x2="362" y2="120" stroke="url(#lg)" stroke-width="40" stroke-linecap="round"/>
-        <line x1="188" y1="256" x2="362" y2="392" stroke="url(#lg)" stroke-width="40" stroke-linecap="round"/>
+        <defs>
+          <!-- dark theme: vivid lime → deep forest -->
+          <linearGradient id="lg-dark" x1="256" y1="80" x2="256" y2="432" gradientUnits="userSpaceOnUse">
+            <stop offset="0%" stop-color="#4ade80"/>
+            <stop offset="100%" stop-color="#15803d"/>
+          </linearGradient>
+          <!-- light theme: deep forest → vivid green -->
+          <linearGradient id="lg-light" x1="256" y1="80" x2="256" y2="432" gradientUnits="userSpaceOnUse">
+            <stop offset="0%" stop-color="#15803d"/>
+            <stop offset="100%" stop-color="#4ade80"/>
+          </linearGradient>
+        </defs>
+        <rect x="132" y="100" width="40" height="312" rx="20" fill="url(#lg-dark)" class="k-dark" /><rect x="132" y="100" width="40" height="312" rx="20" fill="url(#lg-light)" class="k-light" />
+        <line x1="188" y1="256" x2="362" y2="120" stroke="url(#lg-dark)" stroke-width="40" stroke-linecap="round" class="k-dark"/><line x1="188" y1="256" x2="362" y2="120" stroke="url(#lg-light)" stroke-width="40" stroke-linecap="round" class="k-light"/>
+        <line x1="188" y1="256" x2="362" y2="392" stroke="url(#lg-dark)" stroke-width="40" stroke-linecap="round" class="k-dark"/><line x1="188" y1="256" x2="362" y2="392" stroke="url(#lg-light)" stroke-width="40" stroke-linecap="round" class="k-light"/>
       </svg>
       <span>Klaudii</span>
     </a>
@@ -23,8 +34,7 @@
     <div id="auth-status" class="auth-box"></div>
     <div style="margin-left:auto"></div>
     <button class="header-chip" id="cloud-btn" onclick="openCloudModal()">Kloud Konnect</button>
-    <button class="btn-theme" id="settings-btn" onclick="openSettingsModal()" title="Settings">⚙</button>
-    <button class="btn-theme" id="theme-toggle" onclick="toggleTheme()" title="Toggle light/dark">☀</button>
+    <span class="header-gear" onclick="openSettingsModal()" title="Settings">⚙</span>
   </header>
 
   <div id="app-layout" class="app-layout">

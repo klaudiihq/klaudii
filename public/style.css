@@ -145,6 +145,10 @@ header {
   text-decoration: none;
 }
 .nav-logo-icon { width: 26px; height: 26px; }
+/* Show dark-theme K by default; hide on light theme */
+.nav-logo-icon .k-light { display: none; }
+html.light .nav-logo-icon .k-dark { display: none; }
+html.light .nav-logo-icon .k-light { display: inline; }
 
 .project-switcher {
   appearance: none;
@@ -789,19 +793,16 @@ h2 {
 }
 .header-chip:hover { background: var(--bg-btn-hover); color: var(--text); border-color: var(--border-btn); }
 
-/* Theme toggle */
-.btn-theme {
-  font-size: 0.78rem;
-  padding: 0.22rem 0.45rem;
-  border: 1px solid transparent;
-  border-radius: 20px;
-  background: var(--bg-btn);
+/* Settings gear */
+.header-gear {
+  font-size: 2.0rem;
   color: var(--text-muted);
   cursor: pointer;
   line-height: 1;
-  transition: background 0.15s, color 0.15s, border-color 0.15s;
+  user-select: none;
+  transition: color 0.15s;
 }
-.btn-theme:hover { color: var(--text); background: var(--bg-btn-hover); border-color: var(--border-btn); }
+.header-gear:hover { color: var(--text); }
 
 /* =========================================================
    History

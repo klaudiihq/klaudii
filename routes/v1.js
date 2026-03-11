@@ -26,6 +26,7 @@ module.exports = function createV1Router(deps) {
     workspaceState, // optional — per-workspace chat mode/session/draft persistence
     memory,         // optional — agent memory store
     authCheck,      // optional — injectable auth fn for testing: () => Promise<{ghAuth, claudeAuth}>
+    broadcastAll,   // optional — broadcast to all WS clients
   } = deps;
 
   const completion = require("../lib/completion");
@@ -1032,13 +1033,28 @@ module.exports = function createV1Router(deps) {
     res.json({ ok: true });
   });
 
-  // Background cache refresh — runs every 5s, API handlers just read from memory
+  // Background cache refresh — runs every 5s, API handlers just read from memory.
+  // After each rebuild, broadcast to all WS clients so the frontend gets push
+  // updates instead of polling over HTTP (which can exhaust the connection pool).
   function refreshCaches() {
     try { _sessionsCache = buildSessionsData(); } catch (e) { console.error("[v1] sessions cache failed:", e.message); }
     try {
       const managedPids = tmux.getManagedPids();
       _processesCache = processes.findClaudeProcesses(managedPids);
     } catch (e) { console.error("[v1] processes cache failed:", e.message); }
+
+    if (broadcastAll) {
+      const health = {
+        ok: true,
+        tmux: tmux.isTmuxInstalled(),
+        ttyd: ttyd.isTtydInstalled(),
+        ghAuth: _authCache ? _authCache.ghAuth : undefined,
+        claudeAuth: _authCache ? _authCache.claudeAuth : undefined,
+        geminiAuth: gemini ? gemini.getAuthStatus() : undefined,
+        claudeChatAuth: claudeChat ? claudeChat.getAuthStatus() : undefined,
+      };
+      broadcastAll({ type: "server_push", sessions: _sessionsCache, processes: _processesCache, health });
+    }
   }
   // Pre-warm immediately on startup, then refresh every 5s
   setImmediate(refreshCaches);

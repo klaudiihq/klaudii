@@ -57,6 +57,12 @@ const scheduler = require("./lib/scheduler");
 const memory = require("./lib/memory");
 
 process.on('uncaughtException', (err) => {
+  // Relay socket errors are recoverable — the relay reconnects on next message.
+  // Don't crash the whole server for a single workspace failure.
+  if (err.message === 'relay heartbeat timeout' || /relay socket/i.test(err.message)) {
+    console.error('[warn] Recovered relay exception (non-fatal):', err.message);
+    return;
+  }
   console.error('[fatal] Uncaught exception:', err);
   process.exit(1);
 });
@@ -122,6 +128,7 @@ app.use(
     gemini,
     claudeChat,
     workspaceState,
+    broadcastAll: (payload) => { if (typeof broadcastAll === "function") broadcastAll(payload); },
   })
 );
 
@@ -596,6 +603,8 @@ const wss = new WebSocket.Server({ server, path: "/ws/chat" });
 let wsClientId = 0;
 // Per-workspace flag: has the "processing" ack been sent for the current user turn?
 const wsProcessingAcked = {};
+// Per-workspace response-timeout timer handle (prevents stacking if messages arrive quickly)
+const wsResponseTimers = {};
 function broadcastToWorkspace(workspace, payload, excludeClientId) {
   const data = JSON.stringify(payload);
   for (const client of wss.clients) {
@@ -604,11 +613,37 @@ function broadcastToWorkspace(workspace, payload, excludeClientId) {
     }
   }
 }
+function broadcastAll(payload) {
+  const data = JSON.stringify(payload);
+  for (const client of wss.clients) {
+    if (client.readyState === WebSocket.OPEN) client.send(data);
+  }
+}
+
+// Ping all connected WebSocket clients every 30s to keep connections alive
+const WS_PING_INTERVAL = 30000;
+setInterval(() => {
+  for (const client of wss.clients) {
+    if (client.readyState === WebSocket.OPEN) {
+      if (client._alive === false) {
+        // Didn't respond to last ping — terminate
+        console.log(`[chat-ws] client #${client._clientId} unresponsive, terminating`);
+        client.terminate();
+        continue;
+      }
+      client._alive = false;
+      client.ping();
+    }
+  }
+}, WS_PING_INTERVAL);
 
 wss.on("connection", (ws) => {
   const clientId = ++wsClientId;
   ws._clientId = clientId;
+  ws._alive = true;
   console.log(`[chat-ws] client #${clientId} connected`);
+
+  ws.on("pong", () => { ws._alive = true; });
 
   // Track which workspaces this client has active sends — cleared on disconnect
   const pendingWorkspaces = new Set();
@@ -676,7 +711,10 @@ wss.on("connection", (ws) => {
           // Schrodinger timeout: if Claude doesn't produce any event within 30s,
           // it's functionally dead. Kill the relay and spawn a fresh session with
           // the same message so the user doesn't have to resend.
-          setTimeout(async () => {
+          // Cancel any existing timer to prevent stacking if messages arrive quickly.
+          if (wsResponseTimers[workspace]) clearTimeout(wsResponseTimers[workspace]);
+          wsResponseTimers[workspace] = setTimeout(async () => {
+            delete wsResponseTimers[workspace];
             if (!wsProcessingAcked[workspace] && workspaceState.isStreaming(workspace)) {
               console.log(`[chat-ws] response timeout (30s) workspace=${workspace} — killing stuck relay and restarting`);
               claudeChat.stopProcess(workspace);
@@ -757,6 +795,10 @@ wss.on("connection", (ws) => {
           // First substantive event from agent = "processing" ack (double green checks)
           if (!wsProcessingAcked[workspace] && (event.type === "message" || event.type === "tool_use")) {
             wsProcessingAcked[workspace] = true;
+            if (wsResponseTimers[workspace]) {
+              clearTimeout(wsResponseTimers[workspace]);
+              delete wsResponseTimers[workspace];
+            }
             broadcastToWorkspace(workspace, { type: "ack", workspace, status: "processing" });
           }
           if (event.type === "permission_request") {
@@ -876,13 +918,24 @@ wss.on("connection", (ws) => {
 
         handle.onError((err) => {
           console.error(`[chat-ws] error workspace=${workspace}: ${err.message}`);
-          // Clear streaming flag on error
           workspaceState.setStreaming(workspace, false);
           pendingWorkspaces.delete(workspace);
           // Auth errors (e.g. A2A server couldn't find credentials) → exitCode 41
           // so the frontend shows the login panel instead of a generic error message.
           if (err.isAuthError) {
             broadcastToWorkspace(workspace, { type: "done", workspace, exitCode: 41 });
+          // Auto-reconnect if the relay daemon survived
+          } else if (backend === "claude" && claudeChat.isRelayAlive(workspace, chatSessionNum)) {
+            console.log(`[chat-ws] relay daemon still alive — auto-reconnecting workspace=${workspace}`);
+            broadcastToWorkspace(workspace, { type: "status", workspace, message: "Reconnecting..." });
+            try {
+              const newHandle = claudeChat.connectRelay(workspace, { sessionNum: chatSessionNum });
+              wireRelayEvents(workspace, newHandle, chatSessionNum);
+              console.log(`[chat-ws] relay auto-reconnected workspace=${workspace}`);
+            } catch (reconnErr) {
+              console.error(`[chat-ws] relay auto-reconnect failed: ${reconnErr.message}`);
+              broadcastToWorkspace(workspace, { type: "error", workspace, message: err.message });
+            }
           } else {
             broadcastToWorkspace(workspace, { type: "error", workspace, message: err.message });
           }
@@ -1019,9 +1072,11 @@ function wireRelayEvents(workspace, handle, sessionNum) {
     }
     if (event.type === "message" && (event.role === "assistant" || !event.role)) {
       workspaceState.setStreaming(workspace, true);
+      wsProcessingAcked[workspace] = true; // relay is alive and responding
       assistantText += event.content || "";
     } else if (event.type === "tool_use") {
       workspaceState.setStreaming(workspace, true);
+      wsProcessingAcked[workspace] = true; // relay is alive and responding
       toolEvents.push({ role: "tool_use", content: JSON.stringify({ tool_name: event.tool_name, tool_id: event.tool_id, parameters: event.parameters || {} }) });
     } else if (event.type === "tool_result") {
       const out = event.output || "";
@@ -1091,7 +1146,7 @@ function wireRelayEvents(workspace, handle, sessionNum) {
     }
   });
 
-  handle.onDone(({ code }) => {
+  handle.onDone(({ code, stderr }) => {
     console.log(`[server] relay exited workspace=${workspace} code=${code}`);
     workspaceState.setStreaming(workspace, false);
     workspaceState.setPendingPermission(workspace, null);
@@ -1099,13 +1154,29 @@ function wireRelayEvents(workspace, handle, sessionNum) {
     const batch = [...toolEvents];
     if (assistantText) batch.push({ role: "assistant", content: assistantText });
     if (batch.length > 0) claudeChat.pushHistoryBatch(workspace, batch, chatSessionNum);
-    broadcastToWorkspace(workspace, { type: "done", workspace, exitCode: code });
+    broadcastToWorkspace(workspace, { type: "done", workspace, exitCode: code, stderr: stderr || undefined });
   });
 
   handle.onError((err) => {
     console.error(`[server] relay error workspace=${workspace}: ${err.message}`);
     workspaceState.setStreaming(workspace, false);
-    broadcastToWorkspace(workspace, { type: "error", workspace, message: err.message });
+
+    // Auto-reconnect if the relay daemon is still alive (e.g. heartbeat timeout
+    // killed our socket but the daemon process is fine).
+    if (claudeChat.isRelayAlive(workspace, sessionNum)) {
+      console.log(`[server] relay daemon still alive — auto-reconnecting workspace=${workspace}`);
+      broadcastToWorkspace(workspace, { type: "status", workspace, message: "Reconnecting..." });
+      try {
+        const newHandle = claudeChat.connectRelay(workspace, { sessionNum });
+        wireRelayEvents(workspace, newHandle, sessionNum);
+        console.log(`[server] relay auto-reconnected workspace=${workspace}`);
+      } catch (reconnErr) {
+        console.error(`[server] relay auto-reconnect failed workspace=${workspace}: ${reconnErr.message}`);
+        broadcastToWorkspace(workspace, { type: "error", workspace, message: err.message });
+      }
+    } else {
+      broadcastToWorkspace(workspace, { type: "error", workspace, message: err.message });
+    }
   });
 }
 
