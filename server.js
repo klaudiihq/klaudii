@@ -372,7 +372,7 @@ app.post("/api/gemini/auth/login", async (_req, res) => {
   const tmuxCmd = `${TMUX} new-session -d -x 500 -y 50 -s '${tmuxName}' /bin/zsh -c '${shellCmd.replace(/'/g, "'\\''")}'`;
 
   try {
-    execSync(tmuxCmd, { stdio: "pipe", env: { ...process.env } });
+    execSync(tmuxCmd, { stdio: "pipe" });
   } catch (err) {
     return res.status(500).json({ error: `Failed to create auth session: ${err.message}` });
   }
@@ -381,9 +381,16 @@ app.post("/api/gemini/auth/login", async (_req, res) => {
   // Then: Enter = select "Login with Google", Enter = confirm "Yes" → URL is printed
   // Use raw send-keys (not sendKeys helper) to avoid double-enter from paste-buffer
   await new Promise((r) => setTimeout(r, 3500));
+  const paneBeforeEnter1 = tmux.capturePane(tmuxName);
+  console.log(`[gemini-auth] before-enter1 session=${tmux.sessionExists(tmuxName)} pane="${(paneBeforeEnter1||"").replace(/\n/g," ").slice(0,300)}"`);
   try { execSync(`${TMUX} send-keys -t '${tmuxName}' Enter`, { stdio: "pipe" }); } catch {}
   await new Promise((r) => setTimeout(r, 800));
+  const paneBeforeEnter2 = tmux.capturePane(tmuxName);
+  console.log(`[gemini-auth] before-enter2 session=${tmux.sessionExists(tmuxName)} pane="${(paneBeforeEnter2||"").replace(/\n/g," ").slice(0,300)}"`);
   try { execSync(`${TMUX} send-keys -t '${tmuxName}' Enter`, { stdio: "pipe" }); } catch {}
+  await new Promise((r) => setTimeout(r, 500));
+  const paneAfterEnter2 = tmux.capturePane(tmuxName);
+  console.log(`[gemini-auth] after-enter2 session=${tmux.sessionExists(tmuxName)} pane="${(paneAfterEnter2||"").replace(/\n/g," ").slice(0,300)}"`);
 
   // Poll tmux pane output to find the OAuth URL (up to 15s)
   // Join lines to handle URL wrapping in narrow panes
