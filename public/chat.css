@@ -1147,6 +1147,48 @@ a.chat-oauth-link-btn.hidden {
   display: none;
 }
 
+/* Authorization code entry section */
+.chat-auth-code-section {
+  margin-top: 1rem;
+  padding: 1rem;
+  background: var(--bg-input);
+  border: 1px solid var(--border-btn);
+  border-radius: 8px;
+}
+
+.chat-auth-code-section.hidden {
+  display: none;
+}
+
+.chat-auth-code-hint {
+  margin: 0 0 0.75rem;
+  font-size: 0.85rem;
+  color: var(--text-muted);
+}
+
+.chat-auth-code-section .chat-auth-key-form {
+  flex-direction: row;
+  flex-wrap: wrap;
+  align-items: center;
+}
+
+.chat-oauth-code-input {
+  flex: 1;
+  min-width: 0;
+  background: var(--bg);
+  color: var(--text);
+  border: 1px solid var(--border-btn);
+  border-radius: 6px;
+  padding: 0.5rem 0.75rem;
+  font-size: 0.9rem;
+  font-family: ui-monospace, monospace;
+}
+
+.chat-oauth-code-input:focus {
+  outline: none;
+  border-color: var(--btn-primary);
+}
+
 .chat-auth-spinner {
   display: inline-block;
   width: 14px;
