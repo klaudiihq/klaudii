@@ -368,7 +368,6 @@ app.post("/api/gemini/auth/login", async (_req, res) => {
   const geminiBin = gemini.getBinPath(config) || "gemini";
   const { execSync } = require("child_process");
   const TMUX = `tmux -S '${tmux.TMUX_SOCKET}'`;
-  // Run gemini normally — it starts a local OAuth callback server, we scrape and return the URL
   const shellCmd = `source ~/.zshrc 2>/dev/null; ${geminiBin}`;
   const tmuxCmd = `${TMUX} new-session -d -x 500 -y 50 -s '${tmuxName}' /bin/zsh -c '${shellCmd.replace(/'/g, "'\\''")}'`;
 
@@ -377,6 +376,12 @@ app.post("/api/gemini/auth/login", async (_req, res) => {
   } catch (err) {
     return res.status(500).json({ error: `Failed to create auth session: ${err.message}` });
   }
+
+  // Give gemini a moment to start, then send two Enters to navigate past the menu to the auth URL
+  await new Promise((r) => setTimeout(r, 2000));
+  try { tmux.sendKeys(tmuxName, ""); } catch {}
+  await new Promise((r) => setTimeout(r, 500));
+  try { tmux.sendKeys(tmuxName, ""); } catch {}
 
   // Poll tmux pane output to find the OAuth URL (up to 15s)
   // Join lines to handle URL wrapping in narrow panes
