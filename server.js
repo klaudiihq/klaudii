@@ -879,17 +879,23 @@ wss.on("connection", (ws) => {
           // Clear streaming flag on error
           workspaceState.setStreaming(workspace, false);
           pendingWorkspaces.delete(workspace);
-          broadcastToWorkspace(workspace, {
-            type: "error",
-            workspace,
-            message: err.message,
-          });
+          // Auth errors (e.g. A2A server couldn't find credentials) → exitCode 41
+          // so the frontend shows the login panel instead of a generic error message.
+          if (err.isAuthError) {
+            broadcastToWorkspace(workspace, { type: "done", workspace, exitCode: 41 });
+          } else {
+            broadcastToWorkspace(workspace, { type: "error", workspace, message: err.message });
+          }
         });
       } catch (err) {
         console.error(`[chat-ws] catch workspace=${workspace}: ${err.message}`);
         workspaceState.setStreaming(workspace, false);
         pendingWorkspaces.delete(workspace);
-        ws.send(JSON.stringify({ type: "error", workspace, message: err.message }));
+        if (err.isAuthError) {
+          ws.send(JSON.stringify({ type: "done", workspace, exitCode: 41 }));
+        } else {
+          ws.send(JSON.stringify({ type: "error", workspace, message: err.message }));
+        }
       }
     } else if (type === "stop") {
       const stopSession = msg.sessionNum !== undefined ? Number(msg.sessionNum) : undefined;
