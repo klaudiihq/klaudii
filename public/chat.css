@@ -988,13 +988,26 @@ summary.chat-tool-summary::marker { display: none; }
   color: var(--s-blue-text);
 }
 
+.chat-oauth-link {
+  display: inline-block;
+  margin-top: 0.25rem;
+  font-size: 0.9rem;
+  color: var(--btn-primary);
+  font-weight: 500;
+  text-decoration: none;
+}
+.chat-oauth-link:hover {
+  text-decoration: underline;
+}
+
 .chat-auth-key-form {
   display: flex;
   flex-direction: column;
   gap: 0.5rem;
 }
 
-.chat-auth-key-form input[type="password"] {
+.chat-auth-key-form input[type="password"],
+.chat-auth-key-form input[type="text"] {
   background: var(--bg-input);
   color: var(--text);
   border: 1px solid var(--border-btn);
@@ -1004,7 +1017,8 @@ summary.chat-tool-summary::marker { display: none; }
   font-family: ui-monospace, monospace;
 }
 
-.chat-auth-key-form input[type="password"]:focus {
+.chat-auth-key-form input[type="password"]:focus,
+.chat-auth-key-form input[type="text"]:focus {
   outline: none;
   border-color: var(--btn-primary);
 }

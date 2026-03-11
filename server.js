@@ -406,10 +406,9 @@ app.post("/api/gemini/auth/login", async (_req, res) => {
   }
 
   if (authUrl) {
-    // Open the URL directly in the user's default browser
-    try { execSync(`open ${JSON.stringify(authUrl)}`, { stdio: "pipe" }); } catch {}
-    // Keep the session alive — it's waiting for the auth code from the user
-    res.json({ ok: true, url: authUrl, needsCode: true, message: "Browser opened for authentication" });
+    // Return the URL to the frontend — it renders it as a real link (avoids popup blockers)
+    // The tmux session stays alive waiting for the auth code
+    res.json({ ok: true, url: authUrl, needsCode: true });
   } else {
     // No URL found — maybe already authenticated, or gemini printed something unexpected
     try { tmux.killSession(tmuxName); } catch {}

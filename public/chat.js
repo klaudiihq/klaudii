@@ -2769,18 +2769,31 @@ function chatShowAuthPanel() {
     panel.innerHTML = `
       <h3>Gemini Authentication Required</h3>
       <p>Choose how to authenticate with Gemini CLI:</p>
-      <div class="chat-auth-options">
-        <div class="chat-auth-option">
+      <div class="chat-auth-options" id="chat-auth-options">
+        <div class="chat-auth-option" id="chat-oauth-option">
           <h4>Login with Google</h4>
-          <p>Opens your browser to complete the Google OAuth flow.</p>
-          <button class="btn primary" id="chat-oauth-btn" onclick="chatStartOAuthLogin()">Login with Google</button>
-          <div id="chat-oauth-status" class="chat-auth-status hidden"></div>
+          <div id="chat-oauth-link-area" style="font-size:0.875rem;color:var(--text-muted)">
+            <span class="chat-auth-spinner"></span> Preparing login link…
+          </div>
+          <div id="chat-auth-code-section" style="display:none;margin-top:0.75rem">
+            <p style="margin:0 0 0.5rem;font-size:0.85rem;color:var(--text-dim);line-height:1.4">
+              After approving, Google will show you an authorization code. Paste it here:
+            </p>
+            <div class="chat-auth-key-form">
+              <input type="text" id="chat-auth-code-input" placeholder="Paste authorization code…" autocomplete="off" />
+              <div style="display:flex;gap:0.5rem">
+                <button class="btn primary" onclick="chatSubmitAuthCode()">Submit</button>
+                <button class="btn" onclick="chatShowAuthPanel()">Cancel</button>
+              </div>
+              <div id="chat-auth-code-status" style="font-size:0.8rem;color:var(--text-muted)"></div>
+            </div>
+          </div>
         </div>
-        <div class="chat-auth-option">
+        <div class="chat-auth-option" id="chat-apikey-option">
           <h4>Use API Key</h4>
           <p>Enter a <code>GEMINI_API_KEY</code> from <a href="https://aistudio.google.com/apikey" target="_blank">Google AI Studio</a>.</p>
           <div class="chat-auth-key-form">
-            <input type="password" id="chat-apikey-input" placeholder="Paste API key..." />
+            <input type="password" id="chat-apikey-input" placeholder="Paste API key…" />
             ${showWorkspaceScope ? `
             <div class="chat-auth-key-scope">
               <label><input type="radio" name="chat-key-scope" value="global" checked /> Global (all workspaces)</label>
@@ -2792,20 +2805,14 @@ function chatShowAuthPanel() {
         </div>
       </div>
     `;
+    // Kick off URL fetch immediately so the link is ready when the user looks at it
+    chatStartOAuthLogin();
   }
   container.appendChild(panel);
 }
 
 async function chatStartOAuthLogin() {
-  const btn = document.getElementById("chat-oauth-btn");
-  const status = document.getElementById("chat-oauth-status");
-
-  // Disable button, show waiting state
-  if (btn) btn.disabled = true;
-  if (status) {
-    status.classList.remove("hidden");
-    status.innerHTML = '<span class="chat-auth-spinner"></span> Opening browser...';
-  }
+  const linkArea = document.getElementById("chat-oauth-link-area");
 
   try {
     const res = await fetch("/api/gemini/auth/login", { method: "POST" });
@@ -2824,37 +2831,24 @@ async function chatStartOAuthLogin() {
       return;
     }
 
-    if (data.needsCode) {
-      // Browser opened; gemini is waiting for the auth code the user will get after granting permission
-      if (status) {
-        status.classList.remove("hidden");
-        status.innerHTML = `
-          <span class="chat-auth-spinner"></span> Browser opened. Complete the Google sign-in, then paste the authorization code below:<br><br>
-          <div class="chat-auth-code-form">
-            <input type="text" id="chat-auth-code-input" placeholder="Paste authorization code..." autocomplete="off" />
-            <button class="btn primary" onclick="chatSubmitAuthCode()">Submit</button>
-          </div>
-          <div id="chat-auth-code-status" style="margin-top:8px;font-size:13px;color:var(--text-muted)"></div>
-        `;
-        setTimeout(() => document.getElementById("chat-auth-code-input")?.focus(), 50);
-      }
-      return;
+    if (data.url && linkArea) {
+      // Show a real link; clicking it reveals the code input and hides API key option
+      linkArea.innerHTML = `<a href="${data.url}" target="_blank" class="chat-oauth-link" onclick="chatRevealCodeInput()">→ Authenticate with Google ↗</a>`;
     }
-
-    // Browser should be open now — poll for auth completion
-    if (status) {
-      status.innerHTML = '<span class="chat-auth-spinner"></span> Waiting for authentication to complete...';
-    }
-
-    chatPollAuthCompletion();
 
   } catch (err) {
-    if (btn) btn.disabled = false;
-    if (status) {
-      status.classList.remove("hidden");
-      status.innerHTML = `Failed to open login. Try running <code>gemini</code> in your terminal to authenticate manually.`;
+    if (linkArea) {
+      linkArea.innerHTML = `<span style="color:var(--s-red)">Could not prepare login link.</span>
+        <button class="btn" style="margin-left:0.5rem;font-size:0.8rem" onclick="chatStartOAuthLogin()">Retry</button>`;
     }
   }
+}
+
+function chatRevealCodeInput() {
+  document.getElementById("chat-apikey-option")?.style.setProperty("display", "none");
+  const section = document.getElementById("chat-auth-code-section");
+  if (section) section.style.display = "";
+  setTimeout(() => document.getElementById("chat-auth-code-input")?.focus(), 50);
 }
 
 async function chatSubmitAuthCode() {
@@ -2864,7 +2858,7 @@ async function chatSubmitAuthCode() {
   if (!code) return;
 
   if (input) input.disabled = true;
-  if (codeStatus) codeStatus.textContent = "Submitting...";
+  if (codeStatus) codeStatus.textContent = "Submitting…";
 
   try {
     const res = await fetch("/api/gemini/auth/code", {
@@ -2875,7 +2869,7 @@ async function chatSubmitAuthCode() {
     const data = await res.json();
     if (!res.ok) throw new Error(data.error || "Failed to submit code");
 
-    if (codeStatus) codeStatus.textContent = "Code submitted. Waiting for authentication...";
+    if (codeStatus) codeStatus.textContent = "Code submitted. Waiting for authentication…";
     chatPollAuthCompletion();
   } catch (err) {
     if (input) input.disabled = false;
