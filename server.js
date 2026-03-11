@@ -377,10 +377,11 @@ app.post("/api/gemini/auth/login", async (_req, res) => {
     return res.status(500).json({ error: `Failed to create auth session: ${err.message}` });
   }
 
-  // Give gemini a moment to start, then send two Enters to navigate past the menu to the auth URL
-  await new Promise((r) => setTimeout(r, 2000));
+  // Give gemini a moment to start (it tries browser, fails, then shows the menu)
+  // Then: Enter = select "Login with Google", Enter = confirm "Yes" → URL is printed
+  await new Promise((r) => setTimeout(r, 3500));
   try { tmux.sendKeys(tmuxName, ""); } catch {}
-  await new Promise((r) => setTimeout(r, 500));
+  await new Promise((r) => setTimeout(r, 800));
   try { tmux.sendKeys(tmuxName, ""); } catch {}
 
   // Poll tmux pane output to find the OAuth URL (up to 15s)
