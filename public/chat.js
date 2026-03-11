@@ -2776,6 +2776,14 @@ function chatShowAuthPanel() {
           <a href="#" id="chat-oauth-link" class="btn primary chat-oauth-link-btn" target="_blank" onclick="chatOAuthLinkClicked(event)">
             <span id="chat-oauth-link-text">Loading&hellip;</span>
           </a>
+          <div id="chat-oauth-code-section" class="chat-auth-code-section hidden">
+            <p class="chat-auth-code-hint">After signing in, Google will show you an authorization code. Paste it here:</p>
+            <div class="chat-auth-key-form">
+              <input type="text" id="chat-oauth-code-input" class="chat-oauth-code-input" placeholder="Paste authorization code…" autocomplete="off" onkeydown="if(event.key==='Enter') chatSubmitAuthCode()" />
+              <button id="chat-oauth-code-btn" class="btn primary" onclick="chatSubmitAuthCode()">Submit</button>
+              <button class="btn" onclick="chatCancelOAuth()">Cancel</button>
+            </div>
+          </div>
           <div id="chat-oauth-status" class="chat-auth-status hidden"></div>
         </div>
         <div class="chat-auth-option" id="chat-apikey-section">
@@ -2822,15 +2830,19 @@ async function chatStartOAuthLogin() {
       return;
     }
 
-    // URL ready — set href so clicking opens naturally in new tab (no popup block)
+    // URL ready — show the link and the code entry form
     if (link) {
       link.href = data.url;
       link.dataset.ready = "true";
     }
-    if (linkText) linkText.textContent = "Login with Google";
+    if (linkText) linkText.textContent = "Open Google Sign-In";
+
+    // Reveal the code entry form
+    const codeSection = document.getElementById("chat-oauth-code-section");
+    if (codeSection) codeSection.classList.remove("hidden");
 
   } catch (err) {
-    if (linkText) linkText.textContent = "Login with Google";
+    if (linkText) linkText.textContent = "Open Google Sign-In";
     if (status) {
       status.classList.remove("hidden");
       status.innerHTML = `Could not prepare login. Try running <code>gemini</code> in your terminal.`;
@@ -2838,7 +2850,8 @@ async function chatStartOAuthLogin() {
   }
 }
 
-// Called when the "Login with Google" link is clicked
+// Called when the "Open Google Sign-In" link is clicked — nothing extra needed,
+// the code form is already visible; link opens naturally in new tab
 function chatOAuthLinkClicked(event) {
   const link = document.getElementById("chat-oauth-link");
   if (!link || !link.dataset.ready) {
@@ -2848,34 +2861,60 @@ function chatOAuthLinkClicked(event) {
       status.classList.remove("hidden");
       status.textContent = "Still loading, please wait a moment…";
     }
-    return;
   }
-
-  // Let the link open naturally in a new tab; hide the API key section and start polling
-  const apikeySection = document.getElementById("chat-apikey-section");
-  const status = document.getElementById("chat-oauth-status");
-
-  if (link) link.classList.add("hidden");
-  if (apikeySection) apikeySection.classList.add("hidden");
-  if (status) {
-    status.classList.remove("hidden");
-    status.innerHTML = '<span class="chat-auth-spinner"></span> Complete sign-in in the new tab, then come back here… <button class="btn btn-sm" onclick="chatCancelOAuth()" style="margin-left:0.5rem">Cancel</button>';
-  }
-
-  chatPollAuthCompletion();
 }
 
-// Reset the auth panel to its initial state (cancel from mid-flow)
+async function chatSubmitAuthCode() {
+  const input = document.getElementById("chat-oauth-code-input");
+  const btn = document.getElementById("chat-oauth-code-btn");
+  const status = document.getElementById("chat-oauth-status");
+  const code = input ? input.value.trim() : "";
+  if (!code) return;
+
+  if (btn) btn.disabled = true;
+  if (btn) btn.textContent = "Verifying…";
+
+  try {
+    const res = await fetch("/api/gemini/auth/code", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ code }),
+    });
+    if (!res.ok) throw new Error((await res.json()).error || "Failed");
+
+    // Poll for auth completion
+    if (status) {
+      status.classList.remove("hidden");
+      status.innerHTML = '<span class="chat-auth-spinner"></span> Verifying with Google…';
+    }
+    chatPollAuthCompletion();
+  } catch (err) {
+    if (status) {
+      status.classList.remove("hidden");
+      status.textContent = `Error: ${err.message}`;
+    }
+    if (btn) { btn.disabled = false; btn.textContent = "Submit"; }
+  }
+}
+
+// Reset the auth panel to its initial state
 function chatCancelOAuth() {
   if (chatAuthPollTimer) { clearInterval(chatAuthPollTimer); chatAuthPollTimer = null; }
 
   const link = document.getElementById("chat-oauth-link");
   const apikeySection = document.getElementById("chat-apikey-section");
+  const codeSection = document.getElementById("chat-oauth-code-section");
   const status = document.getElementById("chat-oauth-status");
 
-  if (link) link.classList.remove("hidden");
+  if (link) { link.classList.remove("hidden"); link.dataset.ready = ""; }
   if (apikeySection) apikeySection.classList.remove("hidden");
+  if (codeSection) codeSection.classList.add("hidden");
   if (status) { status.classList.add("hidden"); status.innerHTML = ""; }
+
+  // Restart the login flow
+  const linkText = document.getElementById("chat-oauth-link-text");
+  if (linkText) linkText.textContent = "Loading\u2026";
+  chatStartOAuthLogin();
 }
 
 function chatPollAuthCompletion() {

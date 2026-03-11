@@ -368,7 +368,8 @@ app.post("/api/gemini/auth/login", async (_req, res) => {
   const geminiBin = gemini.getBinPath(config) || "gemini";
   const { execSync } = require("child_process");
   const TMUX = `tmux -S '${tmux.TMUX_SOCKET}'`;
-  const shellCmd = `source ~/.zshrc 2>/dev/null; ${geminiBin}`;
+  // NO_BROWSER=true: gemini prints the OAuth URL and waits for the user to paste the auth code
+  const shellCmd = `source ~/.zshrc 2>/dev/null; NO_BROWSER=true ${geminiBin}`;
   const tmuxCmd = `${TMUX} new-session -d -x 500 -y 50 -s '${tmuxName}' /bin/zsh -c '${shellCmd.replace(/'/g, "'\\''")}'`;
 
   try {
@@ -377,44 +378,25 @@ app.post("/api/gemini/auth/login", async (_req, res) => {
     return res.status(500).json({ error: `Failed to create auth session: ${err.message}` });
   }
 
-  // Give gemini a moment to start (it tries browser, fails, then shows the menu)
-  // Then: Enter = select "Login with Google", Enter = confirm "Yes" → URL is printed
-  // Use raw send-keys (not sendKeys helper) to avoid double-enter from paste-buffer
-  await new Promise((r) => setTimeout(r, 3500));
-  const paneBeforeEnter1 = tmux.capturePane(tmuxName);
-  console.log(`[gemini-auth] before-enter1 session=${tmux.sessionExists(tmuxName)} pane="${(paneBeforeEnter1||"").replace(/\n/g," ").slice(0,300)}"`);
-  try { execSync(`${TMUX} send-keys -t '${tmuxName}' Enter`, { stdio: "pipe" }); } catch {}
-  await new Promise((r) => setTimeout(r, 800));
-  const paneBeforeEnter2 = tmux.capturePane(tmuxName);
-  console.log(`[gemini-auth] before-enter2 session=${tmux.sessionExists(tmuxName)} pane="${(paneBeforeEnter2||"").replace(/\n/g," ").slice(0,300)}"`);
-  try { execSync(`${TMUX} send-keys -t '${tmuxName}' Enter`, { stdio: "pipe" }); } catch {}
-  await new Promise((r) => setTimeout(r, 500));
-  const paneAfterEnter2 = tmux.capturePane(tmuxName);
-  console.log(`[gemini-auth] after-enter2 session=${tmux.sessionExists(tmuxName)} pane="${(paneAfterEnter2||"").replace(/\n/g," ").slice(0,300)}"`);
-
-  // Poll tmux pane output to find the OAuth URL (up to 15s)
-  // Join lines to handle URL wrapping in narrow panes
+  // Poll for the URL (up to 15s) — NO_BROWSER prints it on one line immediately
   const urlRe = /https:\/\/accounts\.google\.com\S+|https:\/\/\S*google\S*\/auth\S*/;
   let authUrl = null;
 
   for (let i = 0; i < 30; i++) {
     await new Promise((r) => setTimeout(r, 500));
     const paneText = tmux.capturePane(tmuxName);
-    if (!paneText) { console.log(`[gemini-auth] poll ${i}: no pane text`); continue; }
+    if (!paneText) continue;
     const joined = paneText.replace(/\n/g, " ");
-    if (i < 5 || i % 5 === 0) console.log(`[gemini-auth] poll ${i}: "${joined.slice(0, 200)}"`);
     const match = joined.match(urlRe);
     if (match) {
       authUrl = match[0].trim();
       break;
     }
-    // Session may have already exited (e.g. already authenticated)
     if (!tmux.sessionExists(tmuxName)) break;
   }
 
   if (authUrl) {
-    // Return URL to client — client opens it as a <a target="_blank"> link.
-    // Gemini's local OAuth callback server handles completion automatically.
+    // Return URL — client shows it as a link + prompts for the auth code
     res.json({ ok: true, url: authUrl });
   } else {
     // No URL found — maybe already authenticated, or gemini printed something unexpected
@@ -440,6 +422,18 @@ app.post("/api/gemini/auth/login", async (_req, res) => {
     clearInterval(cleanup);
     try { tmux.killSession(tmuxName); } catch {}
   }, 10 * 60 * 1000);
+});
+
+// Submit the auth code that Google gave the user back to the waiting gemini session
+app.post("/api/gemini/auth/code", (req, res) => {
+  const { code } = req.body;
+  if (!code) return res.status(400).json({ error: "code required" });
+  try {
+    tmux.sendKeys("gemini-auth", code.trim());
+    res.json({ ok: true });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
 });
 
 // --- Claude Chat ---
