@@ -379,10 +379,11 @@ app.post("/api/gemini/auth/login", async (_req, res) => {
 
   // Give gemini a moment to start (it tries browser, fails, then shows the menu)
   // Then: Enter = select "Login with Google", Enter = confirm "Yes" → URL is printed
+  // Use raw send-keys (not sendKeys helper) to avoid double-enter from paste-buffer
   await new Promise((r) => setTimeout(r, 3500));
-  try { tmux.sendKeys(tmuxName, ""); } catch {}
+  try { execSync(`${TMUX} send-keys -t '${tmuxName}' Enter`, { stdio: "pipe" }); } catch {}
   await new Promise((r) => setTimeout(r, 800));
-  try { tmux.sendKeys(tmuxName, ""); } catch {}
+  try { execSync(`${TMUX} send-keys -t '${tmuxName}' Enter`, { stdio: "pipe" }); } catch {}
 
   // Poll tmux pane output to find the OAuth URL (up to 15s)
   // Join lines to handle URL wrapping in narrow panes
