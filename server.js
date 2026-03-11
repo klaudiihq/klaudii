@@ -393,8 +393,9 @@ app.post("/api/gemini/auth/login", async (_req, res) => {
   for (let i = 0; i < 30; i++) {
     await new Promise((r) => setTimeout(r, 500));
     const paneText = tmux.capturePane(tmuxName);
-    if (!paneText) continue;
+    if (!paneText) { console.log(`[gemini-auth] poll ${i}: no pane text`); continue; }
     const joined = paneText.replace(/\n/g, " ");
+    if (i < 5 || i % 5 === 0) console.log(`[gemini-auth] poll ${i}: "${joined.slice(0, 200)}"`);
     const match = joined.match(urlRe);
     if (match) {
       authUrl = match[0].trim();
