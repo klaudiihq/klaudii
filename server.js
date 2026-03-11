@@ -368,9 +368,10 @@ app.post("/api/gemini/auth/login", async (_req, res) => {
   const geminiBin = gemini.getBinPath(config) || "gemini";
   const { execSync } = require("child_process");
   const TMUX = `tmux -S '${tmux.TMUX_SOCKET}'`;
-  // Run bare `gemini` which will print an OAuth URL if not authenticated
-  const shellCmd = `source ~/.zshrc 2>/dev/null; ${geminiBin}`;
-  const tmuxCmd = `${TMUX} new-session -d -s '${tmuxName}' /bin/zsh -c '${shellCmd.replace(/'/g, "'\\''")}'`;
+  // NO_BROWSER=true: gemini prints the OAuth URL and waits for auth code instead of trying to open a browser.
+  // Use wide pane (500 cols) to prevent URL line-wrapping.
+  const shellCmd = `source ~/.zshrc 2>/dev/null; NO_BROWSER=true ${geminiBin}`;
+  const tmuxCmd = `${TMUX} new-session -d -x 500 -y 50 -s '${tmuxName}' /bin/zsh -c '${shellCmd.replace(/'/g, "'\\''")}'`;
 
   try {
     execSync(tmuxCmd, { stdio: "pipe", env: { ...process.env } });
@@ -378,19 +379,28 @@ app.post("/api/gemini/auth/login", async (_req, res) => {
     return res.status(500).json({ error: `Failed to create auth session: ${err.message}` });
   }
 
-  // Poll tmux pane output to find the OAuth URL (up to 15s)
-  const urlRe = /https:\/\/accounts\.google\.com[^\s]+|https:\/\/[^\s]*google[^\s]*\/auth[^\s]*/;
+  // Poll tmux pane output to find the OAuth URL (up to 15s).
+  // URL may be split across lines if terminal is narrow — join them.
+  const urlStartRe = /https:\/\/accounts\.google\.com\S*/;
   let authUrl = null;
 
   for (let i = 0; i < 30; i++) {
     await new Promise((r) => setTimeout(r, 500));
     const paneText = tmux.capturePane(tmuxName);
     if (!paneText) continue;
-    const match = paneText.match(urlRe);
-    if (match) {
-      authUrl = match[0];
-      break;
+    // Capture all lines from "Please visit" until "Enter the authorization code"
+    const visitIdx = paneText.indexOf("Please visit");
+    if (visitIdx !== -1) {
+      const codeIdx = paneText.indexOf("Enter the authorization code", visitIdx);
+      const urlBlock = codeIdx !== -1 ? paneText.slice(visitIdx, codeIdx) : paneText.slice(visitIdx);
+      // Join wrapped lines (remove newlines within the URL block, then extract)
+      const joined = urlBlock.replace(/\n/g, "");
+      const match = joined.match(urlStartRe);
+      if (match) { authUrl = match[0]; break; }
     }
+    // Fallback: simple single-line match
+    const match = paneText.match(urlStartRe);
+    if (match) { authUrl = match[0]; break; }
     // Session may have already exited (e.g. already authenticated)
     if (!tmux.sessionExists(tmuxName)) break;
   }
@@ -398,7 +408,8 @@ app.post("/api/gemini/auth/login", async (_req, res) => {
   if (authUrl) {
     // Open the URL directly in the user's default browser
     try { execSync(`open ${JSON.stringify(authUrl)}`, { stdio: "pipe" }); } catch {}
-    res.json({ ok: true, url: authUrl, message: "Browser opened for authentication" });
+    // Keep the session alive — it's waiting for the auth code from the user
+    res.json({ ok: true, url: authUrl, needsCode: true, message: "Browser opened for authentication" });
   } else {
     // No URL found — maybe already authenticated, or gemini printed something unexpected
     try { tmux.killSession(tmuxName); } catch {}
@@ -423,6 +434,22 @@ app.post("/api/gemini/auth/login", async (_req, res) => {
     clearInterval(cleanup);
     try { tmux.killSession(tmuxName); } catch {}
   }, 10 * 60 * 1000);
+});
+
+// Submit the OAuth authorization code to the waiting gemini-auth tmux session
+app.post("/api/gemini/auth/code", async (req, res) => {
+  const { code } = req.body || {};
+  if (!code) return res.status(400).json({ error: "Missing code" });
+  const tmuxName = "gemini-auth";
+  if (!tmux.sessionExists(tmuxName)) {
+    return res.status(400).json({ error: "Auth session expired. Please restart the login flow." });
+  }
+  try {
+    tmux.sendKeys(tmuxName, code.trim());
+    res.json({ ok: true });
+  } catch (err) {
+    res.status(500).json({ error: `Failed to send code: ${err.message}` });
+  }
 });
 
 // --- Claude Chat ---

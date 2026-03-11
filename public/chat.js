@@ -2824,6 +2824,23 @@ async function chatStartOAuthLogin() {
       return;
     }
 
+    if (data.needsCode) {
+      // Browser opened; gemini is waiting for the auth code the user will get after granting permission
+      if (status) {
+        status.classList.remove("hidden");
+        status.innerHTML = `
+          <span class="chat-auth-spinner"></span> Browser opened. Complete the Google sign-in, then paste the authorization code below:<br><br>
+          <div class="chat-auth-code-form">
+            <input type="text" id="chat-auth-code-input" placeholder="Paste authorization code..." autocomplete="off" />
+            <button class="btn primary" onclick="chatSubmitAuthCode()">Submit</button>
+          </div>
+          <div id="chat-auth-code-status" style="margin-top:8px;font-size:13px;color:var(--text-muted)"></div>
+        `;
+        setTimeout(() => document.getElementById("chat-auth-code-input")?.focus(), 50);
+      }
+      return;
+    }
+
     // Browser should be open now — poll for auth completion
     if (status) {
       status.innerHTML = '<span class="chat-auth-spinner"></span> Waiting for authentication to complete...';
@@ -2837,6 +2854,32 @@ async function chatStartOAuthLogin() {
       status.classList.remove("hidden");
       status.innerHTML = `Failed to open login. Try running <code>gemini</code> in your terminal to authenticate manually.`;
     }
+  }
+}
+
+async function chatSubmitAuthCode() {
+  const input = document.getElementById("chat-auth-code-input");
+  const codeStatus = document.getElementById("chat-auth-code-status");
+  const code = input?.value?.trim();
+  if (!code) return;
+
+  if (input) input.disabled = true;
+  if (codeStatus) codeStatus.textContent = "Submitting...";
+
+  try {
+    const res = await fetch("/api/gemini/auth/code", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ code }),
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || "Failed to submit code");
+
+    if (codeStatus) codeStatus.textContent = "Code submitted. Waiting for authentication...";
+    chatPollAuthCompletion();
+  } catch (err) {
+    if (input) input.disabled = false;
+    if (codeStatus) codeStatus.textContent = `Error: ${err.message}`;
   }
 }
 
