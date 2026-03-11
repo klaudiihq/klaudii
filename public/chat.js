@@ -2769,31 +2769,20 @@ function chatShowAuthPanel() {
     panel.innerHTML = `
       <h3>Gemini Authentication Required</h3>
       <p>Choose how to authenticate with Gemini CLI:</p>
-      <div class="chat-auth-options" id="chat-auth-options">
-        <div class="chat-auth-option" id="chat-oauth-option">
+      <div class="chat-auth-options">
+        <div class="chat-auth-option" id="chat-oauth-section">
           <h4>Login with Google</h4>
-          <div id="chat-oauth-link-area" style="font-size:0.875rem;color:var(--text-muted)">
-            <span class="chat-auth-spinner"></span> Preparing login link…
-          </div>
-          <div id="chat-auth-code-section" style="display:none;margin-top:0.75rem">
-            <p style="margin:0 0 0.5rem;font-size:0.85rem;color:var(--text-dim);line-height:1.4">
-              After approving, Google will show you an authorization code. Paste it here:
-            </p>
-            <div class="chat-auth-key-form">
-              <input type="text" id="chat-auth-code-input" placeholder="Paste authorization code…" autocomplete="off" />
-              <div style="display:flex;gap:0.5rem">
-                <button class="btn primary" onclick="chatSubmitAuthCode()">Submit</button>
-                <button class="btn" onclick="chatShowAuthPanel()">Cancel</button>
-              </div>
-              <div id="chat-auth-code-status" style="font-size:0.8rem;color:var(--text-muted)"></div>
-            </div>
-          </div>
+          <p id="chat-oauth-desc">Sign in with your Google account to use Gemini.</p>
+          <a href="#" id="chat-oauth-link" class="btn primary chat-oauth-link-btn" target="_blank" onclick="chatOAuthLinkClicked(event)">
+            <span id="chat-oauth-link-text">Loading&hellip;</span>
+          </a>
+          <div id="chat-oauth-status" class="chat-auth-status hidden"></div>
         </div>
-        <div class="chat-auth-option" id="chat-apikey-option">
+        <div class="chat-auth-option" id="chat-apikey-section">
           <h4>Use API Key</h4>
           <p>Enter a <code>GEMINI_API_KEY</code> from <a href="https://aistudio.google.com/apikey" target="_blank">Google AI Studio</a>.</p>
           <div class="chat-auth-key-form">
-            <input type="password" id="chat-apikey-input" placeholder="Paste API key…" />
+            <input type="password" id="chat-apikey-input" placeholder="Paste API key..." />
             ${showWorkspaceScope ? `
             <div class="chat-auth-key-scope">
               <label><input type="radio" name="chat-key-scope" value="global" checked /> Global (all workspaces)</label>
@@ -2805,14 +2794,17 @@ function chatShowAuthPanel() {
         </div>
       </div>
     `;
-    // Kick off URL fetch immediately so the link is ready when the user looks at it
+    // Pre-fetch the OAuth URL in the background so the link is ready to click
     chatStartOAuthLogin();
   }
   container.appendChild(panel);
 }
 
+// Pre-fetches the OAuth URL so the link is ready. Called when the auth panel renders.
 async function chatStartOAuthLogin() {
-  const linkArea = document.getElementById("chat-oauth-link-area");
+  const link = document.getElementById("chat-oauth-link");
+  const linkText = document.getElementById("chat-oauth-link-text");
+  const status = document.getElementById("chat-oauth-status");
 
   try {
     const res = await fetch("/api/gemini/auth/login", { method: "POST" });
@@ -2821,7 +2813,6 @@ async function chatStartOAuthLogin() {
     if (!res.ok) throw new Error(data.error || "Failed to start login");
 
     if (data.alreadyAuthenticated) {
-      // Already logged in — go straight to chat
       if (chatWorkspace) {
         chatShowChat();
       } else {
@@ -2831,50 +2822,60 @@ async function chatStartOAuthLogin() {
       return;
     }
 
-    if (data.url && linkArea) {
-      // Show a real link; clicking it reveals the code input and hides API key option
-      linkArea.innerHTML = `<a href="${data.url}" target="_blank" class="chat-oauth-link" onclick="chatRevealCodeInput()">→ Authenticate with Google ↗</a>`;
+    // URL ready — set href so clicking opens naturally in new tab (no popup block)
+    if (link) {
+      link.href = data.url;
+      link.dataset.ready = "true";
     }
+    if (linkText) linkText.textContent = "Login with Google";
 
   } catch (err) {
-    if (linkArea) {
-      linkArea.innerHTML = `<span style="color:var(--s-red)">Could not prepare login link.</span>
-        <button class="btn" style="margin-left:0.5rem;font-size:0.8rem" onclick="chatStartOAuthLogin()">Retry</button>`;
+    if (linkText) linkText.textContent = "Login with Google";
+    if (status) {
+      status.classList.remove("hidden");
+      status.innerHTML = `Could not prepare login. Try running <code>gemini</code> in your terminal.`;
     }
   }
 }
 
-function chatRevealCodeInput() {
-  document.getElementById("chat-apikey-option")?.style.setProperty("display", "none");
-  const section = document.getElementById("chat-auth-code-section");
-  if (section) section.style.display = "";
-  setTimeout(() => document.getElementById("chat-auth-code-input")?.focus(), 50);
+// Called when the "Login with Google" link is clicked
+function chatOAuthLinkClicked(event) {
+  const link = document.getElementById("chat-oauth-link");
+  if (!link || !link.dataset.ready) {
+    event.preventDefault();
+    const status = document.getElementById("chat-oauth-status");
+    if (status) {
+      status.classList.remove("hidden");
+      status.textContent = "Still loading, please wait a moment…";
+    }
+    return;
+  }
+
+  // Let the link open naturally in a new tab; hide the API key section and start polling
+  const apikeySection = document.getElementById("chat-apikey-section");
+  const status = document.getElementById("chat-oauth-status");
+
+  if (link) link.classList.add("hidden");
+  if (apikeySection) apikeySection.classList.add("hidden");
+  if (status) {
+    status.classList.remove("hidden");
+    status.innerHTML = '<span class="chat-auth-spinner"></span> Complete sign-in in the new tab, then come back here… <button class="btn btn-sm" onclick="chatCancelOAuth()" style="margin-left:0.5rem">Cancel</button>';
+  }
+
+  chatPollAuthCompletion();
 }
 
-async function chatSubmitAuthCode() {
-  const input = document.getElementById("chat-auth-code-input");
-  const codeStatus = document.getElementById("chat-auth-code-status");
-  const code = input?.value?.trim();
-  if (!code) return;
+// Reset the auth panel to its initial state (cancel from mid-flow)
+function chatCancelOAuth() {
+  if (chatAuthPollTimer) { clearInterval(chatAuthPollTimer); chatAuthPollTimer = null; }
 
-  if (input) input.disabled = true;
-  if (codeStatus) codeStatus.textContent = "Submitting…";
+  const link = document.getElementById("chat-oauth-link");
+  const apikeySection = document.getElementById("chat-apikey-section");
+  const status = document.getElementById("chat-oauth-status");
 
-  try {
-    const res = await fetch("/api/gemini/auth/code", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ code }),
-    });
-    const data = await res.json();
-    if (!res.ok) throw new Error(data.error || "Failed to submit code");
-
-    if (codeStatus) codeStatus.textContent = "Code submitted. Waiting for authentication…";
-    chatPollAuthCompletion();
-  } catch (err) {
-    if (input) input.disabled = false;
-    if (codeStatus) codeStatus.textContent = `Error: ${err.message}`;
-  }
+  if (link) link.classList.remove("hidden");
+  if (apikeySection) apikeySection.classList.remove("hidden");
+  if (status) { status.classList.add("hidden"); status.innerHTML = ""; }
 }
 
 function chatPollAuthCompletion() {
