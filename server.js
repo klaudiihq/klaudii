@@ -368,9 +368,9 @@ app.post("/api/gemini/auth/login", async (_req, res) => {
   const geminiBin = gemini.getBinPath(config) || "gemini";
   const { execSync } = require("child_process");
   const TMUX = `tmux -S '${tmux.TMUX_SOCKET}'`;
-  // Run bare `gemini` which will print an OAuth URL if not authenticated
+  // Run gemini normally — it starts a local OAuth callback server, we scrape and return the URL
   const shellCmd = `source ~/.zshrc 2>/dev/null; ${geminiBin}`;
-  const tmuxCmd = `${TMUX} new-session -d -s '${tmuxName}' /bin/zsh -c '${shellCmd.replace(/'/g, "'\\''")}'`;
+  const tmuxCmd = `${TMUX} new-session -d -x 500 -y 50 -s '${tmuxName}' /bin/zsh -c '${shellCmd.replace(/'/g, "'\\''")}'`;
 
   try {
     execSync(tmuxCmd, { stdio: "pipe", env: { ...process.env } });
@@ -379,16 +379,18 @@ app.post("/api/gemini/auth/login", async (_req, res) => {
   }
 
   // Poll tmux pane output to find the OAuth URL (up to 15s)
-  const urlRe = /https:\/\/accounts\.google\.com[^\s]+|https:\/\/[^\s]*google[^\s]*\/auth[^\s]*/;
+  // Join lines to handle URL wrapping in narrow panes
+  const urlRe = /https:\/\/accounts\.google\.com\S+|https:\/\/\S*google\S*\/auth\S*/;
   let authUrl = null;
 
   for (let i = 0; i < 30; i++) {
     await new Promise((r) => setTimeout(r, 500));
     const paneText = tmux.capturePane(tmuxName);
     if (!paneText) continue;
-    const match = paneText.match(urlRe);
+    const joined = paneText.replace(/\n/g, " ");
+    const match = joined.match(urlRe);
     if (match) {
-      authUrl = match[0];
+      authUrl = match[0].trim();
       break;
     }
     // Session may have already exited (e.g. already authenticated)
@@ -396,9 +398,9 @@ app.post("/api/gemini/auth/login", async (_req, res) => {
   }
 
   if (authUrl) {
-    // Open the URL directly in the user's default browser
-    try { execSync(`open ${JSON.stringify(authUrl)}`, { stdio: "pipe" }); } catch {}
-    res.json({ ok: true, url: authUrl, message: "Browser opened for authentication" });
+    // Return URL to client — client opens it as a <a target="_blank"> link.
+    // Gemini's local OAuth callback server handles completion automatically.
+    res.json({ ok: true, url: authUrl });
   } else {
     // No URL found — maybe already authenticated, or gemini printed something unexpected
     try { tmux.killSession(tmuxName); } catch {}
