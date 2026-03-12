@@ -1110,6 +1110,18 @@ function chatShowReconnectedToast() {
   setTimeout(() => toast.remove(), 3000);
 }
 
+/** Show a brief toast notification in the chat area. */
+function chatShowToast(text) {
+  const container = document.getElementById("chat-messages");
+  if (!container) return;
+  const toast = document.createElement("div");
+  toast.className = "chat-toast";
+  toast.textContent = text;
+  container.appendChild(toast);
+  chatScrollToBottom();
+  setTimeout(() => toast.remove(), 3000);
+}
+
 // --- Event handling ---
 
 function handleGeminiEvent(event) {
@@ -3838,6 +3850,7 @@ const SLASH_COMMANDS = [
   { name: "bug",        description: "Report a bug" },
   { name: "clear",      description: "Clear chat messages" },
   { name: "compress",   description: "Compress chat context" },
+  { name: "copy",       description: "Copy last response to clipboard" },
   { name: "corgi",      description: "Toggles corgi mode", hidden: true },
   { name: "docs",       description: "Open Gemini CLI documentation" },
   { name: "extensions", description: "List installed extensions" },
@@ -3945,6 +3958,23 @@ function chatSelectSlashCommand(cmd) {
     const container = document.getElementById("chat-messages");
     if (container) container.innerHTML = "";
     chatAppendSystemNote("Conversation cleared");
+    return;
+  }
+
+  // Copy — frontend-only, copies last assistant message to clipboard
+  if (cmd.name === "copy") {
+    const msgs = document.querySelectorAll("#chat-messages .chat-msg.assistant");
+    if (msgs.length === 0) {
+      chatAppendSystemNote("Nothing to copy");
+      return;
+    }
+    const last = msgs[msgs.length - 1];
+    const text = last.innerText || last.textContent;
+    navigator.clipboard.writeText(text.trim()).then(() => {
+      chatShowToast("Copied to clipboard");
+    }).catch(() => {
+      chatAppendError("Failed to copy — clipboard access denied");
+    });
     return;
   }
 

@@ -693,6 +693,17 @@ summary.chat-tool-summary::marker { display: none; }
   100% { opacity: 0; }
 }
 
+.chat-toast {
+  color: var(--s-blue-text);
+  background: var(--s-blue-bg);
+  padding: 0.4rem 0.75rem;
+  border-radius: 6px;
+  font-size: 0.8rem;
+  font-weight: 500;
+  text-align: center;
+  animation: gemini-toast-fade 3s ease-out forwards;
+}
+
 /* --- Streaming indicator (removed — was a blue blinking dot with no clear meaning) --- */
 
 /* --- Input area --- */
