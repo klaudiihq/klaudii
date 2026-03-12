@@ -26,6 +26,7 @@ module.exports = function createV1Router(deps) {
     workspaceState, // optional — per-workspace chat mode/session/draft persistence
     workspace: wsProvider, // optional — pluggable workspace provider (default: git-worktree)
     memory,         // optional — agent memory store
+    tasks,          // optional — SQLite task store (requires better-sqlite3)
     authCheck,      // optional — injectable auth fn for testing: () => Promise<{ghAuth, claudeAuth}>
     authEnabled = true, // optional — when false, skip all auth subprocess checks
     broadcastAll,   // optional — broadcast to all WS clients
@@ -866,10 +867,12 @@ module.exports = function createV1Router(deps) {
   });
 
   // --- Tasks CRUD ---
-  // Task routes — backed by SQLite (replaced bd/Dolt)
-  const tasks = require("../lib/tasks");
+  // Task routes — backed by SQLite (requires better-sqlite3).
+  // When the DB is unavailable, endpoints return 501.
+  const tasksAvailable = tasks && !!tasks.getDb();
 
   router.get("/tasks", (_req, res) => {
+    if (!tasksAvailable) return res.status(501).json({ error: "tasks not available (better-sqlite3 not installed)" });
     try {
       const list = tasks.list();
       res.json(list);
@@ -879,6 +882,7 @@ module.exports = function createV1Router(deps) {
   });
 
   router.get("/tasks/:id", (req, res) => {
+    if (!tasksAvailable) return res.status(501).json({ error: "tasks not available (better-sqlite3 not installed)" });
     const id = req.params.id;
     if (!/^\d+$/.test(id)) return res.status(400).json({ error: "invalid task ID" });
     try {
@@ -943,6 +947,7 @@ module.exports = function createV1Router(deps) {
   });
 
   router.post("/tasks", (req, res) => {
+    if (!tasksAvailable) return res.status(501).json({ error: "tasks not available (better-sqlite3 not installed)" });
     const { title, description, priority, type, deps } = req.body;
     if (!title) return res.status(400).json({ error: "title required" });
 
@@ -955,6 +960,7 @@ module.exports = function createV1Router(deps) {
   });
 
   router.patch("/tasks/:id", (req, res) => {
+    if (!tasksAvailable) return res.status(501).json({ error: "tasks not available (better-sqlite3 not installed)" });
     const id = req.params.id;
     if (!/^\d+$/.test(id)) return res.status(400).json({ error: "invalid task ID" });
     const { status, comment, assignee, priority } = req.body;

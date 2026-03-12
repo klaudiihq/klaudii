@@ -192,6 +192,20 @@ function createMockDeps(overrides = {}) {
       reposDir: "/Users/demo/repos",
     },
 
+    tasks: {
+      getDb: () => ({}), // truthy — signals tasks are available
+      list: () => [],
+      get: () => null,
+      create: () => ({}),
+      update: () => null,
+      close: () => ({}),
+      remove: () => {},
+      addComment: () => ({}),
+      getComments: () => [],
+      ready: () => [],
+      closeDb: () => {},
+    },
+
     authCheck: () => Promise.resolve({
       ghAuth: { loggedIn: true, account: "demo" },
       claudeAuth: { loggedIn: true },

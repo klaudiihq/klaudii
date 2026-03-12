@@ -55,6 +55,7 @@ const setup = require("./lib/setup");
 const { mountMcp } = require("./lib/mcp");
 const scheduler = require("./lib/scheduler");
 const memory = require("./lib/memory");
+const tasks = require("./lib/tasks");
 const { getProvider: getWorkspaceProvider, initProvider: initWorkspaceProvider } = require("./lib/workspace-provider");
 
 // ── Feature flags ──
@@ -135,6 +136,8 @@ app.use(
     claudeChat,
     workspaceState,
     workspace: getWorkspaceProvider(),
+    tasks,
+    memory,
     broadcastAll: (payload) => { if (typeof broadcastAll === "function") broadcastAll(payload); },
     authEnabled: AUTH_ENABLED,
   })
@@ -1696,6 +1699,7 @@ function gracefulShutdown(signal) {
   console.log(`[server] ${signal} received, shutting down...`);
   scheduler.stop();
   memory.close();
+  tasks.closeDb();
   // Do NOT kill Claude relay daemons or Gemini core sessions — relay daemons are detached
   // and designed to survive server restarts. Gemini sessions are in-process and will die
   // with the process anyway; explicitly aborting them just destroys in-progress turns.
