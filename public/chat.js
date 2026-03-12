@@ -1526,6 +1526,8 @@ function handleGeminiEvent(event) {
         chatRenderCompressBadge(typeof event.data === "string" ? event.data : JSON.stringify(event.data));
       } else if (event.command === "settings" && event.data && typeof event.data === "object") {
         chatRenderSettingsPanel(event.data);
+      } else if (event.command === "tools" && event.data && Array.isArray(event.data)) {
+        chatRenderToolsPanel(event.data);
       } else {
         const pre = document.createElement("pre");
         pre.style.cssText = "margin:0;white-space:pre-wrap;font-size:0.8rem;color:var(--text-muted)";
@@ -3506,6 +3508,102 @@ function chatSettingsFormatValue(val) {
   if (val === null || val === undefined) return "—";
   if (Array.isArray(val)) return val.length === 0 ? "[]" : val.join(", ");
   return String(val);
+}
+
+/** Render /tools result as a grouped, searchable list. */
+function chatRenderToolsPanel(tools) {
+  const container = document.getElementById("chat-messages");
+  if (!container) return;
+
+  // Group tools: core vs MCP (grouped by server)
+  const core = [];
+  const mcpGroups = {};
+  for (const t of tools) {
+    const m = t.name.match(/^mcp__([^_]+)__(.+)$/);
+    if (m) {
+      const server = m[1];
+      if (!mcpGroups[server]) mcpGroups[server] = [];
+      mcpGroups[server].push({ name: m[2], description: t.description || "" });
+    } else {
+      core.push(t);
+    }
+  }
+
+  const panel = document.createElement("div");
+  panel.className = "chat-tools-card";
+
+  // Header with count badge
+  const header = document.createElement("div");
+  header.className = "chat-tools-header";
+  header.innerHTML =
+    `<span class="chat-tools-title">Tools</span>` +
+    `<span class="chat-tools-badge">${tools.length}</span>`;
+  panel.appendChild(header);
+
+  // Search box
+  const search = document.createElement("input");
+  search.type = "text";
+  search.className = "chat-tools-search";
+  search.placeholder = "Filter tools\u2026";
+  panel.appendChild(search);
+
+  // Body (holds all groups)
+  const body = document.createElement("div");
+  body.className = "chat-tools-body";
+
+  function renderGroup(label, items, open) {
+    const section = document.createElement("details");
+    section.className = "chat-tools-group";
+    if (open) section.open = true;
+    const summary = document.createElement("summary");
+    summary.className = "chat-tools-group-summary";
+    summary.innerHTML = `${chatEscHtml(label)} <span class="chat-tools-group-count">${items.length}</span>`;
+    section.appendChild(summary);
+    const list = document.createElement("div");
+    list.className = "chat-tools-list";
+    for (const t of items) {
+      const row = document.createElement("div");
+      row.className = "chat-tools-row";
+      row.innerHTML =
+        `<span class="chat-tools-name">${chatEscHtml(t.name)}</span>` +
+        `<span class="chat-tools-desc">${chatEscHtml(t.description || "")}</span>`;
+      list.appendChild(row);
+    }
+    section.appendChild(list);
+    return section;
+  }
+
+  if (core.length) body.appendChild(renderGroup("Core", core, true));
+  const serverNames = Object.keys(mcpGroups).sort();
+  for (const server of serverNames) {
+    body.appendChild(renderGroup("MCP: " + server, mcpGroups[server], false));
+  }
+
+  panel.appendChild(body);
+
+  // Wire up search filter
+  search.addEventListener("input", () => {
+    const q = search.value.toLowerCase();
+    for (const row of body.querySelectorAll(".chat-tools-row")) {
+      const text = row.textContent.toLowerCase();
+      row.style.display = text.includes(q) ? "" : "none";
+    }
+    // Auto-open groups that have visible matches, hide empty groups
+    for (const group of body.querySelectorAll(".chat-tools-group")) {
+      const visible = group.querySelectorAll('.chat-tools-row[style=""], .chat-tools-row:not([style])');
+      // Count actually visible rows
+      let visCount = 0;
+      for (const r of group.querySelectorAll(".chat-tools-row")) {
+        if (r.style.display !== "none") visCount++;
+      }
+      group.style.display = visCount > 0 ? "" : "none";
+      if (q && visCount > 0) group.open = true;
+    }
+  });
+
+  container.appendChild(panel);
+  chatScrollToBottom();
+  search.focus();
 }
 
 /** Show a background task card. */
