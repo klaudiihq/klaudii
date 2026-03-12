@@ -1534,6 +1534,8 @@ function handleGeminiEvent(event) {
         chatRenderAgentsPanel(event.data);
       } else if (event.command === "policies" && event.data && event.data.groups) {
         chatRenderPoliciesPanel(event.data);
+      } else if (event.command === "permissions" && event.data) {
+        chatRenderPermissionsPanel(event.data);
       } else {
         const pre = document.createElement("pre");
         pre.style.cssText = "margin:0;white-space:pre-wrap;font-size:0.8rem;color:var(--text-muted)";
@@ -3881,6 +3883,74 @@ function chatRenderPoliciesPanel(data) {
   chatScrollToBottom();
 }
 
+function chatRenderPermissionsPanel(data) {
+  const container = document.getElementById("chat-messages");
+  if (!container) return;
+
+  const folders = data.folders || [];
+  const panel = document.createElement("div");
+  panel.className = "chat-permissions-card";
+
+  // Header
+  const header = document.createElement("div");
+  header.className = "chat-permissions-header";
+  header.innerHTML =
+    `<span class="chat-permissions-title">Permissions</span>` +
+    `<span class="chat-permissions-badge">${folders.length} trusted</span>`;
+  panel.appendChild(header);
+
+  // Workspace trust status
+  const status = document.createElement("div");
+  status.className = "chat-permissions-status";
+  const trusted = data.workspaceTrusted;
+  status.innerHTML =
+    `<span class="chat-permissions-dot ${trusted ? "trusted" : "untrusted"}"></span>` +
+    `<span>Current workspace: <strong>${trusted ? "Trusted" : "Not trusted"}</strong></span>`;
+  if (data.workspacePath) {
+    status.innerHTML += `<span class="chat-permissions-path">${chatEscHtml(data.workspacePath)}</span>`;
+  }
+  panel.appendChild(status);
+
+  // Description
+  const desc = document.createElement("div");
+  desc.className = "chat-permissions-desc";
+  desc.textContent = "Trusted folders can use all permission modes. Configure in ~/.gemini/trustedFolders.json";
+  panel.appendChild(desc);
+
+  // Folder list
+  if (folders.length > 0) {
+    const list = document.createElement("div");
+    list.className = "chat-permissions-list";
+
+    for (const f of folders) {
+      const row = document.createElement("div");
+      row.className = "chat-permissions-folder";
+
+      const pathEl = document.createElement("span");
+      pathEl.className = "chat-permissions-folder-path";
+      pathEl.textContent = f.path;
+      row.appendChild(pathEl);
+
+      const levelEl = document.createElement("span");
+      levelEl.className = "chat-permissions-folder-level";
+      levelEl.textContent = f.level.replace(/_/g, " ").toLowerCase();
+      row.appendChild(levelEl);
+
+      list.appendChild(row);
+    }
+
+    panel.appendChild(list);
+  } else {
+    const empty = document.createElement("div");
+    empty.className = "chat-permissions-desc";
+    empty.textContent = "No trusted folders configured.";
+    panel.appendChild(empty);
+  }
+
+  container.appendChild(panel);
+  chatScrollToBottom();
+}
+
 function chatRenderExtensionsPanel(data) {
   const container = document.getElementById("chat-messages");
   if (!container) return;
@@ -4852,6 +4922,7 @@ const SLASH_COMMANDS = [
   { name: "init",       description: "Generate GEMINI.md from project" },
   { name: "memory",     description: "Show GEMINI.md memory" },
   { name: "model",      description: "Show current model info" },
+  { name: "permissions", description: "View folder trust settings" },
   { name: "policies",   description: "View active policy rules" },
   { name: "privacy",    description: "Display privacy notice" },
   { name: "restore",    description: "Restore files to checkpoint" },

@@ -361,6 +361,47 @@ async function loadPolicyData() {
   return { groups };
 }
 
+async function loadPermissionsData(workspace) {
+  const GEMINI_DIR = path.join(os.homedir(), ".gemini");
+  const trustedFile = path.join(GEMINI_DIR, "trustedFolders.json");
+
+  // Read trusted folders from ~/.gemini/trustedFolders.json
+  let trustedFolders = {};
+  try {
+    if (fs.existsSync(trustedFile)) {
+      trustedFolders = JSON.parse(fs.readFileSync(trustedFile, "utf-8"));
+    }
+  } catch {
+    trustedFolders = {};
+  }
+
+  // Build list of trusted entries
+  const folders = Object.entries(trustedFolders).map(([folder, trustLevel]) => ({
+    path: folder,
+    level: trustLevel,
+  }));
+
+  // Determine current workspace trust status
+  const proj = workspace ? (config.projects || []).find((p) => p.name === workspace) : null;
+  const workspacePath = proj ? proj.path : null;
+  let workspaceTrusted = false;
+  if (workspacePath) {
+    for (const [folder, level] of Object.entries(trustedFolders)) {
+      if (level === "TRUST_FOLDER" && workspacePath.startsWith(folder)) {
+        workspaceTrusted = true;
+        break;
+      }
+    }
+  }
+
+  return {
+    workspaceTrusted,
+    workspacePath,
+    folders,
+    settingsPath: trustedFile,
+  };
+}
+
 // Get current API key info (masked) for UI
 function geminiApiKeyInfo(workspace) {
   const proj = workspace ? (config.projects || []).find((p) => p.name === workspace) : null;
@@ -1057,6 +1098,15 @@ wss.on("connection", (ws) => {
       } else if (cmdName === "policies") {
         // Handle /policies locally — no A2A command exists for this
         loadPolicyData()
+          .then((data) => {
+            ws.send(JSON.stringify({ type: "command_result", workspace, command: cmdName, data, sessionNum: cmdSession }));
+          })
+          .catch((err) => {
+            ws.send(JSON.stringify({ type: "command_error", workspace, command: cmdName, message: err.message, sessionNum: cmdSession }));
+          });
+      } else if (cmdName === "permissions") {
+        // Handle /permissions locally — reads trusted folders config
+        loadPermissionsData(workspace)
           .then((data) => {
             ws.send(JSON.stringify({ type: "command_result", workspace, command: cmdName, data, sessionNum: cmdSession }));
           })
