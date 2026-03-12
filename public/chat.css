@@ -3632,6 +3632,81 @@ a.chat-oauth-link-btn.hidden {
 }
 
 /* ── /shells card ── */
+/* ── /resume panel ───────────────────────────────────── */
+.chat-resume-card {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 0.75rem 1rem;
+  margin: 0.5rem 0;
+  font-size: 0.82rem;
+  color: var(--text);
+  max-width: 640px;
+}
+.chat-resume-header {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-bottom: 0.5rem;
+}
+.chat-resume-title {
+  font-weight: 600;
+  font-size: 0.9rem;
+}
+.chat-resume-badge {
+  background: var(--accent, #6366f1);
+  color: #fff;
+  font-size: 0.65rem;
+  font-weight: 600;
+  padding: 0.1rem 0.45rem;
+  border-radius: 99px;
+}
+.chat-resume-empty {
+  font-size: 0.75rem;
+  color: var(--text-muted);
+}
+.chat-resume-row {
+  background: var(--bg-hover, rgba(255,255,255,0.03));
+  border-radius: 4px;
+  padding: 0.4rem 0.5rem;
+  margin-bottom: 0.3rem;
+}
+.chat-resume-row-top {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+.chat-resume-time {
+  font-weight: 600;
+  font-size: 0.78rem;
+}
+.chat-resume-count {
+  font-size: 0.72rem;
+  color: var(--text-muted);
+}
+.chat-resume-duration {
+  font-size: 0.65rem;
+  font-weight: 600;
+  padding: 0.1rem 0.35rem;
+  border-radius: 4px;
+  background: rgba(99, 102, 241, 0.12);
+  color: var(--accent, #6366f1);
+}
+.chat-resume-preview {
+  font-size: 0.75rem;
+  color: var(--text-muted);
+  margin-top: 0.2rem;
+  line-height: 1.35;
+}
+.chat-resume-meta {
+  font-size: 0.65rem;
+  color: var(--text-muted);
+  opacity: 0.6;
+  font-family: var(--font-mono, monospace);
+  margin-top: 0.15rem;
+}
+
 .chat-shells-card {
   background: var(--bg-card);
   border: 1px solid var(--border);

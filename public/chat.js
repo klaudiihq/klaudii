@@ -1547,6 +1547,8 @@ function handleGeminiEvent(event) {
         chatRenderAuthCard(event.data);
       } else if (event.command === "hooks" && event.data) {
         chatRenderHooksPanel(event.data);
+      } else if (event.command === "resume" && event.data) {
+        chatRenderResumePanel(event.data);
       } else {
         const pre = document.createElement("pre");
         pre.style.cssText = "margin:0;white-space:pre-wrap;font-size:0.8rem;color:var(--text-muted)";
@@ -4313,6 +4315,93 @@ function chatRenderHooksPanel(data) {
   chatScrollToBottom();
 }
 
+/** Render /resume result — list of saved Gemini sessions with resume buttons. */
+function chatRenderResumePanel(data) {
+  const container = document.getElementById("chat-messages");
+  if (!container) return;
+
+  const sessions = data.sessions || [];
+  const panel = document.createElement("div");
+  panel.className = "chat-resume-card";
+
+  // Header
+  const header = document.createElement("div");
+  header.className = "chat-resume-header";
+  header.innerHTML =
+    `<span class="chat-resume-title">Saved Conversations</span>` +
+    `<span class="chat-resume-badge">${sessions.length} session${sessions.length !== 1 ? "s" : ""}</span>`;
+  panel.appendChild(header);
+
+  if (data.error) {
+    const errEl = document.createElement("div");
+    errEl.className = "chat-resume-empty";
+    errEl.textContent = data.error;
+    panel.appendChild(errEl);
+  } else if (sessions.length === 0) {
+    const empty = document.createElement("div");
+    empty.className = "chat-resume-empty";
+    empty.textContent = "No saved conversations found for this workspace.";
+    panel.appendChild(empty);
+  } else {
+    for (const session of sessions) {
+      const row = document.createElement("div");
+      row.className = "chat-resume-row";
+
+      // Top line: timestamp + message count
+      const top = document.createElement("div");
+      top.className = "chat-resume-row-top";
+
+      const timeEl = document.createElement("span");
+      timeEl.className = "chat-resume-time";
+      const startDate = session.startTime ? new Date(session.startTime) : null;
+      timeEl.textContent = startDate
+        ? startDate.toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" }) +
+          " " + startDate.toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" })
+        : "Unknown date";
+      top.appendChild(timeEl);
+
+      const countEl = document.createElement("span");
+      countEl.className = "chat-resume-count";
+      countEl.textContent = `${session.messageCount} msg${session.messageCount !== 1 ? "s" : ""}`;
+      top.appendChild(countEl);
+
+      // Duration badge if lastUpdated exists
+      if (session.startTime && session.lastUpdated) {
+        const durationMs = new Date(session.lastUpdated) - new Date(session.startTime);
+        const mins = Math.round(durationMs / 60000);
+        if (mins > 0) {
+          const durEl = document.createElement("span");
+          durEl.className = "chat-resume-duration";
+          durEl.textContent = mins < 60 ? `${mins}m` : `${Math.floor(mins / 60)}h ${mins % 60}m`;
+          top.appendChild(durEl);
+        }
+      }
+
+      row.appendChild(top);
+
+      // Preview line: first user message or summary
+      const previewText = session.summary || session.firstMessage || "";
+      if (previewText) {
+        const preview = document.createElement("div");
+        preview.className = "chat-resume-preview";
+        preview.textContent = previewText.length > 140 ? previewText.slice(0, 140) + "..." : previewText;
+        row.appendChild(preview);
+      }
+
+      // Session ID (truncated) for reference
+      const meta = document.createElement("div");
+      meta.className = "chat-resume-meta";
+      meta.textContent = session.sessionId ? session.sessionId.slice(0, 8) : session.fileName || "";
+      row.appendChild(meta);
+
+      panel.appendChild(row);
+    }
+  }
+
+  container.appendChild(panel);
+  chatScrollToBottom();
+}
+
 /** Render /shells result — background process list with kill buttons. */
 function chatRenderShellsPanel(procs) {
   const container = document.getElementById("chat-messages");
@@ -5486,6 +5575,7 @@ const SLASH_COMMANDS = [
   { name: "policies",   description: "View active policy rules" },
   { name: "privacy",    description: "Display privacy notice" },
   { name: "restore",    description: "Restore files to checkpoint" },
+  { name: "resume",     description: "Browse and resume saved conversations" },
   { name: "settings",   description: "Show current settings" },
   { name: "shells",     description: "Show background processes" },
   { name: "shortcuts",  description: "Toggle keyboard shortcuts" },

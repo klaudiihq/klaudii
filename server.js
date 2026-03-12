@@ -567,6 +567,78 @@ async function loadHooksData(workspace) {
   };
 }
 
+async function loadResumeData(workspace) {
+  const GEMINI_DIR = path.join(os.homedir(), ".gemini");
+
+  // Resolve project path for this workspace
+  const proj = workspace ? (config.projects || []).find((p) => p.name === workspace) : null;
+  const workspacePath = proj ? proj.path : null;
+  if (!workspacePath) {
+    return { sessions: [], workspace, error: "Workspace not found" };
+  }
+
+  // Look up the Gemini project slug from ~/.gemini/projects.json
+  let geminiSlug = null;
+  try {
+    const raw = await fs.promises.readFile(path.join(GEMINI_DIR, "projects.json"), "utf8");
+    const projectsMap = JSON.parse(raw);
+    const entries = projectsMap.projects || projectsMap;
+    if (typeof entries === "object") {
+      geminiSlug = entries[workspacePath] || null;
+    }
+  } catch {}
+
+  if (!geminiSlug) {
+    return { sessions: [], workspace, error: "No Gemini sessions found for this workspace" };
+  }
+
+  // Read session files from ~/.gemini/tmp/<slug>/chats/
+  const chatsDir = path.join(GEMINI_DIR, "tmp", geminiSlug, "chats");
+  let files;
+  try {
+    files = (await fs.promises.readdir(chatsDir)).filter((f) => f.endsWith(".json"));
+  } catch {
+    return { sessions: [], workspace };
+  }
+
+  // Read metadata from each session file (cap at 20 most recent by filename)
+  files.sort().reverse();
+  files = files.slice(0, 20);
+
+  const sessions = [];
+  for (const file of files) {
+    try {
+      const raw = await fs.promises.readFile(path.join(chatsDir, file), "utf8");
+      const data = JSON.parse(raw);
+      const messages = data.messages || [];
+      const userMessages = messages.filter((m) => m.type === "user");
+      let firstMessage = "";
+      if (userMessages.length > 0) {
+        const content = userMessages[0].content;
+        if (typeof content === "string") {
+          firstMessage = content.slice(0, 120);
+        } else if (Array.isArray(content)) {
+          const textPart = content.find((p) => p.text);
+          firstMessage = textPart ? textPart.text.slice(0, 120) : "";
+        }
+      }
+
+      sessions.push({
+        sessionId: data.sessionId || file.replace(".json", ""),
+        startTime: data.startTime || null,
+        lastUpdated: data.lastUpdated || null,
+        messageCount: messages.length,
+        userMessageCount: userMessages.length,
+        firstMessage,
+        summary: data.summary || null,
+        fileName: file,
+      });
+    } catch {}
+  }
+
+  return { sessions, workspace };
+}
+
 // Get current API key info (masked) for UI
 function geminiApiKeyInfo(workspace) {
   const proj = workspace ? (config.projects || []).find((p) => p.name === workspace) : null;
@@ -1299,6 +1371,15 @@ wss.on("connection", (ws) => {
       } else if (cmdName === "hooks") {
         // Handle /hooks locally — reads hooks from global and project settings
         loadHooksData(workspace)
+          .then((data) => {
+            ws.send(JSON.stringify({ type: "command_result", workspace, command: cmdName, data, sessionNum: cmdSession }));
+          })
+          .catch((err) => {
+            ws.send(JSON.stringify({ type: "command_error", workspace, command: cmdName, message: err.message, sessionNum: cmdSession }));
+          });
+      } else if (cmdName === "resume") {
+        // Handle /resume locally — lists saved Gemini sessions for this workspace
+        loadResumeData(workspace)
           .then((data) => {
             ws.send(JSON.stringify({ type: "command_result", workspace, command: cmdName, data, sessionNum: cmdSession }));
           })
