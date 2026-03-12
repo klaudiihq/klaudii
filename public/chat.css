@@ -1245,6 +1245,124 @@ summary.chat-tool-summary::marker { display: none; }
   font-size: 0.85rem;
 }
 
+/* --- Plan mode badge (persistent indicator above input) --- */
+
+.chat-plan-badge {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.3rem 0.75rem;
+  margin: 0 auto;
+  max-width: 800px;
+  width: 100%;
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--s-blue-text);
+  background: var(--s-blue-bg);
+  border-bottom: 1px solid color-mix(in srgb, var(--s-blue-text) 25%, transparent);
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+  box-sizing: border-box;
+}
+
+.chat-plan-badge.hidden { display: none; }
+
+.chat-plan-badge-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--s-blue-text);
+  animation: chat-plan-pulse 2s ease-in-out infinite;
+}
+
+@keyframes chat-plan-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.4; }
+}
+
+.chat-plan-badge-close {
+  margin-left: auto;
+  background: none;
+  border: none;
+  color: var(--s-blue-text);
+  cursor: pointer;
+  font-size: 1rem;
+  line-height: 1;
+  padding: 0 0.2rem;
+  opacity: 0.6;
+}
+
+.chat-plan-badge-close:hover { opacity: 1; }
+
+/* --- Plan mode status card (rendered in chat) --- */
+
+.chat-plan-card {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--s-blue-text);
+  border-radius: 8px;
+  padding: 0.75rem 1rem;
+  margin: 0.5rem 0;
+  max-width: 500px;
+}
+
+.chat-plan-card-header {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-bottom: 0.4rem;
+}
+
+.chat-plan-card-icon { font-size: 1rem; }
+
+.chat-plan-card-title {
+  font-weight: 600;
+  font-size: 0.85rem;
+  color: var(--text);
+}
+
+.chat-plan-card-badge {
+  font-size: 0.65rem;
+  font-weight: 700;
+  padding: 0.1rem 0.4rem;
+  border-radius: 4px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  margin-left: auto;
+}
+
+.chat-plan-card-badge.on {
+  background: var(--s-blue-bg);
+  color: var(--s-blue-text);
+}
+
+.chat-plan-card-badge.off {
+  background: var(--bg-btn);
+  color: var(--text-muted);
+}
+
+.chat-plan-card-body {
+  font-size: 0.8rem;
+  color: var(--text-secondary);
+  line-height: 1.4;
+  margin-bottom: 0.5rem;
+}
+
+.chat-plan-card-toggle {
+  background: var(--bg-btn);
+  border: 1px solid var(--border-btn);
+  color: var(--text);
+  padding: 0.3rem 0.7rem;
+  border-radius: 6px;
+  font-size: 0.78rem;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+
+.chat-plan-card-toggle:hover {
+  background: var(--bg-btn-hover);
+}
+
 .chat-question-section--subsequent {
   padding-top: 0.5rem;
   border-top: 1px solid var(--border);

@@ -43,6 +43,8 @@ let chatWasStreamingAtDisconnect = false; // set in onclose, cleared in onopen a
 let chatHistoryFetchFailed = false;        // set when history fetch fails (server not ready); triggers re-fetch on reconnect
 let chatAgentRole = null;
 let chatThinkingEnabled = false;           // extended thinking toggle state
+let chatPlanModeActive = false;            // plan mode toggle state
+let chatPlanModePrevPerm = null;           // previous permission mode before plan mode
 let chatToolDisplayMode = "collapsed";      // "collapsed" | "expanded" | "hidden"
 let chatThinkingGapTimer = null;             // shows thinking orbital after idle gap during streaming
 
@@ -775,6 +777,9 @@ function chatRestorePermissionMode() {
   if (!el || !chatWorkspace) return;
   const saved = localStorage.getItem(`klaudii-perm-${chatWorkspace}`);
   el.value = saved || "bypassPermissions";
+  // Sync plan mode badge with restored permission mode
+  chatPlanModeActive = el.value === "plan";
+  chatUpdatePlanBadge();
 }
 
 /**
@@ -3142,6 +3147,74 @@ function chatToggleShortcuts() {
   chatAppendSystemNote(showing ? "Shortcuts hidden" : "Shortcuts visible");
 }
 
+/** Toggle plan mode — switches permission mode and shows visual indicator. */
+function chatTogglePlanMode() {
+  const permSelect = document.getElementById("chat-permission-mode");
+  if (!permSelect) return;
+
+  chatPlanModeActive = !chatPlanModeActive;
+
+  if (chatPlanModeActive) {
+    // Save current permission mode so we can restore it
+    chatPlanModePrevPerm = permSelect.value;
+    permSelect.value = "plan";
+    permSelect.dispatchEvent(new Event("change"));
+  } else {
+    // Restore previous permission mode
+    permSelect.value = chatPlanModePrevPerm || "bypassPermissions";
+    permSelect.dispatchEvent(new Event("change"));
+    chatPlanModePrevPerm = null;
+  }
+
+  // Update persistent badge
+  chatUpdatePlanBadge();
+
+  // Render status card in chat
+  chatAppendSystemNote("/plan");
+  chatRenderPlanCard();
+}
+
+/** Update the plan mode badge visibility above the chat input. */
+function chatUpdatePlanBadge() {
+  const badge = document.getElementById("chat-plan-badge");
+  if (!badge) return;
+  if (chatPlanModeActive) {
+    badge.classList.remove("hidden");
+  } else {
+    badge.classList.add("hidden");
+  }
+}
+
+/** Render a plan mode status card showing current state with toggle button. */
+function chatRenderPlanCard() {
+  const container = document.getElementById("chat-messages");
+  if (!container) return;
+
+  const card = document.createElement("div");
+  card.className = "chat-plan-card";
+
+  const status = chatPlanModeActive;
+  card.innerHTML = `
+    <div class="chat-plan-card-header">
+      <span class="chat-plan-card-icon">${status ? "\u{1F4CB}" : "\u{1F4DD}"}</span>
+      <span class="chat-plan-card-title">Plan Mode ${status ? "Enabled" : "Disabled"}</span>
+      <span class="chat-plan-card-badge ${status ? "on" : "off"}">${status ? "ON" : "OFF"}</span>
+    </div>
+    <div class="chat-plan-card-body">
+      ${status
+        ? "The model will suggest changes without executing them. File edits and commands require your approval."
+        : "Returned to normal mode. The model can execute changes directly."
+      }
+    </div>
+    <button class="chat-plan-card-toggle" onclick="chatTogglePlanMode()">
+      ${status ? "Exit Plan Mode" : "Enter Plan Mode"}
+    </button>
+  `;
+
+  container.appendChild(card);
+  chatScrollToBottom();
+}
+
 function chatRenderThemeCard() {
   const container = document.getElementById("chat-messages");
   if (!container) return;
@@ -5176,6 +5249,7 @@ const SLASH_COMMANDS = [
   { name: "memory",     description: "Show GEMINI.md memory" },
   { name: "model",      description: "Show current model info" },
   { name: "permissions", description: "View folder trust settings" },
+  { name: "plan",       description: "Toggle plan mode" },
   { name: "policies",   description: "View active policy rules" },
   { name: "privacy",    description: "Display privacy notice" },
   { name: "restore",    description: "Restore files to checkpoint" },
@@ -5346,6 +5420,12 @@ function chatSelectSlashCommand(cmd) {
   if (cmd.name === "model") {
     chatAppendSystemNote("/model");
     chatRenderModelPill();
+    return;
+  }
+
+  // Plan mode — frontend-only, toggles plan permission mode with visual indicator
+  if (cmd.name === "plan") {
+    chatTogglePlanMode();
     return;
   }
 
@@ -5757,6 +5837,15 @@ document.getElementById("chat-permission-mode")?.addEventListener("change", func
   if (this.value && chatActiveCli === "claude" && chatWs && chatWs.readyState === WebSocket.OPEN) {
     chatWsSend({ type: "set_permission_mode", workspace: chatWorkspace, mode: this.value });
     glog("perm-switch: sent set_permission_mode=" + this.value);
+  }
+  // Sync plan mode badge when permission dropdown changes externally
+  if (this.value === "plan" && !chatPlanModeActive) {
+    chatPlanModeActive = true;
+    chatUpdatePlanBadge();
+  } else if (this.value !== "plan" && chatPlanModeActive) {
+    chatPlanModeActive = false;
+    chatPlanModePrevPerm = null;
+    chatUpdatePlanBadge();
   }
 });
 
