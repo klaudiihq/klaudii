@@ -661,6 +661,11 @@ wss.on("connection", (ws) => {
   ws._alive = true;
   console.log(`[chat-ws] client #${clientId} connected`);
 
+  // Send initial corgi state
+  if (workspaceState.getCorgiMode()) {
+    ws.send(JSON.stringify({ type: "corgi", on: true }));
+  }
+
   ws.on("pong", () => { ws._alive = true; });
 
   // Track which workspaces this client has active sends — cleared on disconnect
@@ -999,6 +1004,10 @@ wss.on("connection", (ws) => {
         // Broadcast done to all clients viewing this workspace
         broadcastToWorkspace(workspace, { type: "done", workspace, exitCode: null, stopped: true, sessionNum: stopSession });
       }
+    } else if (type === "corgi") {
+      // Toggle corgi mode globally and broadcast to all clients
+      const on = workspaceState.toggleCorgiMode();
+      broadcastAll({ type: "corgi", on });
     } else if (type === "command") {
       // Execute a slash command via gemini core driver
       const { command: cmdName, args: cmdArgs, sessionNum: cmdSession } = msg;

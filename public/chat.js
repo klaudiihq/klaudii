@@ -970,6 +970,12 @@ function chatConnect() {
       return;
     }
 
+    // Corgi mode — global toggle
+    if (event.type === "corgi") {
+      chatSetCorgiMode(event.on);
+      return;
+    }
+
     glog(`ws-msg #${wsEventCount} type=${event.type} workspace=${event.workspace}${event.role ? " role=" + event.role : ""}${event.content ? " contentLen=" + event.content.length : ""}${event.exitCode !== undefined ? " exitCode=" + event.exitCode : ""}${event.name ? " tool=" + event.name : ""}`);
 
     // Only render events for the currently open workspace
@@ -3637,6 +3643,7 @@ async function clearGeminiSession() {
 
 const SLASH_COMMANDS = [
   { name: "compress",   description: "Compress chat context" },
+  { name: "corgi",      description: "Toggles corgi mode", hidden: true },
   { name: "extensions", description: "List installed extensions" },
   { name: "init",       description: "Generate GEMINI.md from project" },
   { name: "memory",     description: "Show GEMINI.md memory" },
@@ -3656,11 +3663,19 @@ function chatOpenSlashMenu(filter = "") {
   const menu = document.getElementById("chat-slash-menu");
   if (!menu) return;
   const query = filter.toLowerCase();
+  const visible = SLASH_COMMANDS.filter(c => !c.hidden);
   const matches = query
-    ? SLASH_COMMANDS.filter(c => c.name.startsWith(query))
-    : SLASH_COMMANDS;
+    ? visible.filter(c => c.name.startsWith(query))
+    : visible;
   if (matches.length === 0) {
-    // No matches — silently revert the last char
+    // Check if a hidden command matches before reverting
+    const hiddenMatch = query && SLASH_COMMANDS.some(c => c.hidden && c.name.startsWith(query));
+    if (hiddenMatch) {
+      // Let the typing continue but close the visible menu
+      chatCloseSlashMenu();
+      return;
+    }
+    // No matches at all — silently revert the last char
     const input = document.getElementById("chat-input");
     if (input) input.value = input.value.slice(0, -1);
     return;
@@ -3706,6 +3721,14 @@ function chatSelectSlashCommand(cmd) {
   chatCloseSlashMenu();
   const input = document.getElementById("chat-input");
   if (input) { input.value = ""; input.style.height = "auto"; }
+
+  // Corgi mode — toggle via server (syncs across clients)
+  if (cmd.name === "corgi") {
+    if (chatWs && chatWs.readyState === WebSocket.OPEN) {
+      chatWsSend({ type: "corgi" });
+    }
+    return;
+  }
 
   // Render command as a system note
   chatAppendSystemNote(`/${cmd.name}`);
@@ -3788,6 +3811,18 @@ function sendGeminiMessage() {
   if (!message) {
     glog("send: blocked (empty message)");
     return;
+  }
+
+  // Hidden slash commands (work in any mode)
+  if (message.startsWith("/")) {
+    const cmdName = message.slice(1).toLowerCase();
+    const hidden = SLASH_COMMANDS.find(c => c.hidden && c.name === cmdName);
+    if (hidden) {
+      input.value = "";
+      input.style.height = "auto";
+      chatSelectSlashCommand(hidden);
+      return;
+    }
   }
 
   // Discard any in-progress reload-poll — user is sending a new message
@@ -4235,6 +4270,32 @@ function chatShowHandoffPreview() {
 
 function closeHandoffModal() {
   document.getElementById("handoff-modal").classList.add("hidden");
+}
+
+// --- Corgi mode (easter egg) ---
+
+let corgiActive = false;
+
+function chatSetCorgiMode(on) {
+  corgiActive = on;
+  const card = document.querySelector(".chat-input-card");
+  if (!card) return;
+  // Ensure card is a positioning context for the walker
+  if (!card.style.position) card.style.position = "relative";
+  card.style.overflow = on ? "visible" : "hidden";
+
+  let el = document.getElementById("corgi-walker");
+  if (on) {
+    if (!el) {
+      el = document.createElement("div");
+      el.id = "corgi-walker";
+      el.innerHTML = '<div class="corgi-sprite"></div>';
+      card.appendChild(el);
+    }
+    el.classList.remove("hidden");
+  } else {
+    if (el) el.classList.add("hidden");
+  }
 }
 
 // Auto-open chat from URL params on page load

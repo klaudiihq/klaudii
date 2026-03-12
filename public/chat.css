@@ -1639,3 +1639,279 @@ a.chat-oauth-link-btn.hidden {
   color: var(--text-muted, #888);
   font-style: italic;
 }
+
+/* --- Corgi mode (easter egg) ---
+   3px pixel grid.  Corgi facing right.
+   Grid layout (col × row, 0-indexed):
+
+        0  1  2  3  4  5  6  7  8  9 10 11 12 13 14
+    0:  .  .  D  .  .  .  .  .  .  .  .  D  .  .  .    ear tips
+    1:  .  D  O  D  .  .  .  .  .  .  D  O  D  .  .    ears
+    2:  .  O  O  O  O  O  O  O  O  O  O  O  O  .  .    head
+    3:  .  O  e  O  O  W  W  W  O  O  e  O  O  .  .    eyes
+    4:  .  .  O  W  W  W  n  W  W  W  O  .  .  .  .    snout
+    5:  .  O  O  O  O  O  O  O  O  O  O  O  O  O  .    back
+    6:  .  O  O  O  O  O  O  O  O  O  O  O  O  O  .    body
+    7:  .  O  W  W  W  O  O  O  O  O  O  O  O  O  D    belly+tail
+    8:  .  .  O  W  W  O  O  O  O  O  O  O  O  .  .    belly
+    9:  .  .  D  .  D  .  .  .  .  .  D  .  D  .  .    legs (frame 1)
+   10:  .  .  D  .  D  .  .  .  .  .  D  .  D  .  .    feet
+
+   Colors: O=#e8a849  D=#c97a2e  e=#221100  W=#ffffff  n=#332211
+   Sprite: 15 cols × 11 rows at 3px = 45px × 33px  */
+
+#corgi-walker {
+  position: absolute;
+  top: -10px;
+  left: 0;
+  right: 0;
+  height: 0;
+  pointer-events: none;
+  z-index: 50;
+}
+#corgi-walker.hidden { display: none; }
+
+/* s = pixel step size */
+.corgi-sprite {
+  position: absolute;
+  top: 0;
+  width: 3px;
+  height: 3px;
+  transform-origin: 22px 0px;
+  animation:
+    corgi-walk 14s linear infinite,
+    corgi-step 0.4s steps(1) infinite;
+  image-rendering: pixelated;
+  background: transparent;
+  box-shadow:
+    /* row 0: ear tips */
+     6px -30px 0 #c97a2e,
+    33px -30px 0 #c97a2e,
+    /* row 1: ears */
+     3px -27px 0 #c97a2e,
+     6px -27px 0 #e8a849,
+     9px -27px 0 #c97a2e,
+    30px -27px 0 #c97a2e,
+    33px -27px 0 #e8a849,
+    36px -27px 0 #c97a2e,
+    /* row 2: head */
+     3px -24px 0 #e8a849,
+     6px -24px 0 #e8a849,
+     9px -24px 0 #e8a849,
+    12px -24px 0 #e8a849,
+    15px -24px 0 #e8a849,
+    18px -24px 0 #e8a849,
+    21px -24px 0 #e8a849,
+    24px -24px 0 #e8a849,
+    27px -24px 0 #e8a849,
+    30px -24px 0 #e8a849,
+    33px -24px 0 #e8a849,
+    36px -24px 0 #e8a849,
+    /* row 3: eyes */
+     3px -21px 0 #e8a849,
+     6px -21px 0 #221100,
+     9px -21px 0 #e8a849,
+    12px -21px 0 #e8a849,
+    15px -21px 0 #ffffff,
+    18px -21px 0 #ffffff,
+    21px -21px 0 #ffffff,
+    24px -21px 0 #e8a849,
+    27px -21px 0 #e8a849,
+    30px -21px 0 #221100,
+    33px -21px 0 #e8a849,
+    36px -21px 0 #e8a849,
+    /* row 4: snout */
+     6px -18px 0 #e8a849,
+     9px -18px 0 #ffffff,
+    12px -18px 0 #ffffff,
+    15px -18px 0 #ffffff,
+    18px -18px 0 #332211,
+    21px -18px 0 #ffffff,
+    24px -18px 0 #ffffff,
+    27px -18px 0 #ffffff,
+    30px -18px 0 #e8a849,
+    /* row 5: back */
+     3px -15px 0 #e8a849,
+     6px -15px 0 #e8a849,
+     9px -15px 0 #e8a849,
+    12px -15px 0 #e8a849,
+    15px -15px 0 #e8a849,
+    18px -15px 0 #e8a849,
+    21px -15px 0 #e8a849,
+    24px -15px 0 #e8a849,
+    27px -15px 0 #e8a849,
+    30px -15px 0 #e8a849,
+    33px -15px 0 #e8a849,
+    36px -15px 0 #e8a849,
+    39px -15px 0 #e8a849,
+    /* row 6: body */
+     3px -12px 0 #e8a849,
+     6px -12px 0 #e8a849,
+     9px -12px 0 #e8a849,
+    12px -12px 0 #e8a849,
+    15px -12px 0 #e8a849,
+    18px -12px 0 #e8a849,
+    21px -12px 0 #e8a849,
+    24px -12px 0 #e8a849,
+    27px -12px 0 #e8a849,
+    30px -12px 0 #e8a849,
+    33px -12px 0 #e8a849,
+    36px -12px 0 #e8a849,
+    39px -12px 0 #e8a849,
+    /* row 7: belly + tail */
+     3px  -9px 0 #e8a849,
+     6px  -9px 0 #ffffff,
+     9px  -9px 0 #ffffff,
+    12px  -9px 0 #ffffff,
+    15px  -9px 0 #e8a849,
+    18px  -9px 0 #e8a849,
+    21px  -9px 0 #e8a849,
+    24px  -9px 0 #e8a849,
+    27px  -9px 0 #e8a849,
+    30px  -9px 0 #e8a849,
+    33px  -9px 0 #e8a849,
+    36px  -9px 0 #e8a849,
+    39px  -9px 0 #e8a849,
+    42px  -9px 0 #c97a2e,
+    /* row 8: lower belly */
+     6px  -6px 0 #e8a849,
+     9px  -6px 0 #ffffff,
+    12px  -6px 0 #ffffff,
+    15px  -6px 0 #e8a849,
+    18px  -6px 0 #e8a849,
+    21px  -6px 0 #e8a849,
+    24px  -6px 0 #e8a849,
+    27px  -6px 0 #e8a849,
+    30px  -6px 0 #e8a849,
+    33px  -6px 0 #e8a849,
+    36px  -6px 0 #e8a849,
+    /* row 9: legs frame 1 — front spread, back spread */
+     6px  -3px 0 #c97a2e,
+    12px  -3px 0 #c97a2e,
+    30px  -3px 0 #c97a2e,
+    36px  -3px 0 #c97a2e,
+    /* row 10: feet */
+     6px   0px 0 #c97a2e,
+    12px   0px 0 #c97a2e,
+    30px   0px 0 #c97a2e,
+    36px   0px 0 #c97a2e;
+}
+
+/* Frame 2 — legs mid-stride (closer together) */
+@keyframes corgi-step {
+  50% {
+    box-shadow:
+      /* row 0–8: identical to frame 1 */
+       6px -30px 0 #c97a2e,
+      33px -30px 0 #c97a2e,
+       3px -27px 0 #c97a2e,
+       6px -27px 0 #e8a849,
+       9px -27px 0 #c97a2e,
+      30px -27px 0 #c97a2e,
+      33px -27px 0 #e8a849,
+      36px -27px 0 #c97a2e,
+       3px -24px 0 #e8a849,
+       6px -24px 0 #e8a849,
+       9px -24px 0 #e8a849,
+      12px -24px 0 #e8a849,
+      15px -24px 0 #e8a849,
+      18px -24px 0 #e8a849,
+      21px -24px 0 #e8a849,
+      24px -24px 0 #e8a849,
+      27px -24px 0 #e8a849,
+      30px -24px 0 #e8a849,
+      33px -24px 0 #e8a849,
+      36px -24px 0 #e8a849,
+       3px -21px 0 #e8a849,
+       6px -21px 0 #221100,
+       9px -21px 0 #e8a849,
+      12px -21px 0 #e8a849,
+      15px -21px 0 #ffffff,
+      18px -21px 0 #ffffff,
+      21px -21px 0 #ffffff,
+      24px -21px 0 #e8a849,
+      27px -21px 0 #e8a849,
+      30px -21px 0 #221100,
+      33px -21px 0 #e8a849,
+      36px -21px 0 #e8a849,
+       6px -18px 0 #e8a849,
+       9px -18px 0 #ffffff,
+      12px -18px 0 #ffffff,
+      15px -18px 0 #ffffff,
+      18px -18px 0 #332211,
+      21px -18px 0 #ffffff,
+      24px -18px 0 #ffffff,
+      27px -18px 0 #ffffff,
+      30px -18px 0 #e8a849,
+       3px -15px 0 #e8a849,
+       6px -15px 0 #e8a849,
+       9px -15px 0 #e8a849,
+      12px -15px 0 #e8a849,
+      15px -15px 0 #e8a849,
+      18px -15px 0 #e8a849,
+      21px -15px 0 #e8a849,
+      24px -15px 0 #e8a849,
+      27px -15px 0 #e8a849,
+      30px -15px 0 #e8a849,
+      33px -15px 0 #e8a849,
+      36px -15px 0 #e8a849,
+      39px -15px 0 #e8a849,
+       3px -12px 0 #e8a849,
+       6px -12px 0 #e8a849,
+       9px -12px 0 #e8a849,
+      12px -12px 0 #e8a849,
+      15px -12px 0 #e8a849,
+      18px -12px 0 #e8a849,
+      21px -12px 0 #e8a849,
+      24px -12px 0 #e8a849,
+      27px -12px 0 #e8a849,
+      30px -12px 0 #e8a849,
+      33px -12px 0 #e8a849,
+      36px -12px 0 #e8a849,
+      39px -12px 0 #e8a849,
+       3px  -9px 0 #e8a849,
+       6px  -9px 0 #ffffff,
+       9px  -9px 0 #ffffff,
+      12px  -9px 0 #ffffff,
+      15px  -9px 0 #e8a849,
+      18px  -9px 0 #e8a849,
+      21px  -9px 0 #e8a849,
+      24px  -9px 0 #e8a849,
+      27px  -9px 0 #e8a849,
+      30px  -9px 0 #e8a849,
+      33px  -9px 0 #e8a849,
+      36px  -9px 0 #e8a849,
+      39px  -9px 0 #e8a849,
+      42px  -9px 0 #c97a2e,
+       6px  -6px 0 #e8a849,
+       9px  -6px 0 #ffffff,
+      12px  -6px 0 #ffffff,
+      15px  -6px 0 #e8a849,
+      18px  -6px 0 #e8a849,
+      21px  -6px 0 #e8a849,
+      24px  -6px 0 #e8a849,
+      27px  -6px 0 #e8a849,
+      30px  -6px 0 #e8a849,
+      33px  -6px 0 #e8a849,
+      36px  -6px 0 #e8a849,
+      /* row 9: legs frame 2 — closer together */
+       9px  -3px 0 #c97a2e,
+      12px  -3px 0 #c97a2e,
+      33px  -3px 0 #c97a2e,
+      36px  -3px 0 #c97a2e,
+      /* row 10: feet */
+       9px   0px 0 #c97a2e,
+      12px   0px 0 #c97a2e,
+      33px   0px 0 #c97a2e,
+      36px   0px 0 #c97a2e;
+  }
+}
+
+/* Walk back and forth, flip at edges */
+@keyframes corgi-walk {
+  0%   { left: 12px; transform: scaleX(1); }
+  45%  { left: calc(100% - 54px); transform: scaleX(1); }
+  50%  { left: calc(100% - 54px); transform: scaleX(-1); }
+  95%  { left: 12px; transform: scaleX(-1); }
+  100% { left: 12px; transform: scaleX(1); }
+}
