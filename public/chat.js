@@ -1545,6 +1545,8 @@ function handleGeminiEvent(event) {
         chatRenderInitPanel(event.data);
       } else if (event.command === "auth" && event.data) {
         chatRenderAuthCard(event.data);
+      } else if (event.command === "hooks" && event.data) {
+        chatRenderHooksPanel(event.data);
       } else {
         const pre = document.createElement("pre");
         pre.style.cssText = "margin:0;white-space:pre-wrap;font-size:0.8rem;color:var(--text-muted)";
@@ -4200,6 +4202,117 @@ function chatRenderAuthCard(data) {
   chatScrollToBottom();
 }
 
+/** Render /hooks result — lifecycle hooks grouped by event type. */
+function chatRenderHooksPanel(data) {
+  const container = document.getElementById("chat-messages");
+  if (!container) return;
+
+  const groups = data.groups || [];
+  const total = data.totalHooks || 0;
+  const panel = document.createElement("div");
+  panel.className = "chat-hooks-card";
+
+  // Header
+  const header = document.createElement("div");
+  header.className = "chat-hooks-header";
+  header.innerHTML =
+    `<span class="chat-hooks-title">Hooks</span>` +
+    `<span class="chat-hooks-badge">${total} registered</span>`;
+  panel.appendChild(header);
+
+  // Description
+  const desc = document.createElement("div");
+  desc.className = "chat-hooks-desc";
+  desc.textContent = "Lifecycle hooks run shell commands at specific events during a session.";
+  panel.appendChild(desc);
+
+  if (groups.length === 0) {
+    const empty = document.createElement("div");
+    empty.className = "chat-hooks-desc";
+    empty.textContent = "No hooks configured. Add hooks in ~/.gemini/settings.json or .gemini/settings.json";
+    panel.appendChild(empty);
+  } else {
+    for (const group of groups) {
+      const section = document.createElement("div");
+      section.className = "chat-hooks-group";
+
+      // Event name header
+      const eventHeader = document.createElement("div");
+      eventHeader.className = "chat-hooks-event";
+      eventHeader.textContent = group.event;
+      section.appendChild(eventHeader);
+
+      for (const hook of group.hooks) {
+        const row = document.createElement("div");
+        row.className = "chat-hooks-entry" + (hook.disabled ? " disabled" : "");
+
+        // Command or name
+        const cmdEl = document.createElement("div");
+        cmdEl.className = "chat-hooks-command";
+        cmdEl.textContent = hook.command || hook.name || "(unnamed)";
+        row.appendChild(cmdEl);
+
+        // Badges row
+        const badges = document.createElement("div");
+        badges.className = "chat-hooks-badges";
+
+        // Source badge
+        const srcBadge = document.createElement("span");
+        srcBadge.className = "chat-hooks-src " + hook.source;
+        srcBadge.textContent = hook.source;
+        badges.appendChild(srcBadge);
+
+        // Matcher badge
+        if (hook.matcher) {
+          const matchBadge = document.createElement("span");
+          matchBadge.className = "chat-hooks-matcher";
+          matchBadge.textContent = hook.matcher;
+          badges.appendChild(matchBadge);
+        }
+
+        // Sequential badge
+        if (hook.sequential) {
+          const seqBadge = document.createElement("span");
+          seqBadge.className = "chat-hooks-seq";
+          seqBadge.textContent = "sequential";
+          badges.appendChild(seqBadge);
+        }
+
+        // Status badge
+        const statusBadge = document.createElement("span");
+        statusBadge.className = "chat-hooks-status " + (hook.disabled ? "off" : "on");
+        statusBadge.textContent = hook.disabled ? "disabled" : "enabled";
+        badges.appendChild(statusBadge);
+
+        row.appendChild(badges);
+
+        // Description
+        if (hook.description) {
+          const descEl = document.createElement("div");
+          descEl.className = "chat-hooks-hook-desc";
+          descEl.textContent = hook.description;
+          row.appendChild(descEl);
+        }
+
+        section.appendChild(row);
+      }
+
+      panel.appendChild(section);
+    }
+  }
+
+  // Config paths
+  if (data.globalSettingsPath) {
+    const pathEl = document.createElement("div");
+    pathEl.className = "chat-hooks-path";
+    pathEl.textContent = data.globalSettingsPath;
+    panel.appendChild(pathEl);
+  }
+
+  container.appendChild(panel);
+  chatScrollToBottom();
+}
+
 /** Render /init result — GEMINI.md status card with Generate button if missing. */
 function chatRenderInitPanel(data) {
   const container = document.getElementById("chat-messages");
@@ -5245,6 +5358,7 @@ const SLASH_COMMANDS = [
   { name: "editor",     description: "Set external editor preference" },
   { name: "extensions", description: "List installed extensions" },
   { name: "help",       description: "Show command reference" },
+  { name: "hooks",      description: "View registered lifecycle hooks" },
   { name: "init",       description: "Generate GEMINI.md from project" },
   { name: "memory",     description: "Show GEMINI.md memory" },
   { name: "model",      description: "Show current model info" },

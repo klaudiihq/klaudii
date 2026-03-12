@@ -3519,6 +3519,118 @@ a.chat-oauth-link-btn.hidden {
   opacity: 0.7;
 }
 
+/* ── /hooks card ── */
+.chat-hooks-card {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 0.75rem 1rem;
+  margin: 0.5rem 0;
+  font-size: 0.82rem;
+  color: var(--text);
+  max-width: 640px;
+}
+.chat-hooks-header {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-bottom: 0.25rem;
+}
+.chat-hooks-title {
+  font-weight: 600;
+  font-size: 0.9rem;
+}
+.chat-hooks-badge {
+  background: var(--accent, #6366f1);
+  color: #fff;
+  font-size: 0.65rem;
+  font-weight: 600;
+  padding: 0.1rem 0.45rem;
+  border-radius: 99px;
+}
+.chat-hooks-desc {
+  font-size: 0.75rem;
+  color: var(--text-muted);
+  margin-bottom: 0.5rem;
+}
+.chat-hooks-group {
+  margin-bottom: 0.5rem;
+}
+.chat-hooks-event {
+  font-weight: 600;
+  font-size: 0.78rem;
+  color: var(--text-strong, var(--text));
+  padding: 0.2rem 0;
+  border-bottom: 1px solid var(--border);
+  margin-bottom: 0.25rem;
+}
+.chat-hooks-entry {
+  background: var(--bg-hover, rgba(255,255,255,0.03));
+  border-radius: 4px;
+  padding: 0.35rem 0.5rem;
+  margin-bottom: 0.2rem;
+}
+.chat-hooks-entry.disabled {
+  opacity: 0.5;
+}
+.chat-hooks-command {
+  font-family: var(--font-mono, monospace);
+  font-size: 0.78rem;
+  word-break: break-all;
+}
+.chat-hooks-badges {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.3rem;
+  margin-top: 0.2rem;
+}
+.chat-hooks-src,
+.chat-hooks-matcher,
+.chat-hooks-seq,
+.chat-hooks-status {
+  font-size: 0.65rem;
+  font-weight: 600;
+  padding: 0.05rem 0.35rem;
+  border-radius: 99px;
+}
+.chat-hooks-src.global {
+  background: rgba(99, 102, 241, 0.15);
+  color: var(--accent, #6366f1);
+}
+.chat-hooks-src.project {
+  background: rgba(34, 197, 94, 0.15);
+  color: var(--s-green, #22c55e);
+}
+.chat-hooks-matcher {
+  background: rgba(249, 115, 22, 0.15);
+  color: var(--s-orange, #f97316);
+  font-family: var(--font-mono, monospace);
+}
+.chat-hooks-seq {
+  background: rgba(168, 85, 247, 0.15);
+  color: #a855f7;
+}
+.chat-hooks-status.on {
+  background: rgba(34, 197, 94, 0.15);
+  color: var(--s-green, #22c55e);
+}
+.chat-hooks-status.off {
+  background: rgba(239, 68, 68, 0.15);
+  color: var(--s-red, #ef4444);
+}
+.chat-hooks-hook-desc {
+  font-size: 0.72rem;
+  color: var(--text-muted);
+  margin-top: 0.15rem;
+}
+.chat-hooks-path {
+  font-size: 0.72rem;
+  color: var(--text-muted);
+  font-family: var(--font-mono, monospace);
+  opacity: 0.7;
+  margin-top: 0.5rem;
+}
+
 /* ── /init card ── */
 .chat-init-card {
   background: var(--bg-card);

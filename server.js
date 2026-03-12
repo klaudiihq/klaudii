@@ -480,6 +480,93 @@ async function loadAuthData() {
   };
 }
 
+// ── /hooks command: read hooks from global and project settings.json ──
+async function loadHooksData(workspace) {
+  const GEMINI_DIR = path.join(os.homedir(), ".gemini");
+
+  // Read global hooks from ~/.gemini/settings.json
+  let globalHooks = {};
+  let globalDisabledHooks = [];
+  try {
+    const raw = await fs.promises.readFile(path.join(GEMINI_DIR, "settings.json"), "utf8");
+    const settings = JSON.parse(raw);
+    globalHooks = settings?.hooks || {};
+    globalDisabledHooks = settings?.disabledHooks || [];
+  } catch {}
+
+  // Read project-level hooks from <workspace>/.gemini/settings.json
+  let projectHooks = {};
+  const proj = workspace ? (config.projects || []).find((p) => p.name === workspace) : null;
+  const workspacePath = proj ? proj.path : null;
+  if (workspacePath) {
+    try {
+      const raw = await fs.promises.readFile(path.join(workspacePath, ".gemini", "settings.json"), "utf8");
+      const settings = JSON.parse(raw);
+      projectHooks = settings?.hooks || {};
+    } catch {}
+  }
+
+  // Known hook event names
+  const EVENT_NAMES = [
+    "BeforeTool", "AfterTool", "BeforeAgent", "AfterAgent",
+    "Notification", "SessionStart", "SessionEnd", "PreCompress",
+    "BeforeModel", "AfterModel", "BeforeToolSelection",
+  ];
+
+  // Merge global + project hooks, grouped by event
+  const groups = [];
+  const seenEvents = new Set();
+
+  for (const eventName of EVENT_NAMES) {
+    const globalDefs = globalHooks[eventName] || [];
+    const projectDefs = projectHooks[eventName] || [];
+    if (globalDefs.length === 0 && projectDefs.length === 0) continue;
+    seenEvents.add(eventName);
+
+    const entries = [];
+    for (const def of globalDefs) {
+      for (const h of (def.hooks || [])) {
+        entries.push({
+          command: h.command || null,
+          name: h.name || null,
+          description: h.description || null,
+          timeout: h.timeout || null,
+          matcher: def.matcher || null,
+          sequential: def.sequential || false,
+          source: "global",
+          disabled: globalDisabledHooks.includes(h.command || h.name || ""),
+        });
+      }
+    }
+    for (const def of projectDefs) {
+      for (const h of (def.hooks || [])) {
+        entries.push({
+          command: h.command || null,
+          name: h.name || null,
+          description: h.description || null,
+          timeout: h.timeout || null,
+          matcher: def.matcher || null,
+          sequential: def.sequential || false,
+          source: "project",
+          disabled: globalDisabledHooks.includes(h.command || h.name || ""),
+        });
+      }
+    }
+
+    groups.push({ event: eventName, hooks: entries });
+  }
+
+  const totalHooks = groups.reduce((sum, g) => sum + g.hooks.length, 0);
+
+  return {
+    groups,
+    totalHooks,
+    disabledHooks: globalDisabledHooks,
+    globalSettingsPath: path.join(GEMINI_DIR, "settings.json"),
+    projectSettingsPath: workspacePath ? path.join(workspacePath, ".gemini", "settings.json") : null,
+  };
+}
+
 // Get current API key info (masked) for UI
 function geminiApiKeyInfo(workspace) {
   const proj = workspace ? (config.projects || []).find((p) => p.name === workspace) : null;
@@ -1203,6 +1290,15 @@ wss.on("connection", (ws) => {
       } else if (cmdName === "auth") {
         // Handle /auth locally — reads auth status from ~/.gemini/ config
         loadAuthData()
+          .then((data) => {
+            ws.send(JSON.stringify({ type: "command_result", workspace, command: cmdName, data, sessionNum: cmdSession }));
+          })
+          .catch((err) => {
+            ws.send(JSON.stringify({ type: "command_error", workspace, command: cmdName, message: err.message, sessionNum: cmdSession }));
+          });
+      } else if (cmdName === "hooks") {
+        // Handle /hooks locally — reads hooks from global and project settings
+        loadHooksData(workspace)
           .then((data) => {
             ws.send(JSON.stringify({ type: "command_result", workspace, command: cmdName, data, sessionNum: cmdSession }));
           })
