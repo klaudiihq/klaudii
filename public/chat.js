@@ -3788,7 +3788,7 @@ function chatRenderCommandsPanel() {
   // Commands handled entirely in the frontend (no WebSocket round-trip)
   const frontendNames = new Set([
     "bug", "clear", "commands", "copy", "corgi", "docs", "editor",
-    "help", "model", "privacy", "shortcuts", "theme",
+    "help", "model", "privacy", "shells", "shortcuts", "theme",
   ]);
 
   const visible = SLASH_COMMANDS.filter(c => !c.hidden);
@@ -4307,6 +4307,125 @@ function chatRenderHooksPanel(data) {
     pathEl.className = "chat-hooks-path";
     pathEl.textContent = data.globalSettingsPath;
     panel.appendChild(pathEl);
+  }
+
+  container.appendChild(panel);
+  chatScrollToBottom();
+}
+
+/** Render /shells result — background process list with kill buttons. */
+function chatRenderShellsPanel(procs) {
+  const container = document.getElementById("chat-messages");
+  if (!container) return;
+
+  const panel = document.createElement("div");
+  panel.className = "chat-shells-card";
+
+  // Header
+  const header = document.createElement("div");
+  header.className = "chat-shells-header";
+  header.innerHTML =
+    `<span class="chat-shells-title">Background Processes</span>` +
+    `<span class="chat-shells-badge">${procs.length} running</span>`;
+  panel.appendChild(header);
+
+  if (procs.length === 0) {
+    const empty = document.createElement("div");
+    empty.className = "chat-shells-empty";
+    empty.textContent = "No background processes detected.";
+    panel.appendChild(empty);
+  } else {
+    for (const proc of procs) {
+      const row = document.createElement("div");
+      row.className = "chat-shells-row";
+
+      // Top line: PID + project + uptime + kill button
+      const top = document.createElement("div");
+      top.className = "chat-shells-row-top";
+
+      const pid = document.createElement("span");
+      pid.className = "chat-shells-pid";
+      pid.textContent = `PID ${proc.pid}`;
+      top.appendChild(pid);
+
+      if (proc.project) {
+        const proj = document.createElement("span");
+        proj.className = "chat-shells-project";
+        proj.textContent = proc.project;
+        top.appendChild(proj);
+      }
+
+      const uptime = document.createElement("span");
+      uptime.className = "chat-shells-uptime";
+      uptime.textContent = proc.uptime || "—";
+      top.appendChild(uptime);
+
+      const killBtn = document.createElement("button");
+      killBtn.className = "chat-shells-kill";
+      killBtn.textContent = "Kill";
+      killBtn.addEventListener("click", () => {
+        fetch("/api/processes/kill", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ pid: proc.pid }),
+        })
+          .then(r => r.json())
+          .then(res => {
+            if (res.ok) {
+              row.classList.add("killed");
+              killBtn.disabled = true;
+              killBtn.textContent = "Killed";
+            } else {
+              chatAppendError(`Failed to kill PID ${proc.pid}`);
+            }
+          })
+          .catch(() => chatAppendError(`Failed to kill PID ${proc.pid}`));
+      });
+      top.appendChild(killBtn);
+
+      row.appendChild(top);
+
+      // Badges: type, provider, managed, cpu, mem
+      const badges = document.createElement("div");
+      badges.className = "chat-shells-badges";
+
+      const provBadge = document.createElement("span");
+      provBadge.className = "chat-shells-prov " + (proc.provider || "unknown");
+      provBadge.textContent = proc.provider || "unknown";
+      badges.appendChild(provBadge);
+
+      const typeBadge = document.createElement("span");
+      typeBadge.className = "chat-shells-type";
+      typeBadge.textContent = proc.type || "interactive";
+      badges.appendChild(typeBadge);
+
+      if (proc.managed) {
+        const mgBadge = document.createElement("span");
+        mgBadge.className = "chat-shells-managed";
+        mgBadge.textContent = "managed";
+        badges.appendChild(mgBadge);
+      }
+
+      const cpuBadge = document.createElement("span");
+      cpuBadge.className = "chat-shells-cpu";
+      cpuBadge.textContent = `CPU ${proc.cpu}%`;
+      badges.appendChild(cpuBadge);
+
+      const memBadge = document.createElement("span");
+      memBadge.className = "chat-shells-mem";
+      memBadge.textContent = `${proc.memMB} MB`;
+      badges.appendChild(memBadge);
+
+      row.appendChild(badges);
+
+      // Command line (truncated)
+      const cmdEl = document.createElement("div");
+      cmdEl.className = "chat-shells-cmd";
+      cmdEl.textContent = proc.command || "";
+      row.appendChild(cmdEl);
+
+      panel.appendChild(row);
+    }
   }
 
   container.appendChild(panel);
@@ -5368,6 +5487,7 @@ const SLASH_COMMANDS = [
   { name: "privacy",    description: "Display privacy notice" },
   { name: "restore",    description: "Restore files to checkpoint" },
   { name: "settings",   description: "Show current settings" },
+  { name: "shells",     description: "Show background processes" },
   { name: "shortcuts",  description: "Toggle keyboard shortcuts" },
   { name: "stats",      description: "Session statistics" },
   { name: "theme",      description: "Change color theme" },
@@ -5521,6 +5641,16 @@ function chatSelectSlashCommand(cmd) {
   if (cmd.name === "theme") {
     chatAppendSystemNote("/theme");
     chatRenderThemeCard();
+    return;
+  }
+
+  // Shells — frontend-only, fetches and displays background processes
+  if (cmd.name === "shells") {
+    chatAppendSystemNote("/shells");
+    fetch("/api/processes")
+      .then(r => r.json())
+      .then(procs => chatRenderShellsPanel(procs))
+      .catch(() => chatAppendError("Failed to fetch process list"));
     return;
   }
 
