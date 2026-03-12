@@ -14,6 +14,7 @@
     "postinstall": "npx patch-package && node patches/check-patches.js"
   },
   "dependencies": {
+    "@google/gemini-cli-core": "^0.33.0",
     "@modelcontextprotocol/sdk": "^1.27.1",
     "better-sqlite3": "^11.10.0",
     "express": "^5.1.0",
