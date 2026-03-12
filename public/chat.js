@@ -1674,12 +1674,10 @@ function chatShowToolQuestions(id, questions, toolInput, isPermissionRequest, on
 
   const sendResult = () => {
     if (onAnswer) {
-      // Gemini A2A ask_user: format answers as text and send via confirm endpoint
-      const content = questions.map((q, i) => {
-        const prefix = q.header || q.question || `Q${i + 1}`;
-        return `${prefix}: ${answers[i]}`;
-      }).join("\n");
-      onAnswer(content);
+      // Gemini A2A ask_user: send answers keyed by index (matches gemini-cli-core format)
+      const answersMap = {};
+      answers.forEach((a, i) => { if (a != null) answersMap[String(i)] = a; });
+      onAnswer(answersMap);
       return;
     }
     if (isPermissionRequest) {
@@ -2132,6 +2130,7 @@ function chatShowApprovalPrompt(event) {
 
 function chatConfirmTool(callId, outcome, answer) {
   const body = answer ? { callId, outcome, answer } : { callId, outcome };
+  glog("chatConfirmTool body:", JSON.stringify(body));
   fetch(`/api/gemini/${encodeURIComponent(chatWorkspace)}/confirm`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },

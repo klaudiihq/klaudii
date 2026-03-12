@@ -346,6 +346,7 @@ app.get("/api/gemini/apikey/:workspace", (req, res) => {
 app.post("/api/gemini/:workspace/confirm", (req, res) => {
   const { workspace } = req.params;
   const { callId, outcome, answer } = req.body;
+  console.log(`[confirm] workspace=${workspace} callId=${callId} outcome=${outcome} answer=${JSON.stringify(answer)}`);
   try {
     const handle = gemini.confirmToolCall(workspace, callId, outcome, answer);
     handle.onEvent((event) => {
