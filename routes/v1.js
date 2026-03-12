@@ -27,6 +27,7 @@ module.exports = function createV1Router(deps) {
     workspace: wsProvider, // optional — pluggable workspace provider (default: git-worktree)
     memory,         // optional — agent memory store
     authCheck,      // optional — injectable auth fn for testing: () => Promise<{ghAuth, claudeAuth}>
+    authEnabled = true, // optional — when false, skip all auth subprocess checks
     broadcastAll,   // optional — broadcast to all WS clients
   } = deps;
 
@@ -48,6 +49,13 @@ module.exports = function createV1Router(deps) {
   const AUTH_CACHE_TTL = 300000; // 5 minutes
 
   async function checkAuthStatus() {
+    if (!authEnabled) {
+      return {
+        ghAuth: { loggedIn: true, account: "assumed" },
+        claudeAuth: { loggedIn: true },
+      };
+    }
+
     const now = Date.now();
     if (_authCache && now - _authCacheTime < AUTH_CACHE_TTL) return _authCache;
 
@@ -106,7 +114,7 @@ module.exports = function createV1Router(deps) {
   }
 
   // Fire initial auth check on startup so first request is fast
-  checkAuthStatus().catch(() => {});
+  if (authEnabled) checkAuthStatus().catch(() => {});
 
   router.get("/health", async (_req, res) => {
     const { ghAuth, claudeAuth } = await checkAuthStatus();
@@ -114,10 +122,11 @@ module.exports = function createV1Router(deps) {
       ok: true,
       tmux: tmux.isTmuxInstalled(),
       ttyd: ttyd.isTtydInstalled(),
+      authEnabled,
       ghAuth,
       claudeAuth,
-      geminiAuth: gemini ? gemini.getAuthStatus() : undefined,
-      claudeChatAuth: claudeChat ? claudeChat.getAuthStatus() : undefined,
+      geminiAuth: !authEnabled ? { loggedIn: true } : gemini ? gemini.getAuthStatus() : undefined,
+      claudeChatAuth: !authEnabled ? { loggedIn: true } : claudeChat ? claudeChat.getAuthStatus() : undefined,
     });
   });
 
@@ -1114,10 +1123,11 @@ module.exports = function createV1Router(deps) {
         ok: true,
         tmux: tmux.isTmuxInstalled(),
         ttyd: ttyd.isTtydInstalled(),
+        authEnabled,
         ghAuth: _authCache ? _authCache.ghAuth : undefined,
         claudeAuth: _authCache ? _authCache.claudeAuth : undefined,
-        geminiAuth: gemini ? gemini.getAuthStatus() : undefined,
-        claudeChatAuth: claudeChat ? claudeChat.getAuthStatus() : undefined,
+        geminiAuth: !authEnabled ? { loggedIn: true } : gemini ? gemini.getAuthStatus() : undefined,
+        claudeChatAuth: !authEnabled ? { loggedIn: true } : claudeChat ? claudeChat.getAuthStatus() : undefined,
       };
       broadcastAll({ type: "server_push", sessions: _sessionsCache, processes: _processesCache, health });
     }

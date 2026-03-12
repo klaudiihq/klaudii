@@ -859,8 +859,13 @@ function renderHealthStatus(health) {
       missing.map(d => `<span class="dep-missing-pill" onclick="openSetupOverlay()">${esc(d)}</span>`).join("");
   }
 
-  // Auth status box
+  // Auth status box — hide entirely when auth is disabled server-side
   const authEl = document.getElementById("auth-status");
+  if (health.authEnabled === false) {
+    authEl.style.display = "none";
+    authEl.innerHTML = "";
+  } else {
+    authEl.style.display = "";
   const authRows = [];
   if (health.ghAuth) {
     if (health.ghAuth.loggedIn) {
@@ -892,6 +897,7 @@ function renderHealthStatus(health) {
     }
   }
   authEl.innerHTML = (authRows.length ? '<span class="auth-title">auth</span>' : '') + authRows.join("");
+  } // end authEnabled else
 
   if (healthFailCount > 0) {
     healthFailCount = 0;

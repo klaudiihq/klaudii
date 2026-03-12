@@ -59,6 +59,7 @@ const { getProvider: getWorkspaceProvider, initProvider: initWorkspaceProvider }
 
 // ── Feature flags ──
 const KONNECT_ENABLED = false;
+const AUTH_ENABLED = false;
 
 process.on('uncaughtException', (err) => {
   // Relay socket errors are recoverable — the relay reconnects on next message.
@@ -135,6 +136,7 @@ app.use(
     workspaceState,
     workspace: getWorkspaceProvider(),
     broadcastAll: (payload) => { if (typeof broadcastAll === "function") broadcastAll(payload); },
+    authEnabled: AUTH_ENABLED,
   })
 );
 
@@ -1725,17 +1727,19 @@ server.listen(PORT, "0.0.0.0", () => {
   // Ensure all workspace folders are trusted by Gemini CLI
   gemini.ensureFolderTrust(config.reposDir);
 
-  // Start periodic gemini auth probe (immediate + every 5 min)
-  gemini.startAuthCheck(config);
+  if (AUTH_ENABLED) {
+    // Start periodic gemini auth probe (immediate + every 5 min)
+    gemini.startAuthCheck(config);
+
+    // Start periodic gemini quota refresh (immediate + every 5 min, OAuth users only)
+    gemini.startQuotaRefresh();
+
+    // Start periodic claude-chat auth probe (immediate + every 5 min)
+    claudeChat.startAuthCheck(config);
+  }
 
   // Start periodic gemini model list refresh (immediate + every hour)
   gemini.startModelRefresh(config);
-
-  // Start periodic gemini quota refresh (immediate + every 5 min, OAuth users only)
-  gemini.startQuotaRefresh();
-
-  // Start periodic claude-chat auth probe (immediate + every 5 min)
-  claudeChat.startAuthCheck(config);
 
   // scheduler.start();
 });
