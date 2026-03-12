@@ -2924,6 +2924,54 @@ function chatRenderBugCard() {
   chatScrollToBottom();
 }
 
+/** Render a privacy notice card with link to Google's privacy policy. */
+function chatRenderPrivacyCard() {
+  const container = document.getElementById("chat-messages");
+  if (!container) return;
+
+  const panel = document.createElement("div");
+  panel.className = "chat-privacy-card";
+
+  const title = document.createElement("div");
+  title.className = "chat-privacy-title";
+  title.textContent = "Privacy Notice";
+  panel.appendChild(title);
+
+  const body = document.createElement("div");
+  body.className = "chat-privacy-body";
+  body.innerHTML = [
+    "Gemini CLI sends your prompts, code context, and file contents to Google servers for processing.",
+    "",
+    "Your data is used to provide responses and may be used to improve Google products and services, depending on your account settings and tier.",
+    "",
+    "For more details, review the linked privacy resources below.",
+  ].join("<br>");
+  panel.appendChild(body);
+
+  const links = document.createElement("div");
+  links.className = "chat-privacy-links";
+
+  const policyLink = document.createElement("a");
+  policyLink.href = "https://policies.google.com/privacy";
+  policyLink.target = "_blank";
+  policyLink.rel = "noopener noreferrer";
+  policyLink.className = "chat-privacy-link";
+  policyLink.textContent = "Google Privacy Policy";
+  links.appendChild(policyLink);
+
+  const tosLink = document.createElement("a");
+  tosLink.href = "https://policies.google.com/terms";
+  tosLink.target = "_blank";
+  tosLink.rel = "noopener noreferrer";
+  tosLink.className = "chat-privacy-link";
+  tosLink.textContent = "Terms of Service";
+  links.appendChild(tosLink);
+
+  panel.appendChild(links);
+  container.appendChild(panel);
+  chatScrollToBottom();
+}
+
 /** Render a formatted stats panel for /stats command results. */
 function chatRenderStatsPanel(data) {
   const container = document.getElementById("chat-messages");
@@ -3857,6 +3905,7 @@ const SLASH_COMMANDS = [
   { name: "init",       description: "Generate GEMINI.md from project" },
   { name: "memory",     description: "Show GEMINI.md memory" },
   { name: "model",      description: "Show current model info" },
+  { name: "privacy",    description: "Display privacy notice" },
   { name: "restore",    description: "Restore files to checkpoint" },
   { name: "settings",   description: "Show current settings" },
   { name: "stats",      description: "Session statistics" },
@@ -3975,6 +4024,13 @@ function chatSelectSlashCommand(cmd) {
     }).catch(() => {
       chatAppendError("Failed to copy — clipboard access denied");
     });
+    return;
+  }
+
+  // Privacy notice — frontend-only, displays privacy info with link to Google's privacy policy
+  if (cmd.name === "privacy") {
+    chatAppendSystemNote("/privacy");
+    chatRenderPrivacyCard();
     return;
   }
 
