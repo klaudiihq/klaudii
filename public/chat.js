@@ -1131,15 +1131,22 @@ function handleGeminiEvent(event) {
       } else if (toolName === "EnterPlanMode") {
         // Planning mode entry — just show a small indicator, no action needed
         chatAppendToolUse(toolName, toolId, params);
+      } else if (/ask.*question|askfollowup|ask_followup/i.test(toolName)) {
+        chatAskToolIds.add(toolId);
+        if (event.awaiting_approval) {
+          // Gemini A2A (ask_user normalized to AskUserQuestion) — render question card and send answer via confirm
+          const questions = params.questions?.length
+            ? params.questions
+            : [{ question: params.question || params.prompt || "", options: params.options || [] }];
+          const callId = event.call_id || toolId;
+          chatShowToolQuestions(callId, questions, params, false,
+            (answer) => chatConfirmTool(callId, "proceed_once", answer));
+        }
+        // else: Claude path — skip here, permission_request handler renders the card
+        glog(`handle: ask-tool awaiting=${!!event.awaiting_approval} toolId=${toolId}`);
       } else if (event.awaiting_approval) {
         // Interactive approval prompt — show Approve/Deny buttons
         chatShowApprovalPrompt(event);
-      } else if (/ask.*question|askfollowup|ask_followup/i.test(toolName)) {
-        // AskUserQuestion always triggers permission_request (requiresUserInteraction=true).
-        // Don't render anything here — the permission_request handler renders the
-        // interactive question card. Rendering a pill would leave an orphan.
-        chatAskToolIds.add(toolId);
-        glog(`handle: ask-tool (skipped, waiting for permission_request) toolId=${toolId}`);
       } else {
         chatAppendToolUse(toolName, toolId, params);
       }
@@ -1652,7 +1659,7 @@ function chatShowPlanApproval(id, planText, isPermissionRequest, target) {
 // toolInput: original tool input for AskUserQuestion (used to build updatedInput)
 // isPermissionRequest: true → send answers via permission_response updatedInput.answers
 //                      false → send answers via tool_result_response content string
-function chatShowToolQuestions(id, questions, toolInput, isPermissionRequest) {
+function chatShowToolQuestions(id, questions, toolInput, isPermissionRequest, onAnswer) {
   const container = document.getElementById("chat-messages");
   const div = document.createElement("div");
   div.className = isPermissionRequest ? "chat-permission-request chat-question-card" : "chat-permission-request";
@@ -1660,12 +1667,21 @@ function chatShowToolQuestions(id, questions, toolInput, isPermissionRequest) {
 
   const headerEl = document.createElement("div");
   headerEl.className = "chat-permission-header";
-  headerEl.textContent = "Claude is asking";
+  headerEl.textContent = onAnswer ? "Gemini is asking" : "Claude is asking";
   div.appendChild(headerEl);
 
   const answers = new Array(questions.length).fill(null);
 
   const sendResult = () => {
+    if (onAnswer) {
+      // Gemini A2A ask_user: format answers as text and send via confirm endpoint
+      const content = questions.map((q, i) => {
+        const prefix = q.header || q.question || `Q${i + 1}`;
+        return `${prefix}: ${answers[i]}`;
+      }).join("\n");
+      onAnswer(content);
+      return;
+    }
     if (isPermissionRequest) {
       // Claude CLI AskUserQuestion: answers go in updatedInput.answers as {question: answer}
       const answersMap = {};
@@ -2114,11 +2130,12 @@ function chatShowApprovalPrompt(event) {
   container.scrollTop = container.scrollHeight;
 }
 
-function chatConfirmTool(callId, outcome) {
+function chatConfirmTool(callId, outcome, answer) {
+  const body = answer ? { callId, outcome, answer } : { callId, outcome };
   fetch(`/api/gemini/${encodeURIComponent(chatWorkspace)}/confirm`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ callId, outcome }),
+    body: JSON.stringify(body),
   }).catch((e) => glog("confirmTool error:", e));
 }
 
