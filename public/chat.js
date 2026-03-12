@@ -3013,7 +3013,7 @@ function chatRenderHelpCard() {
   const categories = [
     { label: "Session", cmds: ["clear", "compress", "copy", "restore", "stats"] },
     { label: "Tools & Extensions", cmds: ["extensions", "init", "memory", "model", "settings", "tools"] },
-    { label: "Info", cmds: ["about", "bug", "docs", "help", "privacy", "theme"] },
+    { label: "Info", cmds: ["about", "bug", "docs", "help", "privacy", "shortcuts", "theme"] },
   ];
 
   const panel = document.createElement("div");
@@ -3083,6 +3083,15 @@ function chatRenderHelpCard() {
 }
 
 /** Render a theme picker card with Dark / Light / System options. */
+/** Toggle the keyboard shortcuts strip above the chat input. */
+function chatToggleShortcuts() {
+  const strip = document.getElementById("chat-shortcuts-strip");
+  if (!strip) return;
+  const showing = !strip.classList.contains("hidden");
+  strip.classList.toggle("hidden");
+  chatAppendSystemNote(showing ? "Shortcuts hidden" : "Shortcuts visible");
+}
+
 function chatRenderThemeCard() {
   const container = document.getElementById("chat-messages");
   if (!container) return;
@@ -4336,6 +4345,7 @@ const SLASH_COMMANDS = [
   { name: "privacy",    description: "Display privacy notice" },
   { name: "restore",    description: "Restore files to checkpoint" },
   { name: "settings",   description: "Show current settings" },
+  { name: "shortcuts",  description: "Toggle keyboard shortcuts" },
   { name: "stats",      description: "Session statistics" },
   { name: "theme",      description: "Change color theme" },
   { name: "tools",      description: "List available tools" },
@@ -4474,6 +4484,12 @@ function chatSelectSlashCommand(cmd) {
   if (cmd.name === "theme") {
     chatAppendSystemNote("/theme");
     chatRenderThemeCard();
+    return;
+  }
+
+  // Shortcuts — frontend-only, toggles keyboard shortcuts strip above chat input
+  if (cmd.name === "shortcuts") {
+    chatToggleShortcuts();
     return;
   }
 

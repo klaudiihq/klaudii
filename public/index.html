@@ -162,6 +162,17 @@
       </div>
       <div id="chat-messages" class="chat-messages"></div>
       <div id="chat-image-strip" class="chat-image-strip hidden"></div>
+      <div id="chat-shortcuts-strip" class="chat-shortcuts-strip hidden">
+        <div class="chat-shortcuts-items">
+          <span class="chat-shortcut-item"><kbd>Enter</kbd> Send</span>
+          <span class="chat-shortcut-item"><kbd>Shift+Enter</kbd> Newline</span>
+          <span class="chat-shortcut-item"><kbd>/</kbd> Commands</span>
+          <span class="chat-shortcut-item"><kbd>Tab</kbd> Select command</span>
+          <span class="chat-shortcut-item"><kbd>Esc</kbd> Close menu</span>
+          <span class="chat-shortcut-item"><kbd>↑↓</kbd> Navigate menu</span>
+        </div>
+        <button class="chat-shortcuts-close" onclick="chatToggleShortcuts()" title="Close shortcuts">&times;</button>
+      </div>
       <div class="chat-input-area">
         <div id="chat-slash-menu" class="chat-slash-menu hidden"></div>
         <div class="chat-input-card">
