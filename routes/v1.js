@@ -24,6 +24,7 @@ module.exports = function createV1Router(deps) {
     gemini,         // optional — Gemini CLI chat backend
     claudeChat,     // optional — Claude CLI chat backend
     workspaceState, // optional — per-workspace chat mode/session/draft persistence
+    workspace: wsProvider, // optional — pluggable workspace provider (default: git-worktree)
     memory,         // optional — agent memory store
     authCheck,      // optional — injectable auth fn for testing: () => Promise<{ghAuth, claudeAuth}>
     broadcastAll,   // optional — broadcast to all WS clients
@@ -320,13 +321,12 @@ module.exports = function createV1Router(deps) {
       return res.status(409).json({ error: "Session already running" });
     }
 
-    // Clean worktree before starting session (only for worktree paths, not main repos)
-    const dotGitPath = path.join(proj.path, ".git");
-    if (fs.existsSync(dotGitPath) && fs.statSync(dotGitPath).isFile()) {
+    // Clean workspace before starting session (only for managed workspaces, not main repos)
+    if (wsProvider && wsProvider.isWorkspace(proj.path)) {
       try {
-        git.cleanWorktree(proj.path);
+        wsProvider.clean(proj.path);
       } catch (err) {
-        console.error(`[sessions/start] Failed to clean worktree: ${err.message}`);
+        console.error(`[sessions/start] Failed to clean workspace: ${err.message}`);
       }
     }
 
@@ -421,13 +421,12 @@ module.exports = function createV1Router(deps) {
     }
 
     try {
-      const dotGit = path.join(proj.path, ".git");
-      const isWorktree = fs.existsSync(dotGit) && fs.statSync(dotGit).isFile();
-      if (isWorktree && config.reposDir) {
-        const repoName = project.split("--")[0];
+      const isWs = wsProvider && wsProvider.isWorkspace(proj.path);
+      if (isWs && config.reposDir) {
+        const { repo: repoName } = wsProvider.parseName(project);
         const mainRepoDir = path.join(config.reposDir, repoName);
         if (git.isGitRepo(mainRepoDir)) {
-          git.removeWorktree(mainRepoDir, proj.path);
+          wsProvider.remove(mainRepoDir, proj.path);
         }
       }
 
@@ -435,7 +434,7 @@ module.exports = function createV1Router(deps) {
       projects.removeProject(project);
       _sessionsCache = buildSessionsData();
 
-      res.json({ ok: true, worktreeRemoved: isWorktree });
+      res.json({ ok: true, worktreeRemoved: isWs });
     } catch (err) {
       res.status(500).json({ error: err.message });
     }
@@ -547,7 +546,7 @@ module.exports = function createV1Router(deps) {
     if (!git.isGitRepo(repoDir)) {
       return res.status(404).json({ error: `repo "${req.params.name}" not found locally` });
     }
-    const worktrees = git.listWorktrees(repoDir);
+    const worktrees = wsProvider ? wsProvider.list(repoDir) : git.listWorktrees(repoDir);
     res.json(worktrees);
   });
 
@@ -600,8 +599,9 @@ module.exports = function createV1Router(deps) {
 
     const repoDir = path.join(config.reposDir, repo);
     const branchName = branch || `claude-${Date.now()}`;
-    const worktreeDir = path.join(config.reposDir, `${repo}--${branchName}`);
-    const projectName = `${repo}--${branchName}`;
+    const { projectName, workspacePath: worktreeDir } = wsProvider
+      ? wsProvider.buildPath(config.reposDir, repo, branchName)
+      : { projectName: `${repo}--${branchName}`, workspacePath: path.join(config.reposDir, `${repo}--${branchName}`) };
 
     try {
       if (!git.isGitRepo(repoDir)) {
@@ -632,7 +632,11 @@ module.exports = function createV1Router(deps) {
           .json({ error: `Worktree directory already exists: ${worktreeDir}` });
       }
 
-      git.addWorktree(repoDir, worktreeDir, branchName);
+      if (wsProvider) {
+        wsProvider.create(repoDir, worktreeDir, branchName);
+      } else {
+        git.addWorktree(repoDir, worktreeDir, branchName);
+      }
 
       // Verify clean state after worktree creation
       const wtStatus = git.getStatus(worktreeDir);

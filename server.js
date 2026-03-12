@@ -55,6 +55,10 @@ const setup = require("./lib/setup");
 const { mountMcp } = require("./lib/mcp");
 const scheduler = require("./lib/scheduler");
 const memory = require("./lib/memory");
+const { getProvider: getWorkspaceProvider } = require("./lib/workspace-provider");
+
+// ── Feature flags ──
+const KONNECT_ENABLED = false;
 
 process.on('uncaughtException', (err) => {
   // Relay socket errors are recoverable — the relay reconnects on next message.
@@ -128,6 +132,7 @@ app.use(
     gemini,
     claudeChat,
     workspaceState,
+    workspace: getWorkspaceProvider(),
     broadcastAll: (payload) => { if (typeof broadcastAll === "function") broadcastAll(payload); },
   })
 );
@@ -144,6 +149,7 @@ mountMcp(app, {
   config,
   claudeChat,
   workspaceState,
+  workspace: getWorkspaceProvider(),
 });
 
 // --- Scheduler ---
@@ -321,6 +327,58 @@ app.delete("/api/gemini/apikey", (req, res) => {
   config = cfg;
   gemini.checkAuth(config);
   res.json({ ok: true });
+});
+
+// ── /directory command: manage workspace include directories ──
+app.get("/api/directories/:workspace", (req, res) => {
+  const proj = (config.projects || []).find((p) => p.name === req.params.workspace);
+  if (!proj) return res.status(404).json({ error: "workspace not found" });
+  res.json({
+    workspace: proj.name,
+    root: proj.path,
+    includeDirectories: proj.includeDirectories || [],
+  });
+});
+
+app.post("/api/directories/:workspace", (req, res) => {
+  const { path: dirPath } = req.body;
+  if (!dirPath) return res.status(400).json({ error: "path required" });
+  const resolved = path.resolve(dirPath);
+  if (!fs.existsSync(resolved)) {
+    return res.status(400).json({ error: `Path does not exist: ${resolved}` });
+  }
+  const stat = fs.statSync(resolved);
+  if (!stat.isDirectory()) {
+    return res.status(400).json({ error: `Not a directory: ${resolved}` });
+  }
+  const { loadConfig, saveConfig } = require("./lib/projects");
+  const cfg = loadConfig();
+  const proj = (cfg.projects || []).find((p) => p.name === req.params.workspace);
+  if (!proj) return res.status(404).json({ error: "workspace not found" });
+  if (!proj.includeDirectories) proj.includeDirectories = [];
+  if (proj.includeDirectories.includes(resolved)) {
+    return res.status(409).json({ error: "Directory already included" });
+  }
+  proj.includeDirectories.push(resolved);
+  saveConfig(cfg);
+  config = cfg;
+  res.json({ ok: true, includeDirectories: proj.includeDirectories });
+});
+
+app.delete("/api/directories/:workspace", (req, res) => {
+  const { path: dirPath } = req.body;
+  if (!dirPath) return res.status(400).json({ error: "path required" });
+  const { loadConfig, saveConfig } = require("./lib/projects");
+  const cfg = loadConfig();
+  const proj = (cfg.projects || []).find((p) => p.name === req.params.workspace);
+  if (!proj) return res.status(404).json({ error: "workspace not found" });
+  if (!proj.includeDirectories) proj.includeDirectories = [];
+  const idx = proj.includeDirectories.indexOf(dirPath);
+  if (idx === -1) return res.status(404).json({ error: "Directory not in include list" });
+  proj.includeDirectories.splice(idx, 1);
+  saveConfig(cfg);
+  config = cfg;
+  res.json({ ok: true, includeDirectories: proj.includeDirectories });
 });
 
 // ── /policies command: load & parse built-in TOML policy files ──
@@ -899,8 +957,10 @@ sessionTracker.recoverUrls(() => {
 });
 
 // Cloud connector (optional — only activates if cloud is configured in config.json)
-const connector = require("./konnect/client");
-connector.init(app, config);
+if (KONNECT_ENABLED) {
+  const connector = require("./konnect/client");
+  connector.init(app, config);
+}
 
 const server = http.createServer(app);
 

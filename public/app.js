@@ -1276,7 +1276,9 @@ async function refreshCloudStatus() {
       btn.classList.remove("cloud-connected");
     }
   } catch {
-    // Kloud endpoint not available
+    // Kloud endpoint not available — hide the button entirely
+    const btn = document.getElementById("cloud-btn");
+    if (btn) btn.style.display = "none";
   }
 }
 
