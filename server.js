@@ -252,7 +252,7 @@ app.post("/api/gemini/sessions/:project/switch", (req, res) => {
 // Partial stream content — accumulated text for the current in-progress turn.
 // Gemini uses the crash-recovery stream log (disk); Claude uses an in-memory buffer.
 // Used by clients switching back to a workspace mid-stream so they can show what
-// was generated before they left (Claude only — Gemini A2A maintains its own state).
+// was generated before they left (Claude only — Gemini core maintains its own state).
 app.get("/api/gemini/stream-partial/:project", (req, res) => {
   const sessionNum = req.query.session ? Number(req.query.session) : undefined;
   const text = claudeChat.getStreamPartial(req.params.project, sessionNum);
@@ -1174,7 +1174,7 @@ wss.on("connection", (ws) => {
         const globalKeyField = backend === "claude" ? "claudeApiKey" : "geminiApiKey";
         const apiKey = proj[apiKeyField] || config[globalKeyField] || undefined;
         console.log(`[chat-ws] spawning ${backend} for workspace=${workspace} path=${proj.path} hasApiKey=${!!apiKey}`);
-        // Gemini uses A2A: bypassPermissions = YOLO (auto-approve all tools), else interactive approval
+        // Gemini: bypassPermissions = YOLO (auto-approve all tools), else interactive approval
         const autoExecute = backend === "gemini" ? (permissionMode === "bypassPermissions") : undefined;
         // If systemPrompt is provided (agent chat), prepend it to the message sent to Claude
         // but NOT to the history (which already stored the raw user message above).
@@ -1333,7 +1333,7 @@ wss.on("connection", (ws) => {
           console.error(`[chat-ws] error workspace=${workspace} session#${chatSessionNum}: ${err.message}`);
           workspaceState.setStreaming(workspace, false, chatSessionNum);
           pendingWorkspaces.delete(workspace);
-          // Auth errors (e.g. A2A server couldn't find credentials) → exitCode 41
+          // Auth errors (e.g. couldn't find credentials) → exitCode 41
           // so the frontend shows the login panel instead of a generic error message.
           if (err.isAuthError) {
             broadcastToWorkspace(workspace, { type: "done", workspace, exitCode: 41 });
@@ -1396,7 +1396,7 @@ wss.on("connection", (ws) => {
       } else if (backend !== "gemini") {
         ws.send(JSON.stringify({ type: "command_error", workspace, command: cmdName, message: "Slash commands are only available for Gemini" }));
       } else if (cmdName === "policies") {
-        // Handle /policies locally — no A2A command exists for this
+        // Handle /policies locally — not a gemini-core command
         loadPolicyData()
           .then((data) => {
             ws.send(JSON.stringify({ type: "command_result", workspace, command: cmdName, data, sessionNum: cmdSession }));

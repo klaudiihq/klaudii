@@ -112,7 +112,7 @@ Per-workspace Claude relay subprocess. Survives server restarts.
 - Replay protocol: raw events → `{type:"relay_replay_end"}` → live events → `{type:"relay_exit"}`
 
 ### gemini.js (~900 lines)
-Gemini CLI subprocess manager (print-mode or A2A backend).
+Gemini CLI manager — auth, history, models, quota, session tracking. Delegates to gemini-core.js for chat.
 
 Key functions:
 - `startProcess(workspace, sessionNum, opts)` — spawn gemini subprocess
@@ -121,13 +121,6 @@ Key functions:
 - `getHistory(workspace, sessionNum)` — session messages
 - `newSession(workspace)`, `getSessions(workspace)` — session management
 - `getStreamPartial(workspace)` — crash recovery
-
-### gemini-a2a.js (~460 lines)
-A2A (Agent-to-Agent) JSON-RPC 2.0 backend for Gemini CLI.
-
-- HTTP POST via `@google/gemini-cli-a2a-server`
-- One HTTP server per workspace on dynamic port
-- Polls `/.well-known/agent-card.json` for startup detection
 
 ### tmux.js (~260 lines)
 tmux session lifecycle.

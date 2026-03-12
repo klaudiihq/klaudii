@@ -1,9 +1,5 @@
 # Agent Instructions
 
-## DEPRECATED: gemini-a2a.js / A2A Server Path
-
-The `lib/gemini-a2a.js` module and the `@google/gemini-cli-a2a-server` package are **fully deprecated**. Do NOT use them for new work. The active Gemini backend is `lib/gemini-core.js`, which integrates `@google/gemini-cli-core` directly in-process — no separate A2A HTTP server. The variable name `a2a` in `lib/gemini.js` is a legacy alias that actually points to `gemini-core.js`. A cleanup project to remove the dead A2A code is pending.
-
 ## Repository: klaudii-dev (PRIVATE)
 
 All development happens in **klaudiihq/klaudii-dev**. The public repo (klaudiihq/klaudii) is for releases only. If your `origin` remote points to `klaudii.git` instead of `klaudii-dev.git`, STOP and fix it before doing any work.

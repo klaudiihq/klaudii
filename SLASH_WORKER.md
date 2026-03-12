@@ -77,15 +77,12 @@ server.js (line ~1011): WebSocket handler receives it
     → rejects if backend !== "gemini"
     → calls gemini.executeCommand(workspace, sessionNum, cmdName, args)
         ↓
-lib/gemini.js (line ~737): delegates to a2a.executeCommand()
+lib/gemini.js (line ~737): delegates to core.executeCommand()
         ↓
-lib/gemini-a2a.js (line ~838): HTTP POST to local A2A server
-    → POST http://localhost:{port}/executeCommand { command, args }
+lib/gemini-core.js (line ~714): executes command in-process
+    → uses gemini-cli-core APIs directly (Config, ToolRegistry, etc.)
         ↓
-@google/gemini-cli-a2a-server CommandRegistry
-    → looks up command → executes → returns JSON result
-        ↓
-Back up through: a2a → gemini.js → server.js WebSocket:
+Back up through: gemini-core → gemini.js → server.js WebSocket:
     { type: "command_result", workspace, command, data: {...} }
         ↓
 chat.js (line ~1505): renders data as <pre> inside a system note
@@ -93,22 +90,10 @@ chat.js (line ~1505): renders data as <pre> inside a system note
 
 ### Two Categories of Commands
 
-**Category A: Backend commands** — need the Gemini A2A server to execute them.
+**Category A: Backend commands** — executed in-process via gemini-cli-core APIs.
 These call real Gemini CLI functionality (stats, model info, tools list, settings, memory, etc.).
-The A2A server has a CommandRegistry at:
-```
-node_modules/@google/gemini-cli-a2a-server/dist/src/commands/command-registry.js
-```
-Currently registered: `extensions`, `restore`, `init`, `memory` (with subcommands).
-
-To see how a backend command is implemented, read:
-```
-node_modules/@google/gemini-cli-a2a-server/dist/src/commands/memory.js   # good example
-node_modules/@google/gemini-cli-a2a-server/dist/src/commands/extensions.js
-node_modules/@google/gemini-cli-a2a-server/dist/src/commands/restore.js
-```
-
-The A2A server also exposes `GET /listCommands` to enumerate registered commands.
+Implementation is in `lib/gemini-core.js` `executeCommand()` function, which uses Config,
+ToolRegistry, and other core APIs directly.
 
 **Category B: Frontend-only commands** — handled entirely in chat.js, no server round-trip.
 Examples: `/help` (show keybindings), `/docs` (open URL), `/copy` (clipboard), `/clear` (clear chat),
@@ -127,9 +112,7 @@ For these, intercept in `chatSelectSlashCommand()` BEFORE the WebSocket send —
 | Hidden command intercept | `public/chat.js` | ~3816-3826 (in `sendGeminiMessage`) |
 | WebSocket command handler | `server.js` | ~1011-1027 |
 | Gemini command proxy | `lib/gemini.js` | ~737-739 |
-| A2A HTTP bridge | `lib/gemini-a2a.js` | ~838-848 |
-| A2A command registry | `node_modules/@google/gemini-cli-a2a-server/dist/src/commands/command-registry.js` |
-| A2A HTTP endpoint | `node_modules/@google/gemini-cli-a2a-server/dist/src/http/app.js` | ~90-141 |
+| Gemini command execution | `lib/gemini-core.js` | ~714+ (`executeCommand`) |
 | Command result rendering | `public/chat.js` | ~1505-1516 (case "command_result") |
 | Command error rendering | `public/chat.js` | ~1518-1522 (case "command_error") |
 | Slash menu CSS | `public/chat.css` | search for `.chat-slash-` |
@@ -140,7 +123,6 @@ For these, intercept in `chatSelectSlashCommand()` BEFORE the WebSocket send —
 The Gemini CLI's own command implementations live in:
 ```
 node_modules/@google/gemini-cli-core/dist/src/commands/     # core command logic
-node_modules/@google/gemini-cli-a2a-server/dist/src/commands/  # A2A wrappers
 ```
 
 Additional reference for data these commands surface:
