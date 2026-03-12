@@ -323,6 +323,44 @@ app.delete("/api/gemini/apikey", (req, res) => {
   res.json({ ok: true });
 });
 
+// ── /policies command: load & parse built-in TOML policy files ──
+async function loadPolicyData() {
+  const TOML = require("@iarna/toml");
+  const policiesDir = path.join(
+    __dirname, "node_modules", "@google", "gemini-cli-core",
+    "dist", "src", "policy", "policies"
+  );
+  const files = await fs.promises.readdir(policiesDir).catch(() => []);
+  const tomlFiles = files.filter((f) => f.endsWith(".toml")).sort();
+  const groups = [];
+  for (const file of tomlFiles) {
+    try {
+      const raw = await fs.promises.readFile(path.join(policiesDir, file), "utf8");
+      const parsed = TOML.parse(raw);
+      const rules = (parsed.rule || []).map((r) => ({
+        toolName: r.toolName || "*",
+        decision: r.decision || "ask_user",
+        priority: r.priority ?? 0,
+        modes: r.modes || [],
+        denyMessage: r.deny_message || r.denyMessage || null,
+        mcpName: r.mcpName || null,
+        allowRedirection: r.allow_redirection || false,
+        argsPattern: r.argsPattern || null,
+        toolAnnotations: r.toolAnnotations || null,
+      }));
+      const checkers = (parsed.safety_checker || []).map((c) => ({
+        toolName: c.toolName || "*",
+        priority: c.priority ?? 0,
+        checker: c.checker || null,
+      }));
+      groups.push({ file, rules, checkers });
+    } catch (err) {
+      groups.push({ file, rules: [], checkers: [], error: err.message });
+    }
+  }
+  return { groups };
+}
+
 // Get current API key info (masked) for UI
 function geminiApiKeyInfo(workspace) {
   const proj = workspace ? (config.projects || []).find((p) => p.name === workspace) : null;
@@ -1016,6 +1054,15 @@ wss.on("connection", (ws) => {
         ws.send(JSON.stringify({ type: "command_error", workspace, command: cmdName, message: "workspace and command required" }));
       } else if (backend !== "gemini") {
         ws.send(JSON.stringify({ type: "command_error", workspace, command: cmdName, message: "Slash commands are only available for Gemini" }));
+      } else if (cmdName === "policies") {
+        // Handle /policies locally — no A2A command exists for this
+        loadPolicyData()
+          .then((data) => {
+            ws.send(JSON.stringify({ type: "command_result", workspace, command: cmdName, data, sessionNum: cmdSession }));
+          })
+          .catch((err) => {
+            ws.send(JSON.stringify({ type: "command_error", workspace, command: cmdName, message: err.message, sessionNum: cmdSession }));
+          });
       } else {
         gemini.executeCommand(workspace, cmdSession, cmdName, cmdArgs || [])
           .then((result) => {

@@ -1532,6 +1532,8 @@ function handleGeminiEvent(event) {
         chatRenderExtensionsPanel(event.data);
       } else if (event.command === "agents" && event.data) {
         chatRenderAgentsPanel(event.data);
+      } else if (event.command === "policies" && event.data && event.data.groups) {
+        chatRenderPoliciesPanel(event.data);
       } else {
         const pre = document.createElement("pre");
         pre.style.cssText = "margin:0;white-space:pre-wrap;font-size:0.8rem;color:var(--text-muted)";
@@ -3763,6 +3765,122 @@ function chatRenderAgentsPanel(data) {
   chatScrollToBottom();
 }
 
+function chatRenderPoliciesPanel(data) {
+  const container = document.getElementById("chat-messages");
+  if (!container) return;
+
+  const groups = data.groups || [];
+  const totalRules = groups.reduce((n, g) => n + g.rules.length, 0);
+  const totalCheckers = groups.reduce((n, g) => n + (g.checkers || []).length, 0);
+
+  const panel = document.createElement("div");
+  panel.className = "chat-policies-card";
+
+  // Header
+  const header = document.createElement("div");
+  header.className = "chat-policies-header";
+  header.innerHTML =
+    `<span class="chat-policies-title">Policies</span>` +
+    `<span class="chat-policies-badge">${totalRules} rules</span>` +
+    (totalCheckers ? `<span class="chat-policies-badge checkers">${totalCheckers} checkers</span>` : "");
+  panel.appendChild(header);
+
+  // Description
+  const desc = document.createElement("div");
+  desc.className = "chat-policies-desc";
+  desc.textContent = "Built-in policy rules loaded from gemini-cli-core. Higher priority rules win.";
+  panel.appendChild(desc);
+
+  // Groups
+  const body = document.createElement("div");
+  body.className = "chat-policies-body";
+
+  for (const group of groups) {
+    if (group.rules.length === 0 && (!group.checkers || group.checkers.length === 0)) continue;
+    const section = document.createElement("details");
+    section.className = "chat-policies-group";
+
+    const summary = document.createElement("summary");
+    summary.className = "chat-policies-group-summary";
+    const label = group.file.replace(/\.toml$/, "");
+    summary.innerHTML =
+      `${chatEscHtml(label)} <span class="chat-policies-group-count">${group.rules.length}</span>`;
+    section.appendChild(summary);
+
+    const list = document.createElement("div");
+    list.className = "chat-policies-list";
+
+    for (const rule of group.rules) {
+      const row = document.createElement("div");
+      row.className = "chat-policies-rule";
+
+      // Tool name
+      const tool = document.createElement("span");
+      tool.className = "chat-policies-tool";
+      const toolVal = Array.isArray(rule.toolName) ? rule.toolName.join(", ") : (rule.toolName || "*");
+      tool.textContent = toolVal === "*" ? "(all tools)" : toolVal;
+      row.appendChild(tool);
+
+      // Decision badge
+      const badge = document.createElement("span");
+      const d = (rule.decision || "ask_user").toLowerCase();
+      badge.className = "chat-policies-decision " + d.replace(/_/g, "-");
+      badge.textContent = d.replace(/_/g, " ");
+      row.appendChild(badge);
+
+      // Priority
+      const pri = document.createElement("span");
+      pri.className = "chat-policies-priority";
+      pri.textContent = "p" + rule.priority;
+      row.appendChild(pri);
+
+      // Modes
+      if (rule.modes && rule.modes.length > 0) {
+        const modes = document.createElement("span");
+        modes.className = "chat-policies-modes";
+        modes.textContent = rule.modes.join(", ");
+        row.appendChild(modes);
+      }
+
+      list.appendChild(row);
+
+      // Deny message (if any)
+      if (rule.denyMessage) {
+        const msg = document.createElement("div");
+        msg.className = "chat-policies-deny-msg";
+        msg.textContent = rule.denyMessage;
+        list.appendChild(msg);
+      }
+    }
+
+    // Safety checkers
+    for (const checker of (group.checkers || [])) {
+      const row = document.createElement("div");
+      row.className = "chat-policies-rule";
+      const tool = document.createElement("span");
+      tool.className = "chat-policies-tool";
+      tool.textContent = (checker.toolName || "*") === "*" ? "(all tools)" : checker.toolName;
+      row.appendChild(tool);
+      const badge = document.createElement("span");
+      badge.className = "chat-policies-decision checker";
+      badge.textContent = checker.checker ? checker.checker.name || "checker" : "checker";
+      row.appendChild(badge);
+      const pri = document.createElement("span");
+      pri.className = "chat-policies-priority";
+      pri.textContent = "p" + checker.priority;
+      row.appendChild(pri);
+      list.appendChild(row);
+    }
+
+    section.appendChild(list);
+    body.appendChild(section);
+  }
+
+  panel.appendChild(body);
+  container.appendChild(panel);
+  chatScrollToBottom();
+}
+
 function chatRenderExtensionsPanel(data) {
   const container = document.getElementById("chat-messages");
   if (!container) return;
@@ -4734,6 +4852,7 @@ const SLASH_COMMANDS = [
   { name: "init",       description: "Generate GEMINI.md from project" },
   { name: "memory",     description: "Show GEMINI.md memory" },
   { name: "model",      description: "Show current model info" },
+  { name: "policies",   description: "View active policy rules" },
   { name: "privacy",    description: "Display privacy notice" },
   { name: "restore",    description: "Restore files to checkpoint" },
   { name: "settings",   description: "Show current settings" },
