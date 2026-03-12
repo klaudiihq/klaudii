@@ -3003,6 +3003,83 @@ function chatRenderPrivacyCard() {
   chatScrollToBottom();
 }
 
+/** Render a help reference card showing all slash commands grouped by category and quick links. */
+function chatRenderHelpCard() {
+  const container = document.getElementById("chat-messages");
+  if (!container) return;
+
+  const categories = [
+    { label: "Session", cmds: ["clear", "compress", "copy", "restore", "stats"] },
+    { label: "Tools & Extensions", cmds: ["extensions", "init", "memory", "model", "settings", "tools"] },
+    { label: "Info", cmds: ["about", "bug", "docs", "help", "privacy", "theme"] },
+  ];
+
+  const panel = document.createElement("div");
+  panel.className = "chat-help-card";
+
+  const title = document.createElement("div");
+  title.className = "chat-help-title";
+  title.textContent = "Command Reference";
+  panel.appendChild(title);
+
+  const cmdMap = {};
+  for (const c of SLASH_COMMANDS) { if (!c.hidden) cmdMap[c.name] = c.description; }
+
+  for (const cat of categories) {
+    const section = document.createElement("div");
+    section.className = "chat-help-section";
+
+    const heading = document.createElement("div");
+    heading.className = "chat-help-heading";
+    heading.textContent = cat.label;
+    section.appendChild(heading);
+
+    const grid = document.createElement("div");
+    grid.className = "chat-help-grid";
+    for (const name of cat.cmds) {
+      const desc = cmdMap[name];
+      if (!desc) continue;
+      const row = document.createElement("div");
+      row.className = "chat-help-row";
+      const nameEl = document.createElement("span");
+      nameEl.className = "chat-help-cmd";
+      nameEl.textContent = "/" + name;
+      nameEl.addEventListener("click", () => {
+        const cmd = SLASH_COMMANDS.find(c => c.name === name);
+        if (cmd) chatSelectSlashCommand(cmd);
+      });
+      const descEl = document.createElement("span");
+      descEl.className = "chat-help-desc";
+      descEl.textContent = desc;
+      row.appendChild(nameEl);
+      row.appendChild(descEl);
+      grid.appendChild(row);
+    }
+    section.appendChild(grid);
+    panel.appendChild(section);
+  }
+
+  const links = document.createElement("div");
+  links.className = "chat-help-links";
+  const linkData = [
+    { text: "Docs", url: "https://geminicli.com/docs" },
+    { text: "Report a bug", url: "https://github.com/google-gemini/gemini-cli/issues/new" },
+    { text: "Privacy", url: "https://policies.google.com/privacy" },
+  ];
+  for (const ld of linkData) {
+    const a = document.createElement("a");
+    a.href = ld.url;
+    a.target = "_blank";
+    a.rel = "noopener noreferrer";
+    a.className = "chat-help-link";
+    a.textContent = ld.text;
+    links.appendChild(a);
+  }
+  panel.appendChild(links);
+  container.appendChild(panel);
+  chatScrollToBottom();
+}
+
 /** Render a theme picker card with Dark / Light / System options. */
 function chatRenderThemeCard() {
   const container = document.getElementById("chat-messages");
@@ -4060,6 +4137,7 @@ const SLASH_COMMANDS = [
   { name: "corgi",      description: "Toggles corgi mode", hidden: true },
   { name: "docs",       description: "Open Gemini CLI documentation" },
   { name: "extensions", description: "List installed extensions" },
+  { name: "help",       description: "Show command reference" },
   { name: "init",       description: "Generate GEMINI.md from project" },
   { name: "memory",     description: "Show GEMINI.md memory" },
   { name: "model",      description: "Show current model info" },
@@ -4158,6 +4236,13 @@ function chatSelectSlashCommand(cmd) {
   if (cmd.name === "docs") {
     window.open("https://geminicli.com/docs", "_blank", "noopener");
     chatAppendSystemNote("Opened Gemini CLI documentation");
+    return;
+  }
+
+  // Help — frontend-only, shows command reference card
+  if (cmd.name === "help") {
+    chatAppendSystemNote("/help");
+    chatRenderHelpCard();
     return;
   }
 

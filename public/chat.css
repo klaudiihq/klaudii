@@ -1820,6 +1820,80 @@ a.chat-oauth-link-btn.hidden {
   opacity: 0.85;
 }
 
+/* --- Help card (/help command) --- */
+
+.chat-help-card {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 1rem;
+  margin: 0.5rem 0;
+  max-width: 520px;
+}
+
+.chat-help-title {
+  font-weight: 600;
+  margin-bottom: 0.75rem;
+}
+
+.chat-help-section {
+  margin-bottom: 0.75rem;
+}
+
+.chat-help-heading {
+  font-size: 0.75rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--text-secondary, #aaa);
+  margin-bottom: 0.35rem;
+}
+
+.chat-help-grid {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 0.15rem 0.75rem;
+}
+
+.chat-help-cmd {
+  font-family: monospace;
+  font-size: 0.85rem;
+  color: var(--accent, #4285f4);
+  cursor: pointer;
+}
+
+.chat-help-cmd:hover {
+  text-decoration: underline;
+}
+
+.chat-help-desc {
+  font-size: 0.85rem;
+  color: var(--text-secondary, #aaa);
+}
+
+.chat-help-links {
+  display: flex;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+  margin-top: 0.5rem;
+  padding-top: 0.5rem;
+  border-top: 1px solid var(--border);
+}
+
+.chat-help-link {
+  display: inline-block;
+  padding: 0.3rem 0.6rem;
+  border-radius: 4px;
+  background: var(--accent, #4285f4);
+  color: #fff;
+  text-decoration: none;
+  font-size: 0.85rem;
+}
+
+.chat-help-link:hover {
+  opacity: 0.85;
+}
+
 /* --- Theme card (/theme command) --- */
 
 .chat-theme-card {
