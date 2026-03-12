@@ -2903,6 +2903,42 @@ function chatRenderCompressBadge(text) {
   container.appendChild(badge);
 }
 
+/** Render current model as a compact info pill. */
+function chatRenderModelPill() {
+  const container = document.getElementById("chat-messages");
+  if (!container) return;
+
+  const select = document.getElementById("chat-model");
+  const selectedValue = select ? select.value : "";
+  const selectedText = select && select.selectedOptions.length
+    ? select.selectedOptions[0].textContent
+    : "";
+
+  // Determine display: "Auto" when empty value, otherwise the model name
+  const displayName = selectedValue ? selectedText : "Auto";
+
+  const pill = document.createElement("div");
+  pill.className = "chat-model-pill";
+
+  const icon = document.createElement("span");
+  icon.className = "chat-model-pill-icon";
+  icon.textContent = "\u2726"; // sparkle
+
+  const label = document.createElement("span");
+  label.className = "chat-model-pill-label";
+  label.textContent = "Model";
+
+  const value = document.createElement("span");
+  value.className = "chat-model-pill-value";
+  value.textContent = displayName;
+
+  pill.appendChild(icon);
+  pill.appendChild(label);
+  pill.appendChild(value);
+  container.appendChild(pill);
+  chatScrollToBottom();
+}
+
 /** Render a bug report card with system info and link to GitHub issues. */
 function chatRenderBugCard() {
   const container = document.getElementById("chat-messages");
@@ -4588,6 +4624,13 @@ function chatSelectSlashCommand(cmd) {
   // Shortcuts — frontend-only, toggles keyboard shortcuts strip above chat input
   if (cmd.name === "shortcuts") {
     chatToggleShortcuts();
+    return;
+  }
+
+  // Model — frontend-only, shows current model as a compact pill
+  if (cmd.name === "model") {
+    chatAppendSystemNote("/model");
+    chatRenderModelPill();
     return;
   }
 
