@@ -1640,6 +1640,36 @@ a.chat-oauth-link-btn.hidden {
   font-style: italic;
 }
 
+/* --- About card (/about command) --- */
+
+.chat-about-card {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 0.6rem 0.75rem;
+  margin: 0.5rem 1rem;
+  font-size: 0.78rem;
+  color: var(--text);
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 0.2rem 0.75rem;
+}
+
+.chat-about-row {
+  display: contents;
+}
+
+.chat-about-label {
+  color: var(--text-muted);
+  font-weight: 500;
+  white-space: nowrap;
+}
+
+.chat-about-value {
+  color: var(--text);
+  word-break: break-word;
+}
+
 /* --- Stats panel (/stats command) --- */
 
 .chat-stats-panel {

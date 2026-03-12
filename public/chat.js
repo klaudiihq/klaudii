@@ -1506,6 +1506,8 @@ function handleGeminiEvent(event) {
       glog("handle: command_result command=" + event.command);
       if (event.command === "stats" && event.data && typeof event.data === "object") {
         chatRenderStatsPanel(event.data);
+      } else if (event.command === "about" && event.data && typeof event.data === "object") {
+        chatRenderAboutCard(event.data);
       } else {
         const pre = document.createElement("pre");
         pre.style.cssText = "margin:0;white-space:pre-wrap;font-size:0.8rem;color:var(--text-muted)";
@@ -2824,6 +2826,36 @@ function chatAppendSystemNote(text) {
   chatScrollToBottom();
 }
 
+/** Render a compact info card for /about command results. */
+function chatRenderAboutCard(data) {
+  const container = document.getElementById("chat-messages");
+  if (!container) return;
+
+  const panel = document.createElement("div");
+  panel.className = "chat-about-card";
+
+  const rows = [
+    { label: "Version",  value: data.version || "unknown" },
+    { label: "Model",    value: data.activeModel && data.activeModel !== data.model
+                           ? `${data.activeModel} (configured: ${data.model})`
+                           : (data.model || "unknown") },
+    { label: "Auth",     value: data.authType || "unknown" },
+    { label: "Tier",     value: data.tierName || "unknown" },
+    { label: "Sandbox",  value: data.sandbox || "none" },
+    { label: "Platform", value: data.platform || "unknown" },
+    { label: "Session",  value: data.sessionId ? data.sessionId.slice(-8) : "—" },
+  ];
+
+  for (const row of rows) {
+    const el = document.createElement("div");
+    el.className = "chat-about-row";
+    el.innerHTML = `<span class="chat-about-label">${row.label}</span><span class="chat-about-value">${row.value}</span>`;
+    panel.appendChild(el);
+  }
+
+  container.appendChild(panel);
+}
+
 /** Render a formatted stats panel for /stats command results. */
 function chatRenderStatsPanel(data) {
   const container = document.getElementById("chat-messages");
@@ -3746,6 +3778,7 @@ async function clearGeminiSession() {
 // --- Slash command menu ---
 
 const SLASH_COMMANDS = [
+  { name: "about",      description: "Version and session info" },
   { name: "compress",   description: "Compress chat context" },
   { name: "corgi",      description: "Toggles corgi mode", hidden: true },
   { name: "extensions", description: "List installed extensions" },
