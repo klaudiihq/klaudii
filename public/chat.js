@@ -1520,6 +1520,8 @@ function handleGeminiEvent(event) {
         chatRenderStatsPanel(event.data);
       } else if (event.command === "about" && event.data && typeof event.data === "object") {
         chatRenderAboutCard(event.data);
+      } else if (event.command === "memory" && event.data) {
+        chatRenderMemoryPanel(typeof event.data === "string" ? event.data : JSON.stringify(event.data, null, 2));
       } else {
         const pre = document.createElement("pre");
         pre.style.cssText = "margin:0;white-space:pre-wrap;font-size:0.8rem;color:var(--text-muted)";
@@ -3137,6 +3139,66 @@ function chatRenderStatsPanel(data) {
   }
 
   container.appendChild(panel);
+}
+
+/** Render a memory panel for /memory command results (show, list, refresh). */
+function chatRenderMemoryPanel(text) {
+  const container = document.getElementById("chat-messages");
+  if (!container) return;
+
+  const panel = document.createElement("div");
+  panel.className = "chat-memory-card";
+
+  // Header with title and action buttons
+  const header = document.createElement("div");
+  header.className = "chat-memory-header";
+
+  const title = document.createElement("div");
+  title.className = "chat-memory-title";
+  title.textContent = "Memory";
+  header.appendChild(title);
+
+  const actions = document.createElement("div");
+  actions.className = "chat-memory-actions";
+
+  const copyBtn = document.createElement("button");
+  copyBtn.className = "chat-memory-btn";
+  copyBtn.textContent = "Copy";
+  copyBtn.addEventListener("click", () => {
+    navigator.clipboard.writeText(text).then(() => {
+      copyBtn.textContent = "Copied!";
+      setTimeout(() => { copyBtn.textContent = "Copy"; }, 2000);
+    });
+  });
+  actions.appendChild(copyBtn);
+
+  const refreshBtn = document.createElement("button");
+  refreshBtn.className = "chat-memory-btn";
+  refreshBtn.textContent = "Refresh";
+  refreshBtn.addEventListener("click", () => {
+    if (chatWs && chatWs.readyState === WebSocket.OPEN) {
+      chatWsSend({
+        type: "command",
+        workspace: chatWorkspace,
+        sessionNum: chatSessionNum,
+        command: "memory",
+        args: ["refresh"],
+      });
+    }
+  });
+  actions.appendChild(refreshBtn);
+
+  header.appendChild(actions);
+  panel.appendChild(header);
+
+  // Scrollable content body — render as markdown
+  const body = document.createElement("div");
+  body.className = "chat-memory-body";
+  body.innerHTML = chatRenderMarkdown(text);
+  panel.appendChild(body);
+
+  container.appendChild(panel);
+  chatScrollToBottom();
 }
 
 /** Show a background task card. */
