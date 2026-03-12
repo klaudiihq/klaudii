@@ -2916,6 +2916,98 @@ a.chat-oauth-link-btn.hidden {
   padding: 0.1rem 0 0.1rem 0.5rem;
 }
 
+/* --- Commands panel --- */
+.chat-commands-card {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 0.75rem 1rem;
+  margin: 0.5rem 0;
+  font-size: 0.82rem;
+  color: var(--text);
+  max-width: 640px;
+}
+.chat-commands-header {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-bottom: 0.5rem;
+}
+.chat-commands-title {
+  font-weight: 600;
+  font-size: 0.9rem;
+}
+.chat-commands-badge {
+  background: var(--accent, #6366f1);
+  color: #fff;
+  font-size: 0.7rem;
+  font-weight: 600;
+  padding: 0.1rem 0.45rem;
+  border-radius: 99px;
+}
+.chat-commands-search {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 0.35rem 0.5rem;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg-input, var(--bg-card));
+  color: var(--text);
+  font-size: 0.8rem;
+  margin-bottom: 0.5rem;
+  outline: none;
+}
+.chat-commands-search:focus {
+  border-color: var(--accent, #6366f1);
+}
+.chat-commands-body {
+  max-height: 400px;
+  overflow-y: auto;
+}
+.chat-commands-group {
+  margin-bottom: 0.25rem;
+}
+.chat-commands-group-summary {
+  cursor: pointer;
+  font-weight: 600;
+  font-size: 0.8rem;
+  padding: 0.25rem 0;
+  user-select: none;
+  color: var(--text-muted);
+}
+.chat-commands-group-count {
+  font-weight: 400;
+  font-size: 0.72rem;
+  opacity: 0.6;
+  margin-left: 0.25rem;
+}
+.chat-commands-list {
+  padding-left: 0.25rem;
+}
+.chat-commands-row {
+  display: flex;
+  gap: 0.5rem;
+  padding: 0.15rem 0;
+  line-height: 1.4;
+}
+.chat-commands-name {
+  flex-shrink: 0;
+  font-family: var(--font-mono, monospace);
+  font-size: 0.78rem;
+  color: var(--accent, #6366f1);
+  cursor: pointer;
+}
+.chat-commands-name:hover {
+  text-decoration: underline;
+}
+.chat-commands-desc {
+  color: var(--text-muted);
+  font-size: 0.76rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 /* --- Agents panel --- */
 .chat-agents-card {
   background: var(--bg-card);

@@ -3061,7 +3061,7 @@ function chatRenderHelpCard() {
   const categories = [
     { label: "Session", cmds: ["clear", "compress", "copy", "restore", "stats"] },
     { label: "Tools & Extensions", cmds: ["extensions", "init", "memory", "model", "settings", "tools"] },
-    { label: "Info", cmds: ["about", "bug", "docs", "help", "privacy", "shortcuts", "theme"] },
+    { label: "Info", cmds: ["about", "bug", "commands", "docs", "help", "privacy", "shortcuts", "theme"] },
   ];
 
   const panel = document.createElement("div");
@@ -3691,6 +3691,102 @@ function chatRenderToolsPanel(tools) {
       // Count actually visible rows
       let visCount = 0;
       for (const r of group.querySelectorAll(".chat-tools-row")) {
+        if (r.style.display !== "none") visCount++;
+      }
+      group.style.display = visCount > 0 ? "" : "none";
+      if (q && visCount > 0) group.open = true;
+    }
+  });
+
+  container.appendChild(panel);
+  chatScrollToBottom();
+  search.focus();
+}
+
+/** Render /commands — list all available slash commands grouped by type. */
+function chatRenderCommandsPanel() {
+  const container = document.getElementById("chat-messages");
+  if (!container) return;
+
+  // Commands handled entirely in the frontend (no WebSocket round-trip)
+  const frontendNames = new Set([
+    "bug", "clear", "commands", "copy", "corgi", "docs", "editor",
+    "help", "model", "privacy", "shortcuts", "theme",
+  ]);
+
+  const visible = SLASH_COMMANDS.filter(c => !c.hidden);
+
+  const panel = document.createElement("div");
+  panel.className = "chat-commands-card";
+
+  // Header
+  const header = document.createElement("div");
+  header.className = "chat-commands-header";
+  header.innerHTML =
+    `<span class="chat-commands-title">Commands</span>` +
+    `<span class="chat-commands-badge">${visible.length}</span>`;
+  panel.appendChild(header);
+
+  // Search
+  const search = document.createElement("input");
+  search.type = "text";
+  search.className = "chat-commands-search";
+  search.placeholder = "Filter commands\u2026";
+  panel.appendChild(search);
+
+  // Body
+  const body = document.createElement("div");
+  body.className = "chat-commands-body";
+
+  function renderGroup(label, items, open) {
+    const section = document.createElement("details");
+    section.className = "chat-commands-group";
+    if (open) section.open = true;
+    const summary = document.createElement("summary");
+    summary.className = "chat-commands-group-summary";
+    summary.innerHTML = `${chatEscHtml(label)} <span class="chat-commands-group-count">${items.length}</span>`;
+    section.appendChild(summary);
+    const list = document.createElement("div");
+    list.className = "chat-commands-list";
+    for (const c of items) {
+      const row = document.createElement("div");
+      row.className = "chat-commands-row";
+      const nameEl = document.createElement("span");
+      nameEl.className = "chat-commands-name";
+      nameEl.textContent = "/" + c.name;
+      nameEl.addEventListener("click", () => {
+        const cmd = SLASH_COMMANDS.find(s => s.name === c.name);
+        if (cmd) chatSelectSlashCommand(cmd);
+      });
+      const descEl = document.createElement("span");
+      descEl.className = "chat-commands-desc";
+      descEl.textContent = c.description;
+      row.appendChild(nameEl);
+      row.appendChild(descEl);
+      list.appendChild(row);
+    }
+    section.appendChild(list);
+    return section;
+  }
+
+  const backend = visible.filter(c => !frontendNames.has(c.name));
+  const frontend = visible.filter(c => frontendNames.has(c.name));
+
+  if (backend.length) body.appendChild(renderGroup("Backend", backend, true));
+  if (frontend.length) body.appendChild(renderGroup("Frontend", frontend, true));
+
+  panel.appendChild(body);
+
+  // Wire up search filter
+  search.addEventListener("input", () => {
+    const q = search.value.toLowerCase();
+    for (const row of body.querySelectorAll(".chat-commands-row")) {
+      const text = row.textContent.toLowerCase();
+      row.style.display = text.includes(q) ? "" : "none";
+    }
+    for (const group of body.querySelectorAll(".chat-commands-group")) {
+      let visCount = 0;
+      for (const r of group.querySelectorAll(".chat-commands-row")) {
         if (r.style.display !== "none") visCount++;
       }
       group.style.display = visCount > 0 ? "" : "none";
@@ -4989,6 +5085,7 @@ const SLASH_COMMANDS = [
   { name: "agents",     description: "List available agents" },
   { name: "bug",        description: "Report a bug" },
   { name: "clear",      description: "Clear chat messages" },
+  { name: "commands",   description: "List all slash commands" },
   { name: "compress",   description: "Compress chat context" },
   { name: "copy",       description: "Copy last response to clipboard" },
   { name: "corgi",      description: "Toggles corgi mode", hidden: true },
@@ -5119,6 +5216,13 @@ function chatSelectSlashCommand(cmd) {
     const container = document.getElementById("chat-messages");
     if (container) container.innerHTML = "";
     chatAppendSystemNote("Conversation cleared");
+    return;
+  }
+
+  // Commands — frontend-only, lists all available slash commands
+  if (cmd.name === "commands") {
+    chatAppendSystemNote("/commands");
+    chatRenderCommandsPanel();
     return;
   }
 
