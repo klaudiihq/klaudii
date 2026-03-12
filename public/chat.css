@@ -1640,6 +1640,100 @@ a.chat-oauth-link-btn.hidden {
   font-style: italic;
 }
 
+/* --- Stats panel (/stats command) --- */
+
+.chat-stats-panel {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 0.75rem;
+  margin: 0.5rem 1rem;
+  font-size: 0.78rem;
+  color: var(--text);
+}
+
+.chat-stats-header {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  margin-bottom: 0.6rem;
+}
+
+.chat-stats-pill {
+  background: var(--bg-btn);
+  border: 1px solid var(--border-btn);
+  border-radius: 12px;
+  padding: 0.15rem 0.55rem;
+  font-size: 0.72rem;
+  white-space: nowrap;
+}
+
+.chat-stats-pill-label {
+  color: var(--text-muted);
+  margin-right: 0.25rem;
+}
+
+.chat-stats-section {
+  margin-top: 0.5rem;
+}
+
+.chat-stats-section-title {
+  font-size: 0.7rem;
+  font-weight: 600;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  margin-bottom: 0.3rem;
+}
+
+.chat-stats-dim {
+  font-weight: 400;
+  text-transform: none;
+  letter-spacing: normal;
+}
+
+.chat-stats-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.72rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.chat-stats-table th {
+  text-align: left;
+  color: var(--text-muted);
+  font-weight: 500;
+  padding: 0.2rem 0.5rem;
+  border-bottom: 1px solid var(--border);
+}
+
+.chat-stats-table td {
+  padding: 0.2rem 0.5rem;
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.chat-stats-table th:not(:first-child),
+.chat-stats-table td:not(:first-child) {
+  text-align: right;
+}
+
+.chat-stats-model-name {
+  font-family: 'SF Mono', 'Fira Code', monospace;
+  color: var(--s-blue-text);
+}
+
+.chat-stats-fail {
+  color: var(--s-red);
+}
+
+.chat-stats-files {
+  font-size: 0.78rem;
+  padding: 0.15rem 0;
+}
+
+.chat-stats-added { color: var(--s-green); font-weight: 600; }
+.chat-stats-removed { color: var(--s-red); font-weight: 600; }
+
 /* --- Corgi mode (easter egg) ---
    3px pixel grid.  Corgi facing right.
    Grid layout (col × row, 0-indexed):

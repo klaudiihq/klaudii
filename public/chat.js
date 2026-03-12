@@ -1504,13 +1504,17 @@ function handleGeminiEvent(event) {
 
     case "command_result": {
       glog("handle: command_result command=" + event.command);
-      const pre = document.createElement("pre");
-      pre.style.cssText = "margin:0;white-space:pre-wrap;font-size:0.8rem;color:var(--text-muted)";
-      pre.textContent = typeof event.data === "string" ? event.data : JSON.stringify(event.data, null, 2);
-      const wrapper = document.createElement("div");
-      wrapper.className = "chat-system-note";
-      wrapper.appendChild(pre);
-      document.getElementById("chat-messages")?.appendChild(wrapper);
+      if (event.command === "stats" && event.data && typeof event.data === "object") {
+        chatRenderStatsPanel(event.data);
+      } else {
+        const pre = document.createElement("pre");
+        pre.style.cssText = "margin:0;white-space:pre-wrap;font-size:0.8rem;color:var(--text-muted)";
+        pre.textContent = typeof event.data === "string" ? event.data : JSON.stringify(event.data, null, 2);
+        const wrapper = document.createElement("div");
+        wrapper.className = "chat-system-note";
+        wrapper.appendChild(pre);
+        document.getElementById("chat-messages")?.appendChild(wrapper);
+      }
       chatScrollToBottom();
       break;
     }
@@ -2818,6 +2822,106 @@ function chatAppendSystemNote(text) {
   div.textContent = text;
   container.appendChild(div);
   chatScrollToBottom();
+}
+
+/** Render a formatted stats panel for /stats command results. */
+function chatRenderStatsPanel(data) {
+  const container = document.getElementById("chat-messages");
+  if (!container) return;
+
+  const panel = document.createElement("div");
+  panel.className = "chat-stats-panel";
+
+  // --- Header pills ---
+  const header = document.createElement("div");
+  header.className = "chat-stats-header";
+  const pills = [
+    { label: "Model", value: data.activeModel || data.model || "unknown" },
+    { label: "Session", value: data.sessionId ? data.sessionId.slice(-8) : "—" },
+    { label: "Last prompt", value: data.lastPromptTokenCount != null ? data.lastPromptTokenCount.toLocaleString() + " tok" : "—" },
+    { label: "Quota", value: data.quota && data.quota !== "unavailable" ? data.quota : null },
+  ];
+  for (const p of pills) {
+    if (p.value == null) continue;
+    const pill = document.createElement("span");
+    pill.className = "chat-stats-pill";
+    pill.innerHTML = `<span class="chat-stats-pill-label">${p.label}</span> ${chatEscHtml(String(p.value))}`;
+    header.appendChild(pill);
+  }
+  panel.appendChild(header);
+
+  // --- Token breakdown table ---
+  const models = data.models;
+  if (models && Object.keys(models).length > 0) {
+    const section = document.createElement("div");
+    section.className = "chat-stats-section";
+    section.innerHTML = `<div class="chat-stats-section-title">Tokens</div>`;
+    const table = document.createElement("table");
+    table.className = "chat-stats-table";
+    table.innerHTML = `<thead><tr><th>Model</th><th>Input</th><th>Cached</th><th>Output</th><th>Thoughts</th><th>Requests</th></tr></thead>`;
+    const tbody = document.createElement("tbody");
+    for (const [name, m] of Object.entries(models)) {
+      const t = m.tokens || {};
+      const tr = document.createElement("tr");
+      tr.innerHTML =
+        `<td class="chat-stats-model-name">${chatEscHtml(name)}</td>` +
+        `<td>${(t.input || 0).toLocaleString()}</td>` +
+        `<td>${(t.cached || 0).toLocaleString()}</td>` +
+        `<td>${(t.candidates || 0).toLocaleString()}</td>` +
+        `<td>${(t.thoughts || 0).toLocaleString()}</td>` +
+        `<td>${(m.api?.totalRequests || 0).toLocaleString()}</td>`;
+      tbody.appendChild(tr);
+    }
+    table.appendChild(tbody);
+    section.appendChild(table);
+    panel.appendChild(section);
+  }
+
+  // --- Tool usage table ---
+  const tools = data.tools;
+  if (tools && tools.byName && Object.keys(tools.byName).length > 0) {
+    const section = document.createElement("div");
+    section.className = "chat-stats-section";
+    section.innerHTML = `<div class="chat-stats-section-title">Tools <span class="chat-stats-dim">(${tools.totalCalls || 0} total calls)</span></div>`;
+    const table = document.createElement("table");
+    table.className = "chat-stats-table";
+    table.innerHTML = `<thead><tr><th>Tool</th><th>Calls</th><th>OK</th><th>Fail</th><th>Avg ms</th></tr></thead>`;
+    const tbody = document.createElement("tbody");
+    const sorted = Object.entries(tools.byName).sort((a, b) => (b[1].count || 0) - (a[1].count || 0));
+    for (const [name, t] of sorted) {
+      const avg = t.count > 0 ? Math.round((t.durationMs || 0) / t.count) : 0;
+      const tr = document.createElement("tr");
+      tr.innerHTML =
+        `<td class="chat-stats-model-name">${chatEscHtml(name)}</td>` +
+        `<td>${(t.count || 0).toLocaleString()}</td>` +
+        `<td>${(t.success || 0).toLocaleString()}</td>` +
+        `<td>${t.fail ? `<span class="chat-stats-fail">${t.fail}</span>` : "0"}</td>` +
+        `<td>${avg.toLocaleString()}</td>`;
+      tbody.appendChild(tr);
+    }
+    table.appendChild(tbody);
+    section.appendChild(table);
+    panel.appendChild(section);
+  }
+
+  // --- Files summary ---
+  const files = data.files;
+  if (files && (files.totalLinesAdded || files.totalLinesRemoved)) {
+    const section = document.createElement("div");
+    section.className = "chat-stats-section";
+    section.innerHTML = `<div class="chat-stats-section-title">Files</div>`;
+    const summary = document.createElement("div");
+    summary.className = "chat-stats-files";
+    summary.innerHTML =
+      `<span class="chat-stats-added">+${(files.totalLinesAdded || 0).toLocaleString()}</span>` +
+      ` / ` +
+      `<span class="chat-stats-removed">-${(files.totalLinesRemoved || 0).toLocaleString()}</span>` +
+      ` lines`;
+    section.appendChild(summary);
+    panel.appendChild(section);
+  }
+
+  container.appendChild(panel);
 }
 
 /** Show a background task card. */
