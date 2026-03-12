@@ -10,7 +10,8 @@
     "test:watch": "vitest",
     "test:contracts": "vitest run test/contracts/",
     "test:functional": "vitest run test/functional/",
-    "test:e2e": "npx playwright test"
+    "test:e2e": "npx playwright test",
+    "postinstall": "npx patch-package && node patches/check-patches.js"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.27.1",

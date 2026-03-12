@@ -1,112 +1,117 @@
 /**
- * Unit tests for lib/gemini-a2a.js
+ * Unit tests for lib/gemini-core.js
  *
  * Tests the exported API surface: isActive, stopProcess, stopAllProcesses,
- * confirmToolCall.
+ * confirmToolCall, executeCommand.
  *
- * NOTE: sendMessage triggers async process spawning via setImmediate.
- * Testing it properly requires mocking child_process.spawn + http, which
- * is fragile in forked vitest processes. The sendMessage return interface
- * is tested structurally (method presence) without triggering the async path.
- *
- * Internal functions (mapA2AEvent, findServerScript, getFreePort, etc.)
- * are not exported. To enable comprehensive unit testing of the event mapping
- * logic, mapA2AEvent should be exported as _mapA2AEvent.
+ * NOTE: startChat triggers async process setup via setImmediate.
+ * Testing it properly requires mocking @google/gemini-cli-core, which
+ * is fragile. The startChat return interface is tested structurally
+ * (method presence) without triggering the async path.
  */
 
-const geminiA2A = require("../../lib/gemini-a2a");
+const geminiCore = require("../../lib/gemini-core");
 
-describe("gemini-a2a", () => {
+describe("gemini-core", () => {
   describe("isActive", () => {
     it("returns false for non-existent workspace", () => {
-      expect(geminiA2A.isActive("nonexistent")).toBe(false);
+      expect(geminiCore.isActive("nonexistent")).toBe(false);
     });
 
     it("returns false for empty string workspace", () => {
-      expect(geminiA2A.isActive("")).toBe(false);
+      expect(geminiCore.isActive("")).toBe(false);
     });
 
     it("returns false after stopProcess on same workspace", () => {
-      geminiA2A.stopProcess("test-ws");
-      expect(geminiA2A.isActive("test-ws")).toBe(false);
+      geminiCore.stopProcess("test-ws");
+      expect(geminiCore.isActive("test-ws")).toBe(false);
     });
 
     it("returns boolean type", () => {
-      expect(typeof geminiA2A.isActive("any")).toBe("boolean");
+      expect(typeof geminiCore.isActive("any")).toBe("boolean");
     });
   });
 
   describe("stopProcess", () => {
     it("is no-op for non-existent workspace", () => {
-      expect(() => geminiA2A.stopProcess("nonexistent")).not.toThrow();
+      expect(() => geminiCore.stopProcess("nonexistent")).not.toThrow();
     });
 
     it("can be called multiple times without error", () => {
-      geminiA2A.stopProcess("ws");
-      geminiA2A.stopProcess("ws");
-      expect(geminiA2A.isActive("ws")).toBe(false);
+      geminiCore.stopProcess("ws");
+      geminiCore.stopProcess("ws");
+      expect(geminiCore.isActive("ws")).toBe(false);
     });
   });
 
   describe("stopAllProcesses", () => {
-    it("is no-op when no servers are running", () => {
-      expect(() => geminiA2A.stopAllProcesses()).not.toThrow();
+    it("is no-op when no sessions are running", () => {
+      expect(() => geminiCore.stopAllProcesses()).not.toThrow();
     });
 
     it("can be called multiple times without error", () => {
-      geminiA2A.stopAllProcesses();
-      geminiA2A.stopAllProcesses();
+      geminiCore.stopAllProcesses();
+      geminiCore.stopAllProcesses();
     });
   });
 
   describe("confirmToolCall", () => {
     it("throws for non-existent workspace", () => {
-      expect(() => geminiA2A.confirmToolCall("nonexistent", 1, "call-1"))
-        .toThrow("No active server for workspace: nonexistent session: 1");
+      expect(() => geminiCore.confirmToolCall("nonexistent", 1, "call-1"))
+        .toThrow("No active session for workspace: nonexistent session: 1");
     });
 
     it("throws with the correct workspace name in error", () => {
-      expect(() => geminiA2A.confirmToolCall("my-ws", 1, "call-2", "proceed_once"))
+      expect(() => geminiCore.confirmToolCall("my-ws", 1, "call-2", "proceed_once"))
         .toThrow("my-ws");
     });
 
     it("rejects with Error instance", async () => {
       try {
-        await geminiA2A.confirmToolCall("bad-ws", 1, "c1");
+        await geminiCore.confirmToolCall("bad-ws", 1, "c1");
         expect.unreachable("should have thrown");
       } catch (err) {
         expect(err).toBeInstanceOf(Error);
       }
     });
 
-    it("includes 'No active server' in error message", async () => {
+    it("includes 'No active session' in error message", async () => {
       try {
-        await geminiA2A.confirmToolCall("ws-test", 1, "c1", "deny_once");
+        await geminiCore.confirmToolCall("ws-test", 1, "c1", "deny_once");
         expect.unreachable("should have thrown");
       } catch (err) {
-        expect(err.message).toContain("No active server");
+        expect(err.message).toContain("No active session");
       }
+    });
+  });
+
+  describe("executeCommand", () => {
+    it("rejects unknown commands", async () => {
+      // executeCommand requires an active session for most commands,
+      // but unknown commands fail before that check
+      await expect(geminiCore.executeCommand("ws", 1, "bogus", []))
+        .rejects.toThrow("Unknown command");
     });
   });
 
   describe("module exports", () => {
     it("exports the expected public API", () => {
-      expect(geminiA2A).toHaveProperty("startChat");
-      expect(geminiA2A).toHaveProperty("isActive");
-      expect(geminiA2A).toHaveProperty("stopProcess");
-      expect(geminiA2A).toHaveProperty("stopAllProcesses");
-      expect(geminiA2A).toHaveProperty("confirmToolCall");
-      expect(geminiA2A).toHaveProperty("getActiveServerInfo");
-      expect(geminiA2A).toHaveProperty("executeCommand");
+      expect(geminiCore).toHaveProperty("startChat");
+      expect(geminiCore).toHaveProperty("isActive");
+      expect(geminiCore).toHaveProperty("stopProcess");
+      expect(geminiCore).toHaveProperty("stopAllProcesses");
+      expect(geminiCore).toHaveProperty("confirmToolCall");
+      expect(geminiCore).toHaveProperty("getActiveServerInfo");
+      expect(geminiCore).toHaveProperty("executeCommand");
     });
 
     it("exports exactly 7 functions", () => {
-      expect(Object.keys(geminiA2A)).toHaveLength(7);
+      expect(Object.keys(geminiCore)).toHaveLength(7);
     });
 
     it("all exports are functions", () => {
-      for (const key of Object.keys(geminiA2A)) {
-        expect(typeof geminiA2A[key]).toBe("function");
+      for (const key of Object.keys(geminiCore)) {
+        expect(typeof geminiCore[key]).toBe("function");
       }
     });
   });

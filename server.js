@@ -349,74 +349,12 @@ app.post("/api/gemini/:workspace/confirm", (req, res) => {
   console.log(`[confirm] workspace=${workspace} session=${sessionNum} callId=${callId} outcome=${outcome} answer=${JSON.stringify(answer)}`);
   try {
     // Record the user's tool confirmation/answer in history
-    if (answer) {
-      const answerText = typeof answer === "string" ? answer : JSON.stringify(answer);
-      gemini.pushHistoryBatch(workspace, [{ role: "tool_result", content: JSON.stringify({ tool_id: callId, status: outcome === "approve" ? "success" : "denied", output: answerText }) }], sessionNum);
-    } else {
-      gemini.pushHistoryBatch(workspace, [{ role: "tool_result", content: JSON.stringify({ tool_id: callId, status: outcome === "approve" ? "success" : "denied", output: outcome }) }], sessionNum);
-    }
+    const answerText = answer ? (typeof answer === "string" ? answer : JSON.stringify(answer)) : outcome;
+    gemini.pushHistoryBatch(workspace, [{ role: "tool_result", content: JSON.stringify({ tool_id: callId, status: outcome === "approve" || outcome === "proceed_once" ? "success" : "denied", output: answerText }) }], sessionNum);
 
-    const handle = gemini.confirmToolCall(workspace, sessionNum, callId, outcome, answer);
-
-    // Accumulate events for history persistence (mirrors main chat handler)
-    let assistantText = "";
-    const toolEvents = [];
-
-    handle.onEvent((event) => {
-      broadcastToWorkspace(workspace, { ...event, workspace, sessionNum });
-      // Accumulate for persistence
-      if (event.type === "message" && (event.role === "assistant" || !event.role)) {
-        assistantText += event.content || "";
-      } else if (event.type === "tool_use") {
-        toolEvents.push({
-          role: "tool_use",
-          content: JSON.stringify({
-            tool_name: event.tool_name,
-            tool_id: event.tool_id,
-            parameters: event.parameters || {},
-          }),
-        });
-      } else if (event.type === "tool_result") {
-        const out = event.output || "";
-        toolEvents.push({
-          role: "tool_result",
-          content: JSON.stringify({
-            tool_id: event.tool_id,
-            status: event.status || "success",
-            output: out.length > 3000 ? out.slice(0, 3000) + "\n...(truncated)" : out,
-          }),
-        });
-        // Incremental flush after every tool_result
-        const midBatch = [...toolEvents];
-        if (assistantText) midBatch.push({ role: "assistant", content: assistantText });
-        if (midBatch.length > 0) gemini.pushHistoryBatch(workspace, midBatch, sessionNum);
-        assistantText = "";
-        toolEvents.length = 0;
-      } else if (event.type === "result") {
-        // Turn boundary — flush any remaining assistant text after last tool_result
-        const batch = [...toolEvents];
-        if (assistantText) batch.push({ role: "assistant", content: assistantText });
-        if (batch.length > 0) gemini.pushHistoryBatch(workspace, batch, sessionNum);
-        assistantText = "";
-        toolEvents.length = 0;
-      }
-    });
-    handle.onDone(() => {
-      // Flush any remaining events not yet persisted by a result event
-      const batch = [...toolEvents];
-      if (assistantText) batch.push({ role: "assistant", content: assistantText });
-      if (batch.length > 0) gemini.pushHistoryBatch(workspace, batch, sessionNum);
-      workspaceState.setStreaming(workspace, false, sessionNum);
-      broadcastToWorkspace(workspace, { type: "done", workspace, sessionNum, exitCode: 0 });
-    });
-    handle.onError((err) => {
-      // Still persist whatever we accumulated before the error
-      const batch = [...toolEvents];
-      if (assistantText) batch.push({ role: "assistant", content: assistantText });
-      if (batch.length > 0) gemini.pushHistoryBatch(workspace, batch, sessionNum);
-      console.error(`[confirm] error workspace=${workspace} session=${sessionNum}:`, err.message);
-      broadcastToWorkspace(workspace, { type: "error", workspace, sessionNum, message: err.message });
-    });
+    // With the core driver, confirmToolCall resolves the pending scheduler promise.
+    // Events continue flowing through the existing startChat handle (wired in the WS handler).
+    gemini.confirmToolCall(workspace, sessionNum, callId, outcome, answer);
     res.json({ ok: true });
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -1062,7 +1000,7 @@ wss.on("connection", (ws) => {
         broadcastToWorkspace(workspace, { type: "done", workspace, exitCode: null, stopped: true, sessionNum: stopSession });
       }
     } else if (type === "command") {
-      // Execute a slash command on the Gemini A2A server
+      // Execute a slash command via gemini core driver
       const { command: cmdName, args: cmdArgs, sessionNum: cmdSession } = msg;
       console.log(`[chat-ws] command workspace=${workspace} command=${cmdName} session=${cmdSession}`);
       if (!workspace || !cmdName) {
@@ -1070,8 +1008,7 @@ wss.on("connection", (ws) => {
       } else if (backend !== "gemini") {
         ws.send(JSON.stringify({ type: "command_error", workspace, command: cmdName, message: "Slash commands are only available for Gemini" }));
       } else {
-        const geminiA2A = require("./lib/gemini-a2a");
-        geminiA2A.executeCommand(workspace, cmdSession, cmdName, cmdArgs || [])
+        gemini.executeCommand(workspace, cmdSession, cmdName, cmdArgs || [])
           .then((result) => {
             ws.send(JSON.stringify({ type: "command_result", workspace, command: cmdName, data: result.data ?? result, sessionNum: cmdSession }));
           })
@@ -1317,10 +1254,9 @@ function gracefulShutdown(signal) {
   console.log(`[server] ${signal} received, shutting down...`);
   scheduler.stop();
   memory.close();
-  gemini.stopAllProcesses();
-  // Do NOT kill Claude relay daemons — they are detached and designed to survive server
-  // restarts so reconnectActiveRelays() can pick them up on the next boot.
-  // Killing them here would destroy in-progress turns with no recovery path.
+  // Do NOT kill Claude relay daemons or Gemini core sessions — relay daemons are detached
+  // and designed to survive server restarts. Gemini sessions are in-process and will die
+  // with the process anyway; explicitly aborting them just destroys in-progress turns.
   // Small delay for close handlers to persist history and delete log files
   setTimeout(() => {
     // Recover any Claude turns that didn't flush in time

@@ -1,0 +1,12 @@
+{
+  "$comment": "Vetted patch versions. Do NOT upgrade these packages without first creating a matching patch file.",
+  "patches": {
+    "@google/gemini-cli-core": {
+      "vetted": ["0.32.1"],
+      "bug": "coreToolScheduler.handleConfirmationResponse drops payload arg — ask_user answers never reach LLM",
+      "file": "dist/src/core/coreToolScheduler.js",
+      "fix": "originalOnConfirm(outcome) → originalOnConfirm(outcome, payload)",
+      "upstream": "https://github.com/google-gemini/gemini-cli"
+    }
+  }
+}

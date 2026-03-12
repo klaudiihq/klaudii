@@ -1179,7 +1179,7 @@ function handleGeminiEvent(event) {
       } else if (toolName === "EnterPlanMode") {
         // Planning mode entry — just show a small indicator, no action needed
         chatAppendToolUse(toolName, toolId, params);
-      } else if (/ask.*question|askfollowup|ask_followup/i.test(toolName)) {
+      } else if (/ask.*question|ask_user|askfollowup|ask_followup/i.test(toolName)) {
         chatAskToolIds.add(toolId);
         if (event.awaiting_approval) {
           // Gemini A2A (ask_user normalized to AskUserQuestion) — render question card and send answer via confirm
@@ -1210,7 +1210,7 @@ function handleGeminiEvent(event) {
       glog(`handle: tool_result id=${toolId} tool=${toolName} status=${status} outputLen=${output.length}`);
       // AskUserQuestion results are already shown in the question card — skip rendering.
       // Check both tool_name (if present) and our tracked set (CLI often omits tool_name on results).
-      const isAskResult = /ask.*question/i.test(toolName) || chatAskToolIds.has(toolId);
+      const isAskResult = /ask.*question|ask_user/i.test(toolName) || chatAskToolIds.has(toolId);
       // ExitPlanMode results are handled by the plan approval card — skip rendering.
       const isPlanResult = /ExitPlanMode/i.test(toolName) || (pendingToolUses.has(toolId) && pendingToolUses.get(toolId).tool_name === "ExitPlanMode");
       if (isAskResult) {
@@ -3636,10 +3636,15 @@ async function clearGeminiSession() {
 // --- Slash command menu ---
 
 const SLASH_COMMANDS = [
+  { name: "compress",   description: "Compress chat context" },
   { name: "extensions", description: "List installed extensions" },
   { name: "init",       description: "Generate GEMINI.md from project" },
-  { name: "memory",     description: "Manage GEMINI.md memory" },
+  { name: "memory",     description: "Show GEMINI.md memory" },
+  { name: "model",      description: "Show current model info" },
   { name: "restore",    description: "Restore files to checkpoint" },
+  { name: "settings",   description: "Show current settings" },
+  { name: "stats",      description: "Session statistics" },
+  { name: "tools",      description: "List available tools" },
 ];
 
 let chatSlashMenuOpen = false;
