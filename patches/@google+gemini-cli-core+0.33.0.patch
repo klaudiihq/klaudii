@@ -1,8 +1,8 @@
 diff --git a/node_modules/@google/gemini-cli-core/dist/src/core/coreToolScheduler.js b/node_modules/@google/gemini-cli-core/dist/src/core/coreToolScheduler.js
-index 88f629e..7bfa22e 100644
+index d77e369..e20b6ad 100644
 --- a/node_modules/@google/gemini-cli-core/dist/src/core/coreToolScheduler.js
 +++ b/node_modules/@google/gemini-cli-core/dist/src/core/coreToolScheduler.js
-@@ -492,7 +492,7 @@ export class CoreToolScheduler {
+@@ -508,7 +508,7 @@ export class CoreToolScheduler {
          const toolCall = this.toolCalls.find((c) => c.request.callId === callId &&
              c.status === CoreToolCallStatus.AwaitingApproval);
          if (toolCall && toolCall.status === CoreToolCallStatus.AwaitingApproval) {

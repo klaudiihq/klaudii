@@ -977,6 +977,11 @@ summary.chat-tool-summary::marker { display: none; }
   opacity: 0.4;
 }
 
+.chat-slash-name b {
+  font-weight: inherit;
+  color: var(--accent, #7c8aff);
+}
+
 .chat-slash-desc {
   color: var(--text-muted);
   font-size: 0.78rem;

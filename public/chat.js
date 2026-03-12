@@ -3650,15 +3650,33 @@ const SLASH_COMMANDS = [
 let chatSlashMenuOpen = false;
 let chatSlashMenuIndex = 0;
 
-function chatOpenSlashMenu() {
+let chatSlashFiltered = SLASH_COMMANDS; // currently visible commands
+
+function chatOpenSlashMenu(filter = "") {
   const menu = document.getElementById("chat-slash-menu");
   if (!menu) return;
+  const query = filter.toLowerCase();
+  const matches = query
+    ? SLASH_COMMANDS.filter(c => c.name.startsWith(query))
+    : SLASH_COMMANDS;
+  if (matches.length === 0) {
+    // No matches — silently revert the last char
+    const input = document.getElementById("chat-input");
+    if (input) input.value = input.value.slice(0, -1);
+    return;
+  }
+  chatSlashFiltered = matches;
   menu.innerHTML = "";
-  SLASH_COMMANDS.forEach((cmd, i) => {
+  chatSlashFiltered.forEach((cmd, i) => {
     const item = document.createElement("div");
     item.className = "chat-slash-item" + (i === 0 ? " selected" : "");
     item.dataset.index = i;
-    item.innerHTML = `<span class="chat-slash-name">${cmd.name}</span><span class="chat-slash-desc">${cmd.description}</span>`;
+    // Highlight matched prefix
+    const matchLen = query.length;
+    const nameHtml = matchLen
+      ? `<b>${cmd.name.slice(0, matchLen)}</b>${cmd.name.slice(matchLen)}`
+      : cmd.name;
+    item.innerHTML = `<span class="chat-slash-name">${nameHtml}</span><span class="chat-slash-desc">${cmd.description}</span>`;
     item.addEventListener("click", () => chatSelectSlashCommand(cmd));
     item.addEventListener("mouseenter", () => chatSlashHighlight(i));
     menu.appendChild(item);
@@ -3713,17 +3731,26 @@ function chatInputKeydown(event) {
   if (chatSlashMenuOpen) {
     if (event.key === "ArrowDown") {
       event.preventDefault();
-      chatSlashHighlight((chatSlashMenuIndex + 1) % SLASH_COMMANDS.length);
+      chatSlashHighlight((chatSlashMenuIndex + 1) % chatSlashFiltered.length);
       return;
     }
     if (event.key === "ArrowUp") {
       event.preventDefault();
-      chatSlashHighlight((chatSlashMenuIndex - 1 + SLASH_COMMANDS.length) % SLASH_COMMANDS.length);
+      chatSlashHighlight((chatSlashMenuIndex - 1 + chatSlashFiltered.length) % chatSlashFiltered.length);
       return;
     }
-    if (event.key === "Enter" || event.key === "Tab") {
+    if (event.key === "Tab") {
       event.preventDefault();
-      chatSelectSlashCommand(SLASH_COMMANDS[chatSlashMenuIndex]);
+      if (chatSlashFiltered.length > 0) {
+        chatSelectSlashCommand(chatSlashFiltered[chatSlashMenuIndex]);
+      }
+      return;
+    }
+    if (event.key === "Enter") {
+      event.preventDefault();
+      if (chatSlashFiltered.length > 0) {
+        chatSelectSlashCommand(chatSlashFiltered[chatSlashMenuIndex]);
+      }
       return;
     }
     if (event.key === "Escape") {
@@ -3733,13 +3760,7 @@ function chatInputKeydown(event) {
       chatCloseSlashMenu();
       return;
     }
-    if (event.key === "Backspace") {
-      // Let backspace through — the input handler will close menu if "/" is removed
-      return;
-    }
-    // Block all other input while menu is open
-    event.preventDefault();
-    return;
+    // Let all other keys through — input event will filter the menu
   }
 
   if (event.key === "Enter" && !event.shiftKey) {
@@ -4123,10 +4144,11 @@ document.getElementById("chat-model")?.addEventListener("change", function() {
 document.getElementById("chat-input")?.addEventListener("input", (e) => {
   const val = e.target.value;
 
-  // Slash command menu: open when input is exactly "/", close when it no longer starts with "/"
-  if (val === "/" && chatActiveCli === "gemini") {
-    chatOpenSlashMenu();
-  } else if (chatSlashMenuOpen && !val.startsWith("/")) {
+  // Slash command menu: open/filter when input starts with "/", close otherwise
+  if (val.startsWith("/") && chatActiveCli === "gemini") {
+    const filter = val.slice(1); // text after "/"
+    chatOpenSlashMenu(filter);
+  } else if (chatSlashMenuOpen) {
     chatCloseSlashMenu();
   }
 
