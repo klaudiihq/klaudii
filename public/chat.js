@@ -2856,6 +2856,62 @@ function chatRenderAboutCard(data) {
   container.appendChild(panel);
 }
 
+/** Render a bug report card with system info and link to GitHub issues. */
+function chatRenderBugCard() {
+  const container = document.getElementById("chat-messages");
+  if (!container) return;
+
+  const ua = navigator.userAgent;
+  const platform = navigator.platform || "unknown";
+  const sysInfo = [
+    `Platform: ${platform}`,
+    `User-Agent: ${ua}`,
+    `Workspace: ${chatWorkspace || "none"}`,
+  ].join("\n");
+
+  const issueBody = `## Bug Description\n\nDescribe the bug here.\n\n## Steps to Reproduce\n\n1. \n2. \n3. \n\n## Expected Behavior\n\n\n\n## System Info\n\n\`\`\`\n${sysInfo}\n\`\`\`\n`;
+  const issueUrl = `https://github.com/google-gemini/gemini-cli/issues/new?title=&body=${encodeURIComponent(issueBody)}`;
+
+  const panel = document.createElement("div");
+  panel.className = "chat-bug-card";
+
+  const title = document.createElement("div");
+  title.className = "chat-bug-title";
+  title.textContent = "Report a Bug";
+  panel.appendChild(title);
+
+  const info = document.createElement("pre");
+  info.className = "chat-bug-info";
+  info.textContent = sysInfo;
+  panel.appendChild(info);
+
+  const actions = document.createElement("div");
+  actions.className = "chat-bug-actions";
+
+  const link = document.createElement("a");
+  link.href = issueUrl;
+  link.target = "_blank";
+  link.rel = "noopener noreferrer";
+  link.className = "chat-bug-link";
+  link.textContent = "Open issue on GitHub";
+  actions.appendChild(link);
+
+  const copyBtn = document.createElement("button");
+  copyBtn.className = "chat-bug-copy";
+  copyBtn.textContent = "Copy system info";
+  copyBtn.addEventListener("click", () => {
+    navigator.clipboard.writeText(sysInfo).then(() => {
+      copyBtn.textContent = "Copied!";
+      setTimeout(() => { copyBtn.textContent = "Copy system info"; }, 2000);
+    });
+  });
+  actions.appendChild(copyBtn);
+
+  panel.appendChild(actions);
+  container.appendChild(panel);
+  chatScrollToBottom();
+}
+
 /** Render a formatted stats panel for /stats command results. */
 function chatRenderStatsPanel(data) {
   const container = document.getElementById("chat-messages");
@@ -3779,6 +3835,7 @@ async function clearGeminiSession() {
 
 const SLASH_COMMANDS = [
   { name: "about",      description: "Version and session info" },
+  { name: "bug",        description: "Report a bug" },
   { name: "compress",   description: "Compress chat context" },
   { name: "corgi",      description: "Toggles corgi mode", hidden: true },
   { name: "extensions", description: "List installed extensions" },
@@ -3858,6 +3915,13 @@ function chatSelectSlashCommand(cmd) {
   chatCloseSlashMenu();
   const input = document.getElementById("chat-input");
   if (input) { input.value = ""; input.style.height = "auto"; }
+
+  // Bug report — frontend-only, opens GitHub issues with pre-filled system info
+  if (cmd.name === "bug") {
+    chatAppendSystemNote("/bug");
+    chatRenderBugCard();
+    return;
+  }
 
   // Corgi mode — toggle via server (syncs across clients)
   if (cmd.name === "corgi") {

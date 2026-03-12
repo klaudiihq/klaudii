@@ -1670,6 +1670,69 @@ a.chat-oauth-link-btn.hidden {
   word-break: break-word;
 }
 
+/* --- Bug report card (/bug command) --- */
+
+.chat-bug-card {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 0.75rem;
+  margin: 0.5rem 1rem;
+  font-size: 0.78rem;
+  color: var(--text);
+}
+
+.chat-bug-title {
+  font-weight: 600;
+  margin-bottom: 0.5rem;
+}
+
+.chat-bug-info {
+  margin: 0 0 0.5rem;
+  padding: 0.5rem;
+  background: var(--bg-darker, rgba(0,0,0,0.15));
+  border-radius: 4px;
+  font-size: 0.72rem;
+  white-space: pre-wrap;
+  word-break: break-word;
+  color: var(--text-muted);
+}
+
+.chat-bug-actions {
+  display: flex;
+  gap: 0.5rem;
+  align-items: center;
+}
+
+.chat-bug-link {
+  display: inline-block;
+  padding: 0.3rem 0.6rem;
+  border-radius: 4px;
+  background: var(--accent, #4f8ff7);
+  color: #fff;
+  text-decoration: none;
+  font-size: 0.75rem;
+  font-weight: 500;
+}
+
+.chat-bug-link:hover {
+  opacity: 0.85;
+}
+
+.chat-bug-copy {
+  padding: 0.3rem 0.6rem;
+  border-radius: 4px;
+  border: 1px solid var(--border);
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  font-size: 0.75rem;
+}
+
+.chat-bug-copy:hover {
+  background: var(--bg-hover, rgba(255,255,255,0.05));
+}
+
 /* --- Stats panel (/stats command) --- */
 
 .chat-stats-panel {
