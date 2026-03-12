@@ -1528,6 +1528,8 @@ function handleGeminiEvent(event) {
         chatRenderSettingsPanel(event.data);
       } else if (event.command === "tools" && event.data && Array.isArray(event.data)) {
         chatRenderToolsPanel(event.data);
+      } else if (event.command === "extensions") {
+        chatRenderExtensionsPanel(event.data);
       } else {
         const pre = document.createElement("pre");
         pre.style.cssText = "margin:0;white-space:pre-wrap;font-size:0.8rem;color:var(--text-muted)";
@@ -3640,6 +3642,142 @@ function chatRenderToolsPanel(tools) {
   container.appendChild(panel);
   chatScrollToBottom();
   search.focus();
+}
+
+/** Render /extensions result as a card list with badges. */
+function chatRenderExtensionsPanel(data) {
+  const container = document.getElementById("chat-messages");
+  if (!container) return;
+
+  // Backend returns string "No extensions installed." when empty
+  if (!data || typeof data === "string" || (Array.isArray(data) && data.length === 0)) {
+    const note = document.createElement("div");
+    note.className = "chat-system-note";
+    note.textContent = typeof data === "string" ? data : "No extensions installed.";
+    container.appendChild(note);
+    chatScrollToBottom();
+    return;
+  }
+
+  const extensions = Array.isArray(data) ? data : [data];
+
+  const panel = document.createElement("div");
+  panel.className = "chat-extensions-card";
+
+  // Header with count badge
+  const header = document.createElement("div");
+  header.className = "chat-extensions-header";
+  header.innerHTML =
+    `<span class="chat-extensions-title">Extensions</span>` +
+    `<span class="chat-extensions-badge">${extensions.length}</span>`;
+  panel.appendChild(header);
+
+  // Extension list
+  const list = document.createElement("div");
+  list.className = "chat-extensions-list";
+
+  for (const ext of extensions) {
+    const item = document.createElement("details");
+    item.className = "chat-extensions-item";
+
+    // Summary row: name + version badge + status badge
+    const summary = document.createElement("summary");
+    summary.className = "chat-extensions-summary";
+    const name = document.createElement("span");
+    name.className = "chat-extensions-name";
+    name.textContent = ext.name || ext.id || "Unknown";
+    summary.appendChild(name);
+    if (ext.version) {
+      const ver = document.createElement("span");
+      ver.className = "chat-extensions-version";
+      ver.textContent = ext.version;
+      summary.appendChild(ver);
+    }
+    const status = document.createElement("span");
+    status.className = "chat-extensions-status" + (ext.isActive ? " active" : " inactive");
+    status.textContent = ext.isActive ? "Active" : "Inactive";
+    summary.appendChild(status);
+    item.appendChild(summary);
+
+    // Detail section — collapsible
+    const detail = document.createElement("div");
+    detail.className = "chat-extensions-detail";
+
+    // Path
+    if (ext.path) {
+      const row = document.createElement("div");
+      row.className = "chat-extensions-kv";
+      row.innerHTML =
+        `<span class="chat-extensions-key">Path</span>` +
+        `<span class="chat-extensions-val">${chatEscHtml(ext.path)}</span>`;
+      detail.appendChild(row);
+    }
+
+    // MCP Servers
+    if (ext.mcpServers && Object.keys(ext.mcpServers).length > 0) {
+      const section = document.createElement("div");
+      section.className = "chat-extensions-section";
+      section.innerHTML = `<div class="chat-extensions-section-label">MCP Servers <span class="chat-extensions-section-count">${Object.keys(ext.mcpServers).length}</span></div>`;
+      for (const [sname, sconfig] of Object.entries(ext.mcpServers)) {
+        const row = document.createElement("div");
+        row.className = "chat-extensions-section-item";
+        row.textContent = sname;
+        section.appendChild(row);
+      }
+      detail.appendChild(section);
+    }
+
+    // Skills
+    if (ext.skills && ext.skills.length > 0) {
+      const section = document.createElement("div");
+      section.className = "chat-extensions-section";
+      section.innerHTML = `<div class="chat-extensions-section-label">Skills <span class="chat-extensions-section-count">${ext.skills.length}</span></div>`;
+      for (const skill of ext.skills) {
+        const row = document.createElement("div");
+        row.className = "chat-extensions-section-item";
+        row.textContent = skill.name || skill.id || JSON.stringify(skill);
+        section.appendChild(row);
+      }
+      detail.appendChild(section);
+    }
+
+    // Agents
+    if (ext.agents && ext.agents.length > 0) {
+      const section = document.createElement("div");
+      section.className = "chat-extensions-section";
+      section.innerHTML = `<div class="chat-extensions-section-label">Agents <span class="chat-extensions-section-count">${ext.agents.length}</span></div>`;
+      for (const agent of ext.agents) {
+        const row = document.createElement("div");
+        row.className = "chat-extensions-section-item";
+        row.textContent = agent.name || agent.id || JSON.stringify(agent);
+        section.appendChild(row);
+      }
+      detail.appendChild(section);
+    }
+
+    // Context Files
+    if (ext.contextFiles && ext.contextFiles.length > 0) {
+      const section = document.createElement("div");
+      section.className = "chat-extensions-section";
+      section.innerHTML = `<div class="chat-extensions-section-label">Context Files <span class="chat-extensions-section-count">${ext.contextFiles.length}</span></div>`;
+      for (const cf of ext.contextFiles) {
+        const row = document.createElement("div");
+        row.className = "chat-extensions-section-item";
+        row.textContent = cf;
+        section.appendChild(row);
+      }
+      detail.appendChild(section);
+    }
+
+    if (detail.children.length > 0) {
+      item.appendChild(detail);
+    }
+    list.appendChild(item);
+  }
+
+  panel.appendChild(list);
+  container.appendChild(panel);
+  chatScrollToBottom();
 }
 
 /** Show a background task card. */
