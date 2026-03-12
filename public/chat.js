@@ -1524,6 +1524,8 @@ function handleGeminiEvent(event) {
         chatRenderMemoryPanel(typeof event.data === "string" ? event.data : JSON.stringify(event.data, null, 2));
       } else if (event.command === "compress") {
         chatRenderCompressBadge(typeof event.data === "string" ? event.data : JSON.stringify(event.data));
+      } else if (event.command === "settings" && event.data && typeof event.data === "object") {
+        chatRenderSettingsPanel(event.data);
       } else {
         const pre = document.createElement("pre");
         pre.style.cssText = "margin:0;white-space:pre-wrap;font-size:0.8rem;color:var(--text-muted)";
@@ -3305,6 +3307,196 @@ function chatRenderMemoryPanel(text) {
 
   container.appendChild(panel);
   chatScrollToBottom();
+}
+
+/** Render a collapsible property tree for /settings command results. */
+function chatRenderSettingsPanel(data) {
+  const container = document.getElementById("chat-messages");
+  if (!container) return;
+
+  const panel = document.createElement("div");
+  panel.className = "chat-settings-card";
+
+  // Header
+  const header = document.createElement("div");
+  header.className = "chat-settings-header";
+  const title = document.createElement("div");
+  title.className = "chat-settings-title";
+  title.textContent = "Settings";
+  header.appendChild(title);
+
+  const copyBtn = document.createElement("button");
+  copyBtn.className = "chat-memory-btn";
+  copyBtn.textContent = "Copy JSON";
+  copyBtn.addEventListener("click", () => {
+    navigator.clipboard.writeText(JSON.stringify(data, null, 2)).then(() => {
+      copyBtn.textContent = "Copied!";
+      setTimeout(() => { copyBtn.textContent = "Copy JSON"; }, 2000);
+    });
+  });
+  header.appendChild(copyBtn);
+  panel.appendChild(header);
+
+  // Highlighted sections — render these first with special formatting
+  const highlighted = {
+    mcpServers: { label: "MCP Servers", render: chatRenderMcpServersSection },
+    coreTools: { label: "Core Tools", render: chatRenderToolListSection },
+    excludeTools: { label: "Excluded Tools", render: chatRenderToolListSection },
+    allowedTools: { label: "Allowed Tools", render: chatRenderToolListSection },
+    fileFiltering: { label: "File Filtering", render: null },
+  };
+
+  const body = document.createElement("div");
+  body.className = "chat-settings-body";
+
+  // Render highlighted sections first
+  for (const [key, cfg] of Object.entries(highlighted)) {
+    if (data[key] == null) continue;
+    const section = document.createElement("details");
+    section.className = "chat-settings-section";
+    section.open = key === "mcpServers"; // MCP servers expanded by default
+    const summary = document.createElement("summary");
+    summary.className = "chat-settings-section-summary";
+    summary.textContent = cfg.label;
+    section.appendChild(summary);
+
+    const content = document.createElement("div");
+    content.className = "chat-settings-section-content";
+    if (cfg.render) {
+      cfg.render(content, data[key]);
+    } else {
+      chatRenderSettingsTree(content, data[key], 0);
+    }
+    section.appendChild(content);
+    body.appendChild(section);
+  }
+
+  // Render remaining keys as collapsible "Other" sections
+  const remaining = Object.keys(data).filter(k => !(k in highlighted));
+  if (remaining.length > 0) {
+    for (const key of remaining) {
+      const val = data[key];
+      if (val == null) continue;
+      if (typeof val === "object" && !Array.isArray(val) && Object.keys(val).length > 0) {
+        const section = document.createElement("details");
+        section.className = "chat-settings-section";
+        const summary = document.createElement("summary");
+        summary.className = "chat-settings-section-summary";
+        summary.textContent = key;
+        section.appendChild(summary);
+        const content = document.createElement("div");
+        content.className = "chat-settings-section-content";
+        chatRenderSettingsTree(content, val, 0);
+        section.appendChild(content);
+        body.appendChild(section);
+      } else {
+        // Simple key-value
+        const row = document.createElement("div");
+        row.className = "chat-settings-kv";
+        row.innerHTML = `<span class="chat-settings-key">${chatEscHtml(key)}</span><span class="chat-settings-val">${chatEscHtml(chatSettingsFormatValue(val))}</span>`;
+        body.appendChild(row);
+      }
+    }
+  }
+
+  panel.appendChild(body);
+  container.appendChild(panel);
+  chatScrollToBottom();
+}
+
+/** Render MCP servers section with name, command, args. */
+function chatRenderMcpServersSection(container, servers) {
+  if (typeof servers !== "object" || Array.isArray(servers)) {
+    chatRenderSettingsTree(container, servers, 0);
+    return;
+  }
+  for (const [name, cfg] of Object.entries(servers)) {
+    const item = document.createElement("div");
+    item.className = "chat-settings-mcp-item";
+    const nameEl = document.createElement("div");
+    nameEl.className = "chat-settings-mcp-name";
+    nameEl.textContent = name;
+    item.appendChild(nameEl);
+
+    if (cfg && typeof cfg === "object") {
+      if (cfg.command) {
+        const cmd = document.createElement("div");
+        cmd.className = "chat-settings-mcp-cmd";
+        const cmdText = cfg.command + (Array.isArray(cfg.args) ? " " + cfg.args.join(" ") : "");
+        cmd.textContent = cmdText;
+        item.appendChild(cmd);
+      }
+      if (cfg.url) {
+        const url = document.createElement("div");
+        url.className = "chat-settings-mcp-cmd";
+        url.textContent = cfg.url;
+        item.appendChild(url);
+      }
+    }
+    container.appendChild(item);
+  }
+}
+
+/** Render a tool list (array of strings) as inline pills. */
+function chatRenderToolListSection(container, tools) {
+  if (!Array.isArray(tools) || tools.length === 0) {
+    const empty = document.createElement("div");
+    empty.className = "chat-settings-empty";
+    empty.textContent = Array.isArray(tools) ? "None" : chatSettingsFormatValue(tools);
+    container.appendChild(empty);
+    return;
+  }
+  const list = document.createElement("div");
+  list.className = "chat-settings-tool-list";
+  for (const t of tools) {
+    const pill = document.createElement("span");
+    pill.className = "chat-settings-tool-pill";
+    pill.textContent = t;
+    list.appendChild(pill);
+  }
+  container.appendChild(list);
+}
+
+/** Recursively render a settings object as a tree of key-value pairs. */
+function chatRenderSettingsTree(container, obj, depth) {
+  if (typeof obj !== "object" || obj === null) {
+    const val = document.createElement("span");
+    val.className = "chat-settings-val";
+    val.textContent = chatSettingsFormatValue(obj);
+    container.appendChild(val);
+    return;
+  }
+  const entries = Array.isArray(obj) ? obj.map((v, i) => [String(i), v]) : Object.entries(obj);
+  for (const [key, val] of entries) {
+    if (val != null && typeof val === "object" && !Array.isArray(val) && Object.keys(val).length > 0) {
+      const details = document.createElement("details");
+      details.className = "chat-settings-subtree";
+      if (depth === 0) details.open = true;
+      const summary = document.createElement("summary");
+      summary.className = "chat-settings-subtree-summary";
+      summary.textContent = key;
+      details.appendChild(summary);
+      const inner = document.createElement("div");
+      inner.className = "chat-settings-subtree-content";
+      chatRenderSettingsTree(inner, val, depth + 1);
+      details.appendChild(inner);
+      container.appendChild(details);
+    } else {
+      const row = document.createElement("div");
+      row.className = "chat-settings-kv";
+      row.innerHTML = `<span class="chat-settings-key">${chatEscHtml(key)}</span><span class="chat-settings-val">${chatEscHtml(chatSettingsFormatValue(val))}</span>`;
+      container.appendChild(row);
+    }
+  }
+}
+
+/** Format a primitive settings value for display. */
+function chatSettingsFormatValue(val) {
+  if (val === true) return "true";
+  if (val === false) return "false";
+  if (val === null || val === undefined) return "—";
+  if (Array.isArray(val)) return val.length === 0 ? "[]" : val.join(", ");
+  return String(val);
 }
 
 /** Show a background task card. */

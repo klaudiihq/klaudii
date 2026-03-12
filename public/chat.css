@@ -2136,6 +2136,152 @@ a.chat-oauth-link-btn.hidden {
   padding: 0;
 }
 
+/* --- /settings collapsible property tree --- */
+.chat-settings-card {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 0.75rem 1rem;
+  margin: 0.5rem 0;
+  font-size: 0.82rem;
+  color: var(--text);
+  max-width: 640px;
+}
+.chat-settings-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 0.5rem;
+}
+.chat-settings-title { font-weight: 600; font-size: 0.85rem; }
+.chat-settings-body { display: flex; flex-direction: column; gap: 0.25rem; }
+
+/* Collapsible sections */
+.chat-settings-section {
+  border: 1px solid var(--border-subtle, var(--border));
+  border-radius: 6px;
+  overflow: hidden;
+}
+.chat-settings-section[open] { background: var(--bg-darker, rgba(0,0,0,0.08)); }
+.chat-settings-section-summary {
+  font-size: 0.78rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--text-secondary, #aaa);
+  padding: 0.4rem 0.6rem;
+  cursor: pointer;
+  user-select: none;
+  list-style: none;
+}
+.chat-settings-section-summary::-webkit-details-marker { display: none; }
+.chat-settings-section-summary::marker { display: none; }
+.chat-settings-section-summary::before {
+  content: "\25b8";
+  display: inline-block;
+  font-size: 0.6rem;
+  margin-right: 0.4rem;
+  transition: transform 0.15s;
+}
+.chat-settings-section[open] > .chat-settings-section-summary::before {
+  transform: rotate(90deg);
+}
+.chat-settings-section-content { padding: 0.25rem 0.6rem 0.5rem; }
+
+/* Key-value rows */
+.chat-settings-kv {
+  display: flex;
+  align-items: baseline;
+  gap: 0.5rem;
+  padding: 0.15rem 0;
+  font-size: 0.78rem;
+}
+.chat-settings-key {
+  color: var(--s-blue-text, var(--accent, #7c8aff));
+  font-family: "SF Mono", "Fira Code", monospace;
+  font-size: 0.75rem;
+  flex-shrink: 0;
+}
+.chat-settings-val {
+  color: var(--text-muted);
+  word-break: break-word;
+}
+
+/* Nested subtrees */
+.chat-settings-subtree {
+  margin-left: 0.5rem;
+  border-left: 1px solid var(--border-subtle, var(--border));
+  padding-left: 0.4rem;
+}
+.chat-settings-subtree-summary {
+  font-size: 0.78rem;
+  font-weight: 500;
+  color: var(--text);
+  cursor: pointer;
+  user-select: none;
+  list-style: none;
+  padding: 0.15rem 0;
+}
+.chat-settings-subtree-summary::-webkit-details-marker { display: none; }
+.chat-settings-subtree-summary::marker { display: none; }
+.chat-settings-subtree-summary::before {
+  content: "\25b8";
+  display: inline-block;
+  font-size: 0.55rem;
+  margin-right: 0.3rem;
+  color: var(--text-faint, var(--text-muted));
+  transition: transform 0.15s;
+}
+.chat-settings-subtree[open] > .chat-settings-subtree-summary::before {
+  transform: rotate(90deg);
+}
+.chat-settings-subtree-content { padding: 0.1rem 0 0.1rem 0.25rem; }
+
+/* MCP server items */
+.chat-settings-mcp-item {
+  padding: 0.3rem 0;
+  border-bottom: 1px solid var(--border-subtle, rgba(255,255,255,0.05));
+}
+.chat-settings-mcp-item:last-child { border-bottom: none; }
+.chat-settings-mcp-name {
+  font-weight: 600;
+  font-size: 0.8rem;
+  color: var(--text);
+}
+.chat-settings-mcp-cmd {
+  font-family: "SF Mono", "Fira Code", monospace;
+  font-size: 0.72rem;
+  color: var(--text-muted);
+  margin-top: 0.1rem;
+  word-break: break-all;
+}
+
+/* Tool pill list */
+.chat-settings-tool-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.3rem;
+  padding: 0.2rem 0;
+}
+.chat-settings-tool-pill {
+  background: var(--bg-btn);
+  border: 1px solid var(--border-btn, var(--border));
+  border-radius: 10px;
+  padding: 0.15rem 0.5rem;
+  font-family: "SF Mono", "Fira Code", monospace;
+  font-size: 0.72rem;
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+
+/* Empty state */
+.chat-settings-empty {
+  font-size: 0.78rem;
+  color: var(--text-faint, var(--text-muted));
+  font-style: italic;
+  padding: 0.2rem 0;
+}
+
 /* --- Corgi mode (easter egg) ---
    3px pixel grid.  Corgi facing right.
    Grid layout (col × row, 0-indexed):
