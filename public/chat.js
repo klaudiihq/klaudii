@@ -1522,6 +1522,8 @@ function handleGeminiEvent(event) {
         chatRenderAboutCard(event.data);
       } else if (event.command === "memory" && event.data) {
         chatRenderMemoryPanel(typeof event.data === "string" ? event.data : JSON.stringify(event.data, null, 2));
+      } else if (event.command === "compress") {
+        chatRenderCompressBadge(typeof event.data === "string" ? event.data : JSON.stringify(event.data));
       } else {
         const pre = document.createElement("pre");
         pre.style.cssText = "margin:0;white-space:pre-wrap;font-size:0.8rem;color:var(--text-muted)";
@@ -2868,6 +2870,33 @@ function chatRenderAboutCard(data) {
   }
 
   container.appendChild(panel);
+}
+
+/** Render a compact status badge for /compress results. */
+function chatRenderCompressBadge(text) {
+  const container = document.getElementById("chat-messages");
+  if (!container) return;
+
+  const success = /success/i.test(text);
+  const badge = document.createElement("div");
+  badge.className = "chat-compress-badge " + (success ? "chat-compress-success" : "chat-compress-fail");
+
+  const icon = document.createElement("span");
+  icon.className = "chat-compress-icon";
+  icon.textContent = success ? "\u2714" : "\u2718";
+
+  const label = document.createElement("span");
+  label.className = "chat-compress-label";
+  if (success) {
+    label.textContent = "Chat context compressed";
+  } else {
+    const reason = text.replace(/^compression\s*failed:\s*/i, "").replace(/^failed:\s*/i, "");
+    label.textContent = "Compression failed: " + (reason || text);
+  }
+
+  badge.appendChild(icon);
+  badge.appendChild(label);
+  container.appendChild(badge);
 }
 
 /** Render a bug report card with system info and link to GitHub issues. */

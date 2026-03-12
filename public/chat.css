@@ -1681,6 +1681,39 @@ a.chat-oauth-link-btn.hidden {
   word-break: break-word;
 }
 
+/* --- Compress badge (/compress command) --- */
+
+.chat-compress-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.3rem 0.7rem;
+  margin: 0.5rem 1rem;
+  border-radius: 6px;
+  font-size: 0.78rem;
+  font-weight: 500;
+}
+
+.chat-compress-success {
+  background: rgba(52, 199, 89, 0.12);
+  color: #34c759;
+  border: 1px solid rgba(52, 199, 89, 0.25);
+}
+
+.chat-compress-fail {
+  background: rgba(255, 69, 58, 0.12);
+  color: #ff453a;
+  border: 1px solid rgba(255, 69, 58, 0.25);
+}
+
+.chat-compress-icon {
+  font-size: 0.85rem;
+}
+
+.chat-compress-label {
+  line-height: 1.3;
+}
+
 /* --- Bug report card (/bug command) --- */
 
 .chat-bug-card {
