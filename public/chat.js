@@ -3836,6 +3836,7 @@ async function clearGeminiSession() {
 const SLASH_COMMANDS = [
   { name: "about",      description: "Version and session info" },
   { name: "bug",        description: "Report a bug" },
+  { name: "clear",      description: "Clear chat messages" },
   { name: "compress",   description: "Compress chat context" },
   { name: "corgi",      description: "Toggles corgi mode", hidden: true },
   { name: "extensions", description: "List installed extensions" },
@@ -3928,6 +3929,14 @@ function chatSelectSlashCommand(cmd) {
     if (chatWs && chatWs.readyState === WebSocket.OPEN) {
       chatWsSend({ type: "corgi" });
     }
+    return;
+  }
+
+  // Clear chat — frontend-only, removes all messages and shows confirmation
+  if (cmd.name === "clear") {
+    const container = document.getElementById("chat-messages");
+    if (container) container.innerHTML = "";
+    chatAppendSystemNote("Conversation cleared");
     return;
   }
 
