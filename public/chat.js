@@ -2972,6 +2972,73 @@ function chatRenderPrivacyCard() {
   chatScrollToBottom();
 }
 
+/** Render a theme picker card with Dark / Light / System options. */
+function chatRenderThemeCard() {
+  const container = document.getElementById("chat-messages");
+  if (!container) return;
+
+  // Determine current theme
+  const stored = localStorage.getItem("klaudii-theme");
+  const isLight = document.documentElement.classList.contains("light");
+  const systemPref = window.matchMedia("(prefers-color-scheme: light)").matches ? "light" : "dark";
+  // If stored value matches system pref but user picked "auto" in settings, we can't perfectly detect it.
+  // Default to showing what's actually active.
+  let current = isLight ? "light" : "dark";
+
+  const panel = document.createElement("div");
+  panel.className = "chat-theme-card";
+
+  const title = document.createElement("div");
+  title.className = "chat-theme-title";
+  title.textContent = "Color Theme";
+  panel.appendChild(title);
+
+  const subtitle = document.createElement("div");
+  subtitle.className = "chat-theme-subtitle";
+  subtitle.textContent = `Currently: ${current}`;
+  panel.appendChild(subtitle);
+
+  const options = document.createElement("div");
+  options.className = "chat-theme-options";
+
+  const themes = [
+    { id: "dark", label: "Dark", icon: "\u{1F319}" },
+    { id: "light", label: "Light", icon: "\u2600\uFE0F" },
+    { id: "system", label: "System", icon: "\uD83D\uDCBB" },
+  ];
+
+  themes.forEach(t => {
+    const btn = document.createElement("button");
+    btn.className = "chat-theme-btn" + (t.id === current ? " active" : "");
+    btn.innerHTML = `<span class="chat-theme-icon">${t.icon}</span><span>${t.label}</span>`;
+    btn.addEventListener("click", () => {
+      // Apply theme
+      let isLightNew;
+      if (t.id === "system") {
+        isLightNew = window.matchMedia("(prefers-color-scheme: light)").matches;
+      } else {
+        isLightNew = t.id === "light";
+      }
+      document.documentElement.classList.toggle("light", isLightNew);
+      localStorage.setItem("klaudii-theme", isLightNew ? "light" : "dark");
+
+      // Update active state on buttons
+      options.querySelectorAll(".chat-theme-btn").forEach(b => b.classList.remove("active"));
+      btn.classList.add("active");
+
+      // Update subtitle
+      subtitle.textContent = `Currently: ${t.id === "system" ? "system (" + (isLightNew ? "light" : "dark") + ")" : t.id}`;
+
+      chatShowToast(`Theme set to ${t.label}`);
+    });
+    options.appendChild(btn);
+  });
+
+  panel.appendChild(options);
+  container.appendChild(panel);
+  chatScrollToBottom();
+}
+
 /** Render a formatted stats panel for /stats command results. */
 function chatRenderStatsPanel(data) {
   const container = document.getElementById("chat-messages");
@@ -3909,6 +3976,7 @@ const SLASH_COMMANDS = [
   { name: "restore",    description: "Restore files to checkpoint" },
   { name: "settings",   description: "Show current settings" },
   { name: "stats",      description: "Session statistics" },
+  { name: "theme",      description: "Change color theme" },
   { name: "tools",      description: "List available tools" },
 ];
 
@@ -4031,6 +4099,13 @@ function chatSelectSlashCommand(cmd) {
   if (cmd.name === "privacy") {
     chatAppendSystemNote("/privacy");
     chatRenderPrivacyCard();
+    return;
+  }
+
+  // Theme picker — frontend-only, shows theme options and applies immediately
+  if (cmd.name === "theme") {
+    chatAppendSystemNote("/theme");
+    chatRenderThemeCard();
     return;
   }
 

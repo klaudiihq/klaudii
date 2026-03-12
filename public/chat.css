@@ -1787,6 +1787,63 @@ a.chat-oauth-link-btn.hidden {
   opacity: 0.85;
 }
 
+/* --- Theme card (/theme command) --- */
+
+.chat-theme-card {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 1rem;
+  margin: 0.5rem 0;
+  max-width: 360px;
+}
+
+.chat-theme-title {
+  font-weight: 600;
+  margin-bottom: 0.25rem;
+}
+
+.chat-theme-subtitle {
+  font-size: 0.8rem;
+  color: var(--text-muted);
+  margin-bottom: 0.75rem;
+}
+
+.chat-theme-options {
+  display: flex;
+  gap: 0.5rem;
+}
+
+.chat-theme-btn {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.25rem;
+  padding: 0.6rem 0.5rem;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg-btn);
+  color: var(--text);
+  cursor: pointer;
+  font-size: 0.8rem;
+  transition: border-color 0.15s, background 0.15s;
+}
+
+.chat-theme-btn:hover {
+  background: var(--bg-btn-hover);
+  border-color: var(--border-active);
+}
+
+.chat-theme-btn.active {
+  border-color: var(--btn-primary);
+  background: var(--s-blue-deep);
+}
+
+.chat-theme-icon {
+  font-size: 1.2rem;
+}
+
 /* --- Stats panel (/stats command) --- */
 
 .chat-stats-panel {
