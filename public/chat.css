@@ -1344,8 +1344,28 @@ a.chat-oauth-link-btn.hidden {
 
 .chat-approval-buttons {
   display: flex;
+  flex-wrap: wrap;
   gap: 0.5rem;
   margin-top: 0.5rem;
+}
+
+.chat-approval-output {
+  margin-top: 0.5rem;
+  border-top: 1px solid var(--border, #333);
+  padding-top: 0.5rem;
+}
+.chat-approval-output pre {
+  font-family: var(--font-mono, monospace);
+  font-size: 0.75rem;
+  background: var(--bg-tertiary, #111);
+  border-radius: 4px;
+  padding: 0.5rem;
+  margin-top: 0.25rem;
+  overflow-x: auto;
+  max-height: 300px;
+  overflow-y: auto;
+  white-space: pre-wrap;
+  word-break: break-all;
 }
 
 .chat-approval-resolved {

@@ -243,10 +243,10 @@ app.post("/api/gemini/sessions/:project/switch", (req, res) => {
 // Partial stream content — accumulated text for the current in-progress turn.
 // Gemini uses the crash-recovery stream log (disk); Claude uses an in-memory buffer.
 // Used by clients switching back to a workspace mid-stream so they can show what
-// was generated before they left.
+// was generated before they left (Claude only — Gemini A2A maintains its own state).
 app.get("/api/gemini/stream-partial/:project", (req, res) => {
   const sessionNum = req.query.session ? Number(req.query.session) : undefined;
-  const text = gemini.getStreamPartial(req.params.project) ?? claudeChat.getStreamPartial(req.params.project, sessionNum);
+  const text = claudeChat.getStreamPartial(req.params.project, sessionNum);
   if (text === null) return res.status(404).json({ error: "no active stream" });
   res.json({ text });
 });
@@ -343,12 +343,23 @@ app.get("/api/gemini/apikey/:workspace", (req, res) => {
   res.json(geminiApiKeyInfo(req.params.workspace));
 });
 
-app.post("/api/gemini/:workspace/confirm", async (req, res) => {
+app.post("/api/gemini/:workspace/confirm", (req, res) => {
   const { workspace } = req.params;
   const { callId, outcome } = req.body;
   try {
-    const result = await gemini.confirmToolCall(workspace, callId, outcome);
-    res.json(result);
+    const handle = gemini.confirmToolCall(workspace, callId, outcome);
+    handle.onEvent((event) => {
+      broadcastToWorkspace(workspace, { ...event, workspace });
+    });
+    handle.onDone(() => {
+      workspaceState.setStreaming(workspace, false);
+      broadcastToWorkspace(workspace, { type: "done", workspace, exitCode: 0 });
+    });
+    handle.onError((err) => {
+      console.error(`[confirm] error workspace=${workspace}:`, err.message);
+      broadcastToWorkspace(workspace, { type: "error", workspace, message: err.message });
+    });
+    res.json({ ok: true });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -782,7 +793,7 @@ wss.on("connection", (ws) => {
         const globalKeyField = backend === "claude" ? "claudeApiKey" : "geminiApiKey";
         const apiKey = proj[apiKeyField] || config[globalKeyField] || undefined;
         console.log(`[chat-ws] spawning ${backend} for workspace=${workspace} path=${proj.path} hasApiKey=${!!apiKey}`);
-        // For Gemini A2A: bypassPermissions = autoExecute (YOLO), anything else = interactive approval
+        // Gemini uses A2A: bypassPermissions = YOLO (auto-approve all tools), else interactive approval
         const autoExecute = backend === "gemini" ? (permissionMode === "bypassPermissions") : undefined;
         // If systemPrompt is provided (agent chat), prepend it to the message sent to Claude
         // but NOT to the history (which already stored the raw user message above).
@@ -1048,9 +1059,8 @@ wss.on("connection", (ws) => {
   });
 });
 
-// --- Crash recovery: replay orphaned stream logs from last run ---
+// --- Crash recovery: replay orphaned Claude stream logs from last run ---
 
-gemini.recoverStreams();
 claudeChat.recoverStreams();
 
 // --- Wire up event routing for a Claude relay handle ---
@@ -1212,8 +1222,7 @@ function gracefulShutdown(signal) {
   // Killing them here would destroy in-progress turns with no recovery path.
   // Small delay for close handlers to persist history and delete log files
   setTimeout(() => {
-    // Recover anything that didn't flush in time
-    gemini.recoverStreams();
+    // Recover any Claude turns that didn't flush in time
     claudeChat.recoverStreams();
     process.exit(0);
   }, 200);

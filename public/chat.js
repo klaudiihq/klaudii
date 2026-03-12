@@ -2081,6 +2081,7 @@ function chatShowApprovalPrompt(event) {
   const container = document.getElementById("chat-messages");
   const div = document.createElement("div");
   div.className = "chat-approval-prompt";
+  div.dataset.toolId = event.tool_id || "";
   const params = event.parameters || {};
   const paramsStr = JSON.stringify(params, null, 2);
   div.innerHTML = `
@@ -2090,15 +2091,20 @@ function chatShowApprovalPrompt(event) {
     </div>
     <pre class="chat-approval-params">${chatEscHtml(paramsStr)}</pre>
     <div class="chat-approval-buttons">
-      <button class="btn primary chat-approve-btn">Approve</button>
+      <button class="btn primary chat-approve-once-btn">Approve Once</button>
+      <button class="btn chat-approve-session-btn">Approve This Tool</button>
+      <button class="btn chat-approve-always-btn">Approve All Tools</button>
       <button class="btn chat-deny-btn">Deny</button>
     </div>`;
   const callId = event.call_id;
-  div.querySelector(".chat-approve-btn").onclick = () => {
+  function resolveApproval(label, outcome) {
     div.querySelectorAll("button").forEach((b) => { b.disabled = true; });
-    div.querySelector(".chat-approval-buttons").innerHTML = '<span class="chat-approval-resolved">✓ Approved</span>';
-    chatConfirmTool(callId, "proceed_once");
-  };
+    div.querySelector(".chat-approval-buttons").innerHTML = `<span class="chat-approval-resolved">✓ ${chatEscHtml(label)}</span>`;
+    chatConfirmTool(callId, outcome);
+  }
+  div.querySelector(".chat-approve-once-btn").onclick = () => resolveApproval("Approved once", "proceed_once");
+  div.querySelector(".chat-approve-session-btn").onclick = () => resolveApproval("Approved for this tool", "proceed_always_tool");
+  div.querySelector(".chat-approve-always-btn").onclick = () => resolveApproval("Approved all tools", "proceed_always");
   div.querySelector(".chat-deny-btn").onclick = () => {
     div.querySelectorAll("button").forEach((b) => { b.disabled = true; });
     div.querySelector(".chat-approval-buttons").innerHTML = '<span class="chat-approval-resolved denied">✗ Denied</span>';
@@ -2390,6 +2396,21 @@ function chatUpdateToolResult(toolId, status, output, error) {
     const subItem = container.querySelector(`.chat-tool-group .chat-tool-sub[data-tool-id="${CSS.escape(toolId)}"]`);
     if (subItem) {
       chatUpdateSubItemResult(subItem, status, output, error);
+      chatScrollToBottom();
+      return;
+    }
+  }
+
+  // Check approval prompt — tool result may arrive for a Gemini-approved tool
+  if (toolId) {
+    const approvalDiv = container.querySelector(`.chat-approval-prompt[data-tool-id="${CSS.escape(toolId)}"]`);
+    if (approvalDiv) {
+      const isError = status === "error" || !!error;
+      const trimmed = (error || output || "").trim();
+      const outputHtml = trimmed
+        ? `<div class="chat-approval-output"><div class="chat-tool-section-label">${isError ? "Error" : "Output"}</div><pre>${chatEscHtml(trimmed.length > 5000 ? trimmed.slice(0, 5000) + "\n...(truncated)" : trimmed)}</pre></div>`
+        : "";
+      approvalDiv.insertAdjacentHTML("beforeend", outputHtml);
       chatScrollToBottom();
       return;
     }
