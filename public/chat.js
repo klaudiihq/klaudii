@@ -1933,6 +1933,11 @@ function chatStampMessageTime(el, ts) {
   tsEl.textContent = timeStr;
 }
 
+/** True for tools that show an old_string→new_string diff (Claude Edit, Gemini replace). */
+function isEditLikeTool(name) {
+  return /^(edit|replace)$/i.test(name || "");
+}
+
 /**
  * Build a short human-readable description from tool name + params object.
  */
@@ -1950,6 +1955,7 @@ function chatToolDescription(name, params) {
       return p.file_path || p.path || "";
     case "edit":
     case "editfile":
+    case "replace":
       return p.file_path || p.path || "";
     case "glob":
     case "listfiles":
@@ -2052,7 +2058,7 @@ function chatMakeSubItem(toolName, toolId, params, isRunning, status, output) {
   sub.appendChild(summary);
   if (isRunning) chatStartPillTimer(sub, summary);
 
-  if (!isRunning && !isError && /^edit$/i.test(toolName) && params && params.old_string != null) {
+  if (!isRunning && !isError && isEditLikeTool(toolName) && params && params.old_string != null) {
     chatRenderEditDiffFromParams(sub, params);
   } else {
     const paramsStr = typeof params === "object" ? JSON.stringify(params, null, 2) : String(params || "");
@@ -2069,7 +2075,7 @@ function chatMakeSubItem(toolName, toolId, params, isRunning, status, output) {
 
   if (!isRunning) {
     const trimmed = (output || "").trim();
-    if (trimmed && !(!isError && /^edit$/i.test(toolName) && params?.old_string != null)) {
+    if (trimmed && !(!isError && isEditLikeTool(toolName) && params?.old_string != null)) {
       const sec = document.createElement("div");
       sec.className = "chat-tool-section";
       sec.innerHTML = `<div class="chat-tool-section-label">${isError ? "Error" : "Output"}</div>`;
@@ -2144,12 +2150,12 @@ function chatUpdateSubItemResult(subItem, status, output, error) {
 
   const toolName = subItem.dataset.toolName || "";
 
-  if (!isError && /^edit$/i.test(toolName)) {
+  if (!isError && isEditLikeTool(toolName)) {
     chatRenderEditDiff(subItem);
   }
 
   const trimmed = (error || output || "").trim();
-  if (trimmed && !(!isError && /^edit$/i.test(toolName))) {
+  if (trimmed && !(!isError && isEditLikeTool(toolName))) {
     const sec = document.createElement("div");
     sec.className = "chat-tool-section";
     sec.innerHTML = `<div class="chat-tool-section-label">${isError ? "Error" : "Output"}</div>`;
@@ -2342,7 +2348,7 @@ function chatRenderCompletedTool(toolName, toolId, params, status, output, targe
   pill.appendChild(summary);
 
   // Edit tool: show diff instead of raw params
-  if (!isError && /^edit$/i.test(toolName) && params && params.old_string != null) {
+  if (!isError && isEditLikeTool(toolName) && params && params.old_string != null) {
     chatRenderEditDiffFromParams(pill, params);
   } else {
     const paramsStr = typeof params === "object" ? JSON.stringify(params, null, 2) : String(params || "");
@@ -2359,7 +2365,7 @@ function chatRenderCompletedTool(toolName, toolId, params, status, output, targe
 
   const trimmed = (output || "").trim();
   // Skip output for successful Edit diffs — the diff itself is the output
-  if (trimmed && !(!isError && /^edit$/i.test(toolName) && params?.old_string != null)) {
+  if (trimmed && !(!isError && isEditLikeTool(toolName) && params?.old_string != null)) {
     const sec = document.createElement("div");
     sec.className = "chat-tool-section";
     sec.innerHTML = `<div class="chat-tool-section-label">${isError ? "Error" : "Output"}</div>`;
@@ -2542,13 +2548,13 @@ function chatUpdateToolResult(toolId, status, output, error) {
     const toolName = pill.dataset.toolName || "";
 
     // For Edit tool: replace raw params with a color diff
-    if (!isError && /^edit$/i.test(toolName)) {
+    if (!isError && isEditLikeTool(toolName)) {
       chatRenderEditDiff(pill);
     }
 
     // Append output section (skip for Edit — the diff is the output)
     const trimmed = (error || output || "").trim();
-    if (trimmed && !(!isError && /^edit$/i.test(toolName))) {
+    if (trimmed && !(!isError && isEditLikeTool(toolName))) {
       const section = document.createElement("div");
       section.className = "chat-tool-section";
       section.innerHTML = `<div class="chat-tool-section-label">${isError ? "Error" : "Output"}</div>`;
