@@ -3317,6 +3317,90 @@ a.chat-oauth-link-btn.hidden {
   flex-shrink: 0;
 }
 
+/* ── /auth card ── */
+.chat-auth-card {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 0.75rem 1rem;
+  margin: 0.5rem 0;
+  font-size: 0.82rem;
+  color: var(--text);
+  max-width: 640px;
+}
+.chat-auth-header {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-bottom: 0.5rem;
+}
+.chat-auth-title {
+  font-weight: 600;
+  font-size: 0.9rem;
+}
+.chat-auth-badge {
+  font-size: 0.7rem;
+  font-weight: 600;
+  padding: 0.15rem 0.5rem;
+  border-radius: 999px;
+}
+.chat-auth-badge.ok {
+  background: rgba(34, 197, 94, 0.15);
+  color: var(--s-green, #22c55e);
+}
+.chat-auth-badge.warn {
+  background: rgba(249, 115, 22, 0.15);
+  color: var(--s-orange, #f97316);
+}
+.chat-auth-account {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  margin-bottom: 0.5rem;
+  font-size: 0.85rem;
+}
+.chat-auth-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+.chat-auth-dot.ok { background: var(--s-green, #22c55e); }
+.chat-auth-grid {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 0.2rem 0.75rem;
+  margin-bottom: 0.5rem;
+}
+.chat-auth-label {
+  font-size: 0.75rem;
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+.chat-auth-value {
+  font-size: 0.78rem;
+}
+.chat-auth-value.expired {
+  color: var(--s-red, #ef4444);
+}
+.chat-auth-value.valid {
+  color: var(--s-green, #22c55e);
+}
+.chat-auth-email {
+  font-weight: 600;
+}
+.chat-auth-scopes {
+  font-size: 0.72rem;
+  color: var(--text-muted);
+  font-family: var(--font-mono, monospace);
+}
+.chat-auth-path {
+  font-size: 0.72rem;
+  color: var(--text-muted);
+  font-family: var(--font-mono, monospace);
+  opacity: 0.7;
+}
+
 /* ── /init card ── */
 .chat-init-card {
   background: var(--bg-card);

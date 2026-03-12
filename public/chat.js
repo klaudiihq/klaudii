@@ -1538,6 +1538,8 @@ function handleGeminiEvent(event) {
         chatRenderPermissionsPanel(event.data);
       } else if (event.command === "init" && event.data) {
         chatRenderInitPanel(event.data);
+      } else if (event.command === "auth" && event.data) {
+        chatRenderAuthCard(event.data);
       } else {
         const pre = document.createElement("pre");
         pre.style.cssText = "margin:0;white-space:pre-wrap;font-size:0.8rem;color:var(--text-muted)";
@@ -4049,6 +4051,82 @@ function chatRenderPermissionsPanel(data) {
   chatScrollToBottom();
 }
 
+/** Render /auth result — auth status card with account, method, and token info. */
+function chatRenderAuthCard(data) {
+  const container = document.getElementById("chat-messages");
+  if (!container) return;
+
+  const panel = document.createElement("div");
+  panel.className = "chat-auth-card";
+
+  // Header
+  const header = document.createElement("div");
+  header.className = "chat-auth-header";
+  const statusLabel = data.activeEmail ? "Authenticated" : "Not authenticated";
+  header.innerHTML =
+    `<span class="chat-auth-title">Authentication</span>` +
+    `<span class="chat-auth-badge ${data.activeEmail ? "ok" : "warn"}">${chatEscHtml(statusLabel)}</span>`;
+  panel.appendChild(header);
+
+  // Account info
+  if (data.activeEmail) {
+    const account = document.createElement("div");
+    account.className = "chat-auth-account";
+    account.innerHTML =
+      `<span class="chat-auth-dot ok"></span>` +
+      `<span class="chat-auth-email">${chatEscHtml(data.activeEmail)}</span>`;
+    panel.appendChild(account);
+  }
+
+  // Details grid
+  const grid = document.createElement("div");
+  grid.className = "chat-auth-grid";
+
+  // Auth method
+  const methodLabel = {
+    "oauth-personal": "OAuth (Personal)",
+    "oauth-adc": "OAuth (ADC)",
+    "api-key": "API Key",
+  }[data.authMethod] || data.authMethod;
+  grid.innerHTML += `<span class="chat-auth-label">Method</span><span class="chat-auth-value">${chatEscHtml(methodLabel)}</span>`;
+
+  // Token expiry
+  if (data.tokenExpiry) {
+    const expDate = new Date(data.tokenExpiry);
+    const expStr = expDate.toLocaleString();
+    const expClass = data.tokenExpired ? "expired" : "valid";
+    grid.innerHTML +=
+      `<span class="chat-auth-label">Token expires</span>` +
+      `<span class="chat-auth-value ${expClass}">${chatEscHtml(expStr)}${data.tokenExpired ? " (expired)" : ""}</span>`;
+  }
+
+  // Scopes
+  if (data.tokenScope) {
+    const scopes = data.tokenScope.split(" ").map(s => s.split("/").pop());
+    grid.innerHTML +=
+      `<span class="chat-auth-label">Scopes</span>` +
+      `<span class="chat-auth-value chat-auth-scopes">${scopes.map(s => chatEscHtml(s)).join(", ")}</span>`;
+  }
+
+  // Previous accounts
+  if (data.previousAccounts && data.previousAccounts.length > 0) {
+    grid.innerHTML +=
+      `<span class="chat-auth-label">Previous</span>` +
+      `<span class="chat-auth-value">${data.previousAccounts.map(e => chatEscHtml(e)).join(", ")}</span>`;
+  }
+
+  panel.appendChild(grid);
+
+  // Config path
+  const pathEl = document.createElement("div");
+  pathEl.className = "chat-auth-path";
+  pathEl.textContent = data.configPath;
+  panel.appendChild(pathEl);
+
+  container.appendChild(panel);
+  chatScrollToBottom();
+}
+
 /** Render /init result — GEMINI.md status card with Generate button if missing. */
 function chatRenderInitPanel(data) {
   const container = document.getElementById("chat-messages");
@@ -5083,6 +5161,7 @@ async function clearGeminiSession() {
 const SLASH_COMMANDS = [
   { name: "about",      description: "Version and session info" },
   { name: "agents",     description: "List available agents" },
+  { name: "auth",       description: "Login status and auth info" },
   { name: "bug",        description: "Report a bug" },
   { name: "clear",      description: "Clear chat messages" },
   { name: "commands",   description: "List all slash commands" },

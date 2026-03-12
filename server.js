@@ -433,6 +433,53 @@ async function loadInitData(workspace) {
   }
 }
 
+// ── /auth command: read auth status from ~/.gemini/ config files ──
+async function loadAuthData() {
+  const GEMINI_DIR = path.join(os.homedir(), ".gemini");
+
+  // Read google_accounts.json — active account email
+  let accounts = {};
+  try {
+    const raw = await fs.promises.readFile(path.join(GEMINI_DIR, "google_accounts.json"), "utf8");
+    accounts = JSON.parse(raw);
+  } catch {}
+
+  // Read settings.json — auth method
+  let authMethod = null;
+  try {
+    const raw = await fs.promises.readFile(path.join(GEMINI_DIR, "settings.json"), "utf8");
+    const settings = JSON.parse(raw);
+    authMethod = settings?.security?.auth?.selectedType || null;
+  } catch {}
+
+  // Read oauth_creds.json — token expiry and scope (never expose tokens)
+  let tokenExpiry = null;
+  let tokenScope = null;
+  let tokenExpired = false;
+  try {
+    const raw = await fs.promises.readFile(path.join(GEMINI_DIR, "oauth_creds.json"), "utf8");
+    const creds = JSON.parse(raw);
+    if (creds.expiry_date) {
+      tokenExpiry = new Date(creds.expiry_date).toISOString();
+      tokenExpired = Date.now() > creds.expiry_date;
+    }
+    tokenScope = creds.scope || null;
+  } catch {}
+
+  const activeEmail = accounts.active || null;
+  const previousAccounts = accounts.old || [];
+
+  return {
+    activeEmail,
+    previousAccounts,
+    authMethod: authMethod || "unknown",
+    tokenExpiry,
+    tokenExpired,
+    tokenScope,
+    configPath: GEMINI_DIR,
+  };
+}
+
 // Get current API key info (masked) for UI
 function geminiApiKeyInfo(workspace) {
   const proj = workspace ? (config.projects || []).find((p) => p.name === workspace) : null;
@@ -1147,6 +1194,15 @@ wss.on("connection", (ws) => {
       } else if (cmdName === "permissions") {
         // Handle /permissions locally — reads trusted folders config
         loadPermissionsData(workspace)
+          .then((data) => {
+            ws.send(JSON.stringify({ type: "command_result", workspace, command: cmdName, data, sessionNum: cmdSession }));
+          })
+          .catch((err) => {
+            ws.send(JSON.stringify({ type: "command_error", workspace, command: cmdName, message: err.message, sessionNum: cmdSession }));
+          });
+      } else if (cmdName === "auth") {
+        // Handle /auth locally — reads auth status from ~/.gemini/ config
+        loadAuthData()
           .then((data) => {
             ws.send(JSON.stringify({ type: "command_result", workspace, command: cmdName, data, sessionNum: cmdSession }));
           })
