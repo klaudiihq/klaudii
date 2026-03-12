@@ -3839,6 +3839,7 @@ const SLASH_COMMANDS = [
   { name: "clear",      description: "Clear chat messages" },
   { name: "compress",   description: "Compress chat context" },
   { name: "corgi",      description: "Toggles corgi mode", hidden: true },
+  { name: "docs",       description: "Open Gemini CLI documentation" },
   { name: "extensions", description: "List installed extensions" },
   { name: "init",       description: "Generate GEMINI.md from project" },
   { name: "memory",     description: "Show GEMINI.md memory" },
@@ -3929,6 +3930,13 @@ function chatSelectSlashCommand(cmd) {
     if (chatWs && chatWs.readyState === WebSocket.OPEN) {
       chatWsSend({ type: "corgi" });
     }
+    return;
+  }
+
+  // Docs — frontend-only, opens Gemini CLI documentation in a new tab
+  if (cmd.name === "docs") {
+    window.open("https://geminicli.com/docs", "_blank", "noopener");
+    chatAppendSystemNote("Opened Gemini CLI documentation");
     return;
   }
 
