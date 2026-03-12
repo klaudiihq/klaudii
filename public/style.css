@@ -774,6 +774,8 @@ h2 {
 .btn.warning:hover { background: #78350f; }
 
 .btn-sm { font-size: 0.7rem; padding: 0.25rem 0.5rem; }
+.btn-danger { background: #991b1b; color: #fff; border-color: #7f1d1d; }
+.btn-danger:hover { background: #b91c1c; }
 
 /* Header chip buttons — matches chat-chip-select aesthetic */
 .header-chip {

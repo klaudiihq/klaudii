@@ -154,6 +154,8 @@
             </button>
             <div id="chat-session-menu" class="chat-session-menu hidden"></div>
           </div>
+          <button id="chat-process-stop" class="btn btn-sm btn-danger" onclick="chatStopProcess()" title="Stop process" style="display:none">Stop</button>
+          <button id="chat-process-start" class="btn btn-sm" onclick="chatStartProcess()" title="Start process" style="display:none">Start</button>
           <button class="btn btn-sm" onclick="chatShowHandoffPreview()" title="Preview handoff briefing">Handoff</button>
           <button class="btn btn-sm" onclick="closeGeminiChat()" title="Close chat" style="font-size:16px;line-height:1;padding:2px 6px;">&times;</button>
         </div>
@@ -161,6 +163,7 @@
       <div id="chat-messages" class="chat-messages"></div>
       <div id="chat-image-strip" class="chat-image-strip hidden"></div>
       <div class="chat-input-area">
+        <div id="chat-slash-menu" class="chat-slash-menu hidden"></div>
         <div class="chat-input-card">
           <textarea id="chat-input" rows="3" placeholder="Message..." onkeydown="chatInputKeydown(event)"></textarea>
           <input type="file" id="chat-file-input" accept="image/*" multiple style="display:none" onchange="chatHandleFileInput(event)">

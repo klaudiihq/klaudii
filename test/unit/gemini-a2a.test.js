@@ -60,19 +60,19 @@ describe("gemini-a2a", () => {
   });
 
   describe("confirmToolCall", () => {
-    it("throws for non-existent workspace", async () => {
-      await expect(geminiA2A.confirmToolCall("nonexistent", "call-1"))
-        .rejects.toThrow("No active server for workspace: nonexistent");
+    it("throws for non-existent workspace", () => {
+      expect(() => geminiA2A.confirmToolCall("nonexistent", 1, "call-1"))
+        .toThrow("No active server for workspace: nonexistent session: 1");
     });
 
-    it("throws with the correct workspace name in error", async () => {
-      await expect(geminiA2A.confirmToolCall("my-ws", "call-2", "proceed_once"))
-        .rejects.toThrow("my-ws");
+    it("throws with the correct workspace name in error", () => {
+      expect(() => geminiA2A.confirmToolCall("my-ws", 1, "call-2", "proceed_once"))
+        .toThrow("my-ws");
     });
 
     it("rejects with Error instance", async () => {
       try {
-        await geminiA2A.confirmToolCall("bad-ws", "c1");
+        await geminiA2A.confirmToolCall("bad-ws", 1, "c1");
         expect.unreachable("should have thrown");
       } catch (err) {
         expect(err).toBeInstanceOf(Error);
@@ -81,7 +81,7 @@ describe("gemini-a2a", () => {
 
     it("includes 'No active server' in error message", async () => {
       try {
-        await geminiA2A.confirmToolCall("ws-test", "c1", "deny_once");
+        await geminiA2A.confirmToolCall("ws-test", 1, "c1", "deny_once");
         expect.unreachable("should have thrown");
       } catch (err) {
         expect(err.message).toContain("No active server");
@@ -96,10 +96,12 @@ describe("gemini-a2a", () => {
       expect(geminiA2A).toHaveProperty("stopProcess");
       expect(geminiA2A).toHaveProperty("stopAllProcesses");
       expect(geminiA2A).toHaveProperty("confirmToolCall");
+      expect(geminiA2A).toHaveProperty("getActiveServerInfo");
+      expect(geminiA2A).toHaveProperty("executeCommand");
     });
 
-    it("exports exactly 5 functions", () => {
-      expect(Object.keys(geminiA2A)).toHaveLength(5);
+    it("exports exactly 7 functions", () => {
+      expect(Object.keys(geminiA2A)).toHaveLength(7);
     });
 
     it("all exports are functions", () => {

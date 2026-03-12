@@ -930,6 +930,58 @@ summary.chat-tool-summary::marker { display: none; }
   transform: translateY(0);
 }
 
+/* --- Slash command menu --- */
+
+.chat-input-area {
+  position: relative;
+}
+
+.chat-slash-menu {
+  position: absolute;
+  bottom: calc(100% - 4px);
+  left: 0;
+  right: 0;
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  box-shadow: 0 -4px 16px rgba(0,0,0,0.35);
+  z-index: 100;
+  padding: 4px 0;
+  overflow: hidden;
+}
+.chat-slash-menu.hidden { display: none; }
+
+.chat-slash-item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 14px;
+  cursor: pointer;
+  font-size: 0.82rem;
+  color: var(--text);
+  transition: background 0.08s;
+}
+.chat-slash-item:hover { background: var(--bg-btn-hover); }
+.chat-slash-item.selected { background: var(--bg-btn); }
+
+.chat-slash-name {
+  font-family: "SF Mono", "Fira Code", "Cascadia Code", monospace;
+  font-size: 0.82rem;
+  font-weight: 600;
+  color: var(--text-strong);
+  width: 100px;
+  flex-shrink: 0;
+}
+.chat-slash-name::before {
+  content: "/";
+  opacity: 0.4;
+}
+
+.chat-slash-desc {
+  color: var(--text-muted);
+  font-size: 0.78rem;
+}
+
 /* --- Auth panel --- */
 
 .chat-auth-panel {

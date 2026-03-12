@@ -495,6 +495,12 @@ async function chatFetchSessions(workspace) {
       menu.appendChild(newItem);
     }
 
+    // Update stop/start process buttons based on current session's active status
+    const currentSession = sessions.find(s => s.num === currentNum);
+    if (typeof chatUpdateProcessButtons === "function") {
+      chatUpdateProcessButtons(currentSession ? currentSession.active : false);
+    }
+
     return data;
   } catch {
     return null;
@@ -771,6 +777,42 @@ function chatRestorePermissionMode() {
   el.value = saved || "bypassPermissions";
 }
 
+/**
+ * Fetch global settings and apply provider defaults to the UI selectors.
+ * Only applies if the user hasn't already set a per-workspace override (localStorage).
+ */
+async function chatApplyDefaults() {
+  try {
+    const res = await fetch("/api/settings");
+    if (!res.ok) return;
+    const settings = await res.json();
+    const provider = chatActiveCli === "claude" ? "claude" : "gemini";
+    const defaults = settings.defaults?.[provider];
+    if (!defaults) return;
+
+    // Permission mode: only apply default if no per-workspace override saved
+    const permEl = document.getElementById("chat-permission-mode");
+    if (permEl && chatWorkspace && !localStorage.getItem(`klaudii-perm-${chatWorkspace}`)) {
+      if (defaults.permissionMode) permEl.value = defaults.permissionMode;
+    }
+
+    // Model: only apply default if no per-workspace override saved
+    const modelEl = document.getElementById("chat-model");
+    if (modelEl && chatWorkspace && !localStorage.getItem(`klaudii-model-${chatWorkspace}`)) {
+      if (defaults.model) modelEl.value = defaults.model;
+    }
+
+    // Thinking (Claude only): apply default if no per-workspace override
+    if (provider === "claude" && defaults.thinking !== undefined && chatWorkspace) {
+      if (!localStorage.getItem(`klaudii-thinking-${chatWorkspace}`)) {
+        chatThinkingEnabled = !!defaults.thinking;
+        const toggle = document.getElementById("chat-thinking-toggle");
+        if (toggle) toggle.classList.toggle("active", chatThinkingEnabled);
+      }
+    }
+  } catch { /* non-fatal */ }
+}
+
 // Draft sync — relay over WS for instant multi-window sync, HTTP PATCH fallback
 let chatDraftTimer = null;
 
@@ -933,6 +975,12 @@ function chatConnect() {
     // Only render events for the currently open workspace
     if (event.workspace !== chatWorkspace) {
       glog(`ws-msg: ignoring (current workspace=${chatWorkspace})`);
+      return;
+    }
+
+    // Filter by session: if event has a sessionNum, only render for matching session
+    if (event.sessionNum != null && chatSessionNum != null && event.sessionNum !== chatSessionNum) {
+      glog(`ws-msg: ignoring (current session=${chatSessionNum}, event session=${event.sessionNum})`);
       return;
     }
 
@@ -1445,6 +1493,25 @@ function handleGeminiEvent(event) {
           taskEl.appendChild(sumEl);
         }
       }
+      break;
+    }
+
+    case "command_result": {
+      glog("handle: command_result command=" + event.command);
+      const pre = document.createElement("pre");
+      pre.style.cssText = "margin:0;white-space:pre-wrap;font-size:0.8rem;color:var(--text-muted)";
+      pre.textContent = typeof event.data === "string" ? event.data : JSON.stringify(event.data, null, 2);
+      const wrapper = document.createElement("div");
+      wrapper.className = "chat-system-note";
+      wrapper.appendChild(pre);
+      document.getElementById("chat-messages")?.appendChild(wrapper);
+      chatScrollToBottom();
+      break;
+    }
+
+    case "command_error": {
+      glog("handle: command_error command=" + event.command + " message=" + event.message);
+      chatAppendError(`/${event.command}: ${event.message}`);
       break;
     }
 
@@ -2207,7 +2274,7 @@ function chatShowApprovalPrompt(event) {
 }
 
 function chatConfirmTool(callId, outcome, answer) {
-  const body = answer ? { callId, outcome, answer } : { callId, outcome };
+  const body = answer ? { callId, outcome, answer, sessionNum: chatSessionNum } : { callId, outcome, sessionNum: chatSessionNum };
   glog("chatConfirmTool body:", JSON.stringify(body));
   fetch(`/api/gemini/${encodeURIComponent(chatWorkspace)}/confirm`, {
     method: "POST",
@@ -3351,7 +3418,7 @@ async function chatShowChat(wsState = null) {
 
 // --- Overlay controls ---
 
-async function openChat(project, projectPath, cli) {
+async function openChat(project, projectPath, cli, sessionNum) {
   chatActiveCli = cli || "gemini";
   glog(`openChat: project=${project} path=${projectPath} cli=${chatActiveCli}`);
 
@@ -3418,7 +3485,7 @@ async function openChat(project, projectPath, cli) {
   chatApplyDebugMode();
 
   // Restore session state — fetch workspace-state and sessions list in parallel
-  chatSessionNum = null;
+  chatSessionNum = sessionNum || null; // explicit param takes priority
   let wsState = null;
   if (project) {
     const base = chatActiveCli === "claude" ? "/api/claude-chat" : "/api/gemini";
@@ -3428,7 +3495,7 @@ async function openChat(project, projectPath, cli) {
     ]);
     if (wsData) {
       wsState = wsData;
-      if (wsData.sessionNum != null) {
+      if (chatSessionNum == null && wsData.sessionNum != null) {
         chatSessionNum = wsData.sessionNum;
         glog(`openChat: restoring session#${chatSessionNum} from server state`);
       }
@@ -3476,6 +3543,9 @@ async function openChat(project, projectPath, cli) {
   chatFetchModels();
   if (chatActiveCli === "gemini") chatFetchQuota();
   else document.getElementById("chat-quota").textContent = "";
+
+  // Apply global default settings (non-blocking)
+  chatApplyDefaults();
 
   // Connect WS if needed (only if we have a workspace for chat)
   if (project) chatConnect();
@@ -3529,7 +3599,7 @@ async function clearGeminiSession() {
 
   // Stop any active process
   if (chatWs && chatWs.readyState === WebSocket.OPEN) {
-    chatWsSend({ type: "stop", workspace: chatWorkspace, cli: chatActiveCli });
+    chatWsSend({ type: "stop", workspace: chatWorkspace, cli: chatActiveCli, sessionNum: chatSessionNum });
   }
 
   // Create a new session on the server (preserves old sessions)
@@ -3563,9 +3633,110 @@ async function clearGeminiSession() {
   if (input) input.focus();
 }
 
+// --- Slash command menu ---
+
+const SLASH_COMMANDS = [
+  { name: "extensions", description: "List installed extensions" },
+  { name: "init",       description: "Generate GEMINI.md from project" },
+  { name: "memory",     description: "Manage GEMINI.md memory" },
+  { name: "restore",    description: "Restore files to checkpoint" },
+];
+
+let chatSlashMenuOpen = false;
+let chatSlashMenuIndex = 0;
+
+function chatOpenSlashMenu() {
+  const menu = document.getElementById("chat-slash-menu");
+  if (!menu) return;
+  menu.innerHTML = "";
+  SLASH_COMMANDS.forEach((cmd, i) => {
+    const item = document.createElement("div");
+    item.className = "chat-slash-item" + (i === 0 ? " selected" : "");
+    item.dataset.index = i;
+    item.innerHTML = `<span class="chat-slash-name">${cmd.name}</span><span class="chat-slash-desc">${cmd.description}</span>`;
+    item.addEventListener("click", () => chatSelectSlashCommand(cmd));
+    item.addEventListener("mouseenter", () => chatSlashHighlight(i));
+    menu.appendChild(item);
+  });
+  chatSlashMenuOpen = true;
+  chatSlashMenuIndex = 0;
+  menu.classList.remove("hidden");
+}
+
+function chatCloseSlashMenu() {
+  const menu = document.getElementById("chat-slash-menu");
+  if (menu) menu.classList.add("hidden");
+  chatSlashMenuOpen = false;
+  chatSlashMenuIndex = 0;
+}
+
+function chatSlashHighlight(index) {
+  chatSlashMenuIndex = index;
+  const menu = document.getElementById("chat-slash-menu");
+  if (!menu) return;
+  menu.querySelectorAll(".chat-slash-item").forEach((el, i) => {
+    el.classList.toggle("selected", i === index);
+  });
+}
+
+function chatSelectSlashCommand(cmd) {
+  chatCloseSlashMenu();
+  const input = document.getElementById("chat-input");
+  if (input) { input.value = ""; input.style.height = "auto"; }
+
+  // Render command as a system note
+  chatAppendSystemNote(`/${cmd.name}`);
+
+  // Execute via WS
+  if (chatWs && chatWs.readyState === WebSocket.OPEN) {
+    chatWsSend({
+      type: "command",
+      workspace: chatWorkspace,
+      sessionNum: chatSessionNum,
+      command: cmd.name,
+      args: [],
+    });
+  } else {
+    chatAppendError("Not connected to server");
+  }
+}
+
 // --- Input handling ---
 
 function chatInputKeydown(event) {
+  // Slash menu keyboard handling
+  if (chatSlashMenuOpen) {
+    if (event.key === "ArrowDown") {
+      event.preventDefault();
+      chatSlashHighlight((chatSlashMenuIndex + 1) % SLASH_COMMANDS.length);
+      return;
+    }
+    if (event.key === "ArrowUp") {
+      event.preventDefault();
+      chatSlashHighlight((chatSlashMenuIndex - 1 + SLASH_COMMANDS.length) % SLASH_COMMANDS.length);
+      return;
+    }
+    if (event.key === "Enter" || event.key === "Tab") {
+      event.preventDefault();
+      chatSelectSlashCommand(SLASH_COMMANDS[chatSlashMenuIndex]);
+      return;
+    }
+    if (event.key === "Escape") {
+      event.preventDefault();
+      const input = document.getElementById("chat-input");
+      if (input) { input.value = ""; input.style.height = "auto"; }
+      chatCloseSlashMenu();
+      return;
+    }
+    if (event.key === "Backspace") {
+      // Let backspace through — the input handler will close menu if "/" is removed
+      return;
+    }
+    // Block all other input while menu is open
+    event.preventDefault();
+    return;
+  }
+
   if (event.key === "Enter" && !event.shiftKey) {
     event.preventDefault();
     sendGeminiMessage();
@@ -3764,13 +3935,44 @@ function chatStopStreaming() {
     if (chatActiveCli === "claude") {
       chatWsSend({ type: "interrupt", workspace: chatWorkspace });
     }
-    chatWsSend({ type: "stop", workspace: chatWorkspace, cli: chatActiveCli });
+    chatWsSend({ type: "stop", workspace: chatWorkspace, cli: chatActiveCli, sessionNum: chatSessionNum });
   }
   // Immediate feedback — don't wait for server round-trip
   chatRemoveThinking();
   chatSetStreaming(false);
   chatCurrentMsgEl = null;
   chatCurrentMsgText = "";
+}
+
+/** Stop the running process for the current session (kill, not just interrupt). */
+function chatStopProcess() {
+  if (!chatWorkspace) return;
+  glog(`stopProcess workspace=${chatWorkspace} session=${chatSessionNum}`);
+  fetch(`/api/sessions/stop`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ workspace: chatWorkspace, sessionNum: chatSessionNum }),
+  }).then(() => {
+    chatRemoveThinking();
+    chatSetStreaming(false);
+    chatUpdateProcessButtons(false);
+  }).catch((e) => glog("stopProcess error:", e));
+}
+
+/** Start a new process for the current session (without sending a message). */
+function chatStartProcess() {
+  // Sending an empty "hello" just to bootstrap the process isn't ideal.
+  // Instead, we surface a status message — the process starts on next message send.
+  glog(`startProcess: process starts on next message send`);
+  chatUpdateProcessButtons(false); // will update when session list refreshes
+}
+
+/** Update stop/start button visibility based on whether the session has an active process. */
+function chatUpdateProcessButtons(active) {
+  const stopBtn = document.getElementById("chat-process-stop");
+  const startBtn = document.getElementById("chat-process-start");
+  if (stopBtn) stopBtn.style.display = active ? "" : "none";
+  if (startBtn) startBtn.style.display = active ? "none" : "";
 }
 
 function chatSetStreaming(active) {
@@ -3824,6 +4026,7 @@ async function initFromUrlParams() {
 
     if (wsPath) {
       // If chat param specified, switch to that session first
+      let explicitSession = null;
       if (params.chat) {
         const base = tool === "claude" ? "/api/claude-chat" : "/api/gemini";
         try {
@@ -3832,12 +4035,12 @@ async function initFromUrlParams() {
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ session: Number(params.chat) }),
           });
-          chatSessionNum = Number(params.chat);
+          explicitSession = Number(params.chat);
         } catch {
           // Session switch failed — will load current session
         }
       }
-      openChat(params.workspace, wsPath, tool);
+      openChat(params.workspace, wsPath, tool, explicitSession);
     } else {
       // Workspace not found — show overlay with error
       document.getElementById("chat-overlay").classList.remove("hidden");
@@ -3913,11 +4116,20 @@ document.getElementById("chat-model")?.addEventListener("change", function() {
 
 // Draft sync — save as user types + set local typing guard
 document.getElementById("chat-input")?.addEventListener("input", (e) => {
+  const val = e.target.value;
+
+  // Slash command menu: open when input is exactly "/", close when it no longer starts with "/"
+  if (val === "/" && chatActiveCli === "gemini") {
+    chatOpenSlashMenu();
+  } else if (chatSlashMenuOpen && !val.startsWith("/")) {
+    chatCloseSlashMenu();
+  }
+
   // Mark as actively typing so incoming remote drafts don't clobber our input
   chatLocalDraftActive = true;
   clearTimeout(chatLocalDraftTimeout);
   chatLocalDraftTimeout = setTimeout(() => { chatLocalDraftActive = false; }, 1000);
-  chatSaveDraft(e.target.value);
+  chatSaveDraft(val);
 });
 
 // Paste images from clipboard into chat

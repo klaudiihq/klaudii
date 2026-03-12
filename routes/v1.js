@@ -756,14 +756,33 @@ module.exports = function createV1Router(deps) {
   const DEFAULT_SETTINGS = {
     workerVisibility: "hide",   // "hide" | "show" | "auto-clean"
     theme: "dark",              // "dark" | "light" | "auto"
+    // Provider defaults — used when no per-chat override is set
+    defaults: {
+      claude: {
+        model: "",               // "" = auto (server picks)
+        permissionMode: "bypassPermissions",
+        thinking: false,
+      },
+      gemini: {
+        model: "",               // "" = auto
+        permissionMode: "bypassPermissions",
+      },
+    },
   };
 
   function loadSettings() {
     try {
       const raw = fs.readFileSync(SETTINGS_PATH, "utf-8");
-      return { ...DEFAULT_SETTINGS, ...JSON.parse(raw) };
+      const saved = JSON.parse(raw);
+      // Deep merge defaults so new provider keys are always present
+      const result = { ...DEFAULT_SETTINGS, ...saved };
+      result.defaults = {
+        claude: { ...DEFAULT_SETTINGS.defaults.claude, ...(saved.defaults?.claude || {}) },
+        gemini: { ...DEFAULT_SETTINGS.defaults.gemini, ...(saved.defaults?.gemini || {}) },
+      };
+      return result;
     } catch {
-      return { ...DEFAULT_SETTINGS };
+      return JSON.parse(JSON.stringify(DEFAULT_SETTINGS));
     }
   }
 
@@ -780,10 +799,20 @@ module.exports = function createV1Router(deps) {
 
   router.patch("/settings", (req, res) => {
     const current = loadSettings();
-    const allowed = ["workerVisibility", "theme"];
+    const allowed = ["workerVisibility", "theme", "defaults"];
     for (const key of allowed) {
       if (req.body[key] !== undefined) {
-        current[key] = req.body[key];
+        if (key === "defaults" && typeof req.body[key] === "object") {
+          // Deep merge defaults per provider
+          if (!current.defaults) current.defaults = {};
+          for (const provider of ["claude", "gemini"]) {
+            if (req.body.defaults[provider] && typeof req.body.defaults[provider] === "object") {
+              current.defaults[provider] = { ...(current.defaults[provider] || {}), ...req.body.defaults[provider] };
+            }
+          }
+        } else {
+          current[key] = req.body[key];
+        }
       }
     }
     saveSettings(current);

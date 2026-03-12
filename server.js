@@ -345,20 +345,77 @@ app.get("/api/gemini/apikey/:workspace", (req, res) => {
 
 app.post("/api/gemini/:workspace/confirm", (req, res) => {
   const { workspace } = req.params;
-  const { callId, outcome, answer } = req.body;
-  console.log(`[confirm] workspace=${workspace} callId=${callId} outcome=${outcome} answer=${JSON.stringify(answer)}`);
+  const { callId, outcome, answer, sessionNum } = req.body;
+  console.log(`[confirm] workspace=${workspace} session=${sessionNum} callId=${callId} outcome=${outcome} answer=${JSON.stringify(answer)}`);
   try {
-    const handle = gemini.confirmToolCall(workspace, callId, outcome, answer);
+    // Record the user's tool confirmation/answer in history
+    if (answer) {
+      const answerText = typeof answer === "string" ? answer : JSON.stringify(answer);
+      gemini.pushHistoryBatch(workspace, [{ role: "tool_result", content: JSON.stringify({ tool_id: callId, status: outcome === "approve" ? "success" : "denied", output: answerText }) }], sessionNum);
+    } else {
+      gemini.pushHistoryBatch(workspace, [{ role: "tool_result", content: JSON.stringify({ tool_id: callId, status: outcome === "approve" ? "success" : "denied", output: outcome }) }], sessionNum);
+    }
+
+    const handle = gemini.confirmToolCall(workspace, sessionNum, callId, outcome, answer);
+
+    // Accumulate events for history persistence (mirrors main chat handler)
+    let assistantText = "";
+    const toolEvents = [];
+
     handle.onEvent((event) => {
-      broadcastToWorkspace(workspace, { ...event, workspace });
+      broadcastToWorkspace(workspace, { ...event, workspace, sessionNum });
+      // Accumulate for persistence
+      if (event.type === "message" && (event.role === "assistant" || !event.role)) {
+        assistantText += event.content || "";
+      } else if (event.type === "tool_use") {
+        toolEvents.push({
+          role: "tool_use",
+          content: JSON.stringify({
+            tool_name: event.tool_name,
+            tool_id: event.tool_id,
+            parameters: event.parameters || {},
+          }),
+        });
+      } else if (event.type === "tool_result") {
+        const out = event.output || "";
+        toolEvents.push({
+          role: "tool_result",
+          content: JSON.stringify({
+            tool_id: event.tool_id,
+            status: event.status || "success",
+            output: out.length > 3000 ? out.slice(0, 3000) + "\n...(truncated)" : out,
+          }),
+        });
+        // Incremental flush after every tool_result
+        const midBatch = [...toolEvents];
+        if (assistantText) midBatch.push({ role: "assistant", content: assistantText });
+        if (midBatch.length > 0) gemini.pushHistoryBatch(workspace, midBatch, sessionNum);
+        assistantText = "";
+        toolEvents.length = 0;
+      } else if (event.type === "result") {
+        // Turn boundary — flush any remaining assistant text after last tool_result
+        const batch = [...toolEvents];
+        if (assistantText) batch.push({ role: "assistant", content: assistantText });
+        if (batch.length > 0) gemini.pushHistoryBatch(workspace, batch, sessionNum);
+        assistantText = "";
+        toolEvents.length = 0;
+      }
     });
     handle.onDone(() => {
-      workspaceState.setStreaming(workspace, false);
-      broadcastToWorkspace(workspace, { type: "done", workspace, exitCode: 0 });
+      // Flush any remaining events not yet persisted by a result event
+      const batch = [...toolEvents];
+      if (assistantText) batch.push({ role: "assistant", content: assistantText });
+      if (batch.length > 0) gemini.pushHistoryBatch(workspace, batch, sessionNum);
+      workspaceState.setStreaming(workspace, false, sessionNum);
+      broadcastToWorkspace(workspace, { type: "done", workspace, sessionNum, exitCode: 0 });
     });
     handle.onError((err) => {
-      console.error(`[confirm] error workspace=${workspace}:`, err.message);
-      broadcastToWorkspace(workspace, { type: "error", workspace, message: err.message });
+      // Still persist whatever we accumulated before the error
+      const batch = [...toolEvents];
+      if (assistantText) batch.push({ role: "assistant", content: assistantText });
+      if (batch.length > 0) gemini.pushHistoryBatch(workspace, batch, sessionNum);
+      console.error(`[confirm] error workspace=${workspace} session=${sessionNum}:`, err.message);
+      broadcastToWorkspace(workspace, { type: "error", workspace, sessionNum, message: err.message });
     });
     res.json({ ok: true });
   } catch (err) {
@@ -766,28 +823,29 @@ wss.on("connection", (ws) => {
         workspaceState.setStreaming(workspace, false);
       }
 
-      // Reject if another client is already streaming for this workspace (Gemini)
-      if (workspaceState.isStreaming(workspace)) {
-        ws.send(JSON.stringify({ type: "error", workspace, message: "A response is already in progress" }));
-        return;
-      }
-
       try {
         // Stamp chat activity for sort ordering (all modes)
         workspaceState.touchChatActivity(workspace);
-        // Mark workspace as actively streaming
-        workspaceState.setStreaming(workspace, true);
-        pendingWorkspaces.add(workspace);
 
         // Use the client's explicit session number; fall back to currentSessionNum only for first-ever chat
         const chatSessionNum = clientSessionNum || backendModule.currentSessionNum(workspace);
+
+        // Reject if this specific session is already streaming (allows concurrent sessions)
+        if (workspaceState.isStreaming(workspace, chatSessionNum)) {
+          ws.send(JSON.stringify({ type: "error", workspace, message: "A response is already in progress for this session" }));
+          return;
+        }
+
+        // Mark session as actively streaming
+        workspaceState.setStreaming(workspace, true, chatSessionNum);
+        pendingWorkspaces.add(workspace);
 
         // Persist user message
         backendModule.pushHistory(workspace, "user", message, { sender: msg.sender || "user" }, chatSessionNum);
 
         // Notify other windows about the user message and streaming start
-        broadcastToWorkspace(workspace, { type: "user_message", workspace, content: message, sender: msg.sender || "user", ts: Date.now() }, clientId);
-        broadcastToWorkspace(workspace, { type: "streaming_start", workspace }, clientId);
+        broadcastToWorkspace(workspace, { type: "user_message", workspace, sessionNum: chatSessionNum, content: message, sender: msg.sender || "user", ts: Date.now() }, clientId);
+        broadcastToWorkspace(workspace, { type: "streaming_start", workspace, sessionNum: chatSessionNum }, clientId);
 
         // Resolve API key: per-workspace > global
         const apiKeyField = backend === "claude" ? "claudeApiKey" : "geminiApiKey";
@@ -801,7 +859,7 @@ wss.on("connection", (ws) => {
         const effectiveMessage = systemPrompt
           ? `<system-context>\n${systemPrompt}\n</system-context>\n\n${message}`
           : message;
-        const handle = await backendModule.startChat(workspace, proj.path, effectiveMessage, config, { apiKey, model, images, permissionMode, autoExecute, thinking });
+        const handle = await backendModule.startChat(workspace, proj.path, effectiveMessage, config, { apiKey, model, images, permissionMode, autoExecute, thinking, sessionNum: chatSessionNum });
 
         // Delivery ack — CLI process spawned and message written to stdin
         broadcastToWorkspace(workspace, { type: "ack", workspace, status: "delivered" });
@@ -825,12 +883,12 @@ wss.on("connection", (ws) => {
             broadcastToWorkspace(workspace, { type: "ack", workspace, status: "processing" });
           }
           if (event.type === "permission_request") {
-            workspaceState.setPendingPermission(workspace, event);
+            workspaceState.setPendingPermission(workspace, event, chatSessionNum);
           }
           // Don't broadcast raw result events — we handle them below with
           // a curated version (stats only) + "done" sentinel.
           if (event.type !== "result") {
-            broadcastToWorkspace(workspace, { ...event, workspace });
+            broadcastToWorkspace(workspace, { ...event, workspace, sessionNum: chatSessionNum });
           }
           // Accumulate assistant message content
           if (event.type === "message" && (event.role === "assistant" || !event.role)) {
@@ -854,6 +912,13 @@ wss.on("connection", (ws) => {
                 output: out.length > 3000 ? out.slice(0, 3000) + "\n...(truncated)" : out,
               }),
             });
+            // Incremental flush — persist assistant text + tool events so far
+            // so history survives refresh/crash mid-turn
+            const midBatch = [...toolEvents];
+            if (assistantText) midBatch.push({ role: "assistant", content: assistantText });
+            if (midBatch.length > 0) backendModule.pushHistoryBatch(workspace, midBatch, chatSessionNum);
+            assistantText = "";
+            toolEvents.length = 0;
           } else if (event.type === "usage") {
             // Per-turn usage from assistant message — update context tracking
             if (event.stats) {
@@ -871,7 +936,7 @@ wss.on("connection", (ws) => {
             assistantText = "";
             toolEvents.length = 0;
             eventsSent = 0;
-            workspaceState.setPendingPermission(workspace, null);
+            workspaceState.setPendingPermission(workspace, null, chatSessionNum);
             // Synthetic results (empty stats) come from normalizeEvent between tool-call
             // turns — persist history but don't broadcast "done" or clear streaming.
             if (!isSyntheticFlush) {
@@ -879,9 +944,9 @@ wss.on("connection", (ws) => {
               if (event.stats && Object.keys(event.stats).length > 0) {
                 workspaceState.addTurnStats(workspace, event.stats);
                 const cumulative = workspaceState.getCumulativeStats(workspace);
-                broadcastToWorkspace(workspace, { type: "result", workspace, stats: event.stats, cumulative, subtype: event.subtype, errors: event.errors });
+                broadcastToWorkspace(workspace, { type: "result", workspace, sessionNum: chatSessionNum, stats: event.stats, cumulative, subtype: event.subtype, errors: event.errors });
               }
-              workspaceState.setStreaming(workspace, false);
+              workspaceState.setStreaming(workspace, false, chatSessionNum);
               workspaceState.touchChatActivity(workspace);
 
               // --- Auto-handoff: check if context is running low ---
@@ -889,6 +954,8 @@ wss.on("connection", (ws) => {
               const usedPct = cumStats.context_used_pct || 0;
               if (usedPct >= 75 && backend === "claude") {
                 console.log(`[server] AUTO-HANDOFF triggered workspace=${workspace} usedPct=${usedPct}%`);
+                // Record handover in history so it's visible on refresh
+                backendModule.pushHistoryBatch(workspace, [{ role: "system", content: `Context handover triggered (${usedPct}% used)` }], chatSessionNum);
                 broadcastToWorkspace(workspace, { type: "context_reload", workspace, reason: "auto", usedPct });
                 const proj = getProject(workspace);
                 if (proj) {
@@ -913,19 +980,19 @@ wss.on("connection", (ws) => {
                 }
               } else {
                 if (usedPct >= 60) {
-                  broadcastToWorkspace(workspace, { type: "context_warning", workspace, usedPct, remaining: 100 - usedPct });
+                  broadcastToWorkspace(workspace, { type: "context_warning", workspace, sessionNum: chatSessionNum, usedPct, remaining: 100 - usedPct });
                 }
-                broadcastToWorkspace(workspace, { type: "done", workspace, exitCode: 0 });
+                broadcastToWorkspace(workspace, { type: "done", workspace, sessionNum: chatSessionNum, exitCode: 0 });
               }
             }
           }
         });
 
         handle.onDone(({ code, stderr }) => {
-          console.log(`[chat-ws] relay exited workspace=${workspace} cli=${backend} code=${code}`);
+          console.log(`[chat-ws] relay exited workspace=${workspace} cli=${backend} session#${chatSessionNum} code=${code}`);
           // Relay died — flush any incomplete turn and clean up
-          workspaceState.setStreaming(workspace, false);
-          workspaceState.setPendingPermission(workspace, null);
+          workspaceState.setStreaming(workspace, false, chatSessionNum);
+          workspaceState.setPendingPermission(workspace, null, chatSessionNum);
           pendingWorkspaces.delete(workspace);
           workspaceState.touchChatActivity(workspace);
           const batch = [...toolEvents];
@@ -934,14 +1001,15 @@ wss.on("connection", (ws) => {
           broadcastToWorkspace(workspace, {
             type: "done",
             workspace,
+            sessionNum: chatSessionNum,
             exitCode: code,
             stderr: stderr || undefined,
           });
         });
 
         handle.onError((err) => {
-          console.error(`[chat-ws] error workspace=${workspace}: ${err.message}`);
-          workspaceState.setStreaming(workspace, false);
+          console.error(`[chat-ws] error workspace=${workspace} session#${chatSessionNum}: ${err.message}`);
+          workspaceState.setStreaming(workspace, false, chatSessionNum);
           pendingWorkspaces.delete(workspace);
           // Auth errors (e.g. A2A server couldn't find credentials) → exitCode 41
           // so the frontend shows the login panel instead of a generic error message.
@@ -964,13 +1032,13 @@ wss.on("connection", (ws) => {
           }
         });
       } catch (err) {
-        console.error(`[chat-ws] catch workspace=${workspace}: ${err.message}`);
-        workspaceState.setStreaming(workspace, false);
+        console.error(`[chat-ws] catch workspace=${workspace} session#${chatSessionNum}: ${err.message}`);
+        workspaceState.setStreaming(workspace, false, chatSessionNum);
         pendingWorkspaces.delete(workspace);
         if (err.isAuthError) {
-          ws.send(JSON.stringify({ type: "done", workspace, exitCode: 41 }));
+          ws.send(JSON.stringify({ type: "done", workspace, sessionNum: chatSessionNum, exitCode: 41 }));
         } else {
-          ws.send(JSON.stringify({ type: "error", workspace, message: err.message }));
+          ws.send(JSON.stringify({ type: "error", workspace, sessionNum: chatSessionNum, message: err.message }));
         }
       }
     } else if (type === "stop") {
@@ -978,14 +1046,38 @@ wss.on("connection", (ws) => {
       console.log(`[chat-ws] stop workspace=${workspace} cli=${backend} session=${stopSession ?? "all"}`);
       if (workspace) {
         backendModule.stopProcess(workspace, stopSession);
-        // Only clear streaming if no relays remain
-        const remaining = backend === "claude" ? claudeChat.getActiveRelayInfo(workspace) : [];
-        if (remaining.length === 0) {
-          workspaceState.setStreaming(workspace, false);
-          pendingWorkspaces.delete(workspace);
+        // Clear streaming for the stopped session (or all if no session specified)
+        if (backend === "claude") {
+          const remaining = claudeChat.getActiveRelayInfo(workspace);
+          if (remaining.length === 0) {
+            workspaceState.setStreaming(workspace, false);
+            pendingWorkspaces.delete(workspace);
+          }
+        } else {
+          // Gemini: clear per-session streaming
+          workspaceState.setStreaming(workspace, false, stopSession);
+          if (!workspaceState.isStreaming(workspace)) pendingWorkspaces.delete(workspace);
         }
         // Broadcast done to all clients viewing this workspace
         broadcastToWorkspace(workspace, { type: "done", workspace, exitCode: null, stopped: true, sessionNum: stopSession });
+      }
+    } else if (type === "command") {
+      // Execute a slash command on the Gemini A2A server
+      const { command: cmdName, args: cmdArgs, sessionNum: cmdSession } = msg;
+      console.log(`[chat-ws] command workspace=${workspace} command=${cmdName} session=${cmdSession}`);
+      if (!workspace || !cmdName) {
+        ws.send(JSON.stringify({ type: "command_error", workspace, command: cmdName, message: "workspace and command required" }));
+      } else if (backend !== "gemini") {
+        ws.send(JSON.stringify({ type: "command_error", workspace, command: cmdName, message: "Slash commands are only available for Gemini" }));
+      } else {
+        const geminiA2A = require("./lib/gemini-a2a");
+        geminiA2A.executeCommand(workspace, cmdSession, cmdName, cmdArgs || [])
+          .then((result) => {
+            ws.send(JSON.stringify({ type: "command_result", workspace, command: cmdName, data: result.data ?? result, sessionNum: cmdSession }));
+          })
+          .catch((err) => {
+            ws.send(JSON.stringify({ type: "command_error", workspace, command: cmdName, message: err.message, sessionNum: cmdSession }));
+          });
       }
     } else if (type === "draft") {
       // Relay draft text to other windows and persist to disk
@@ -1103,6 +1195,12 @@ function wireRelayEvents(workspace, handle, sessionNum) {
     } else if (event.type === "tool_result") {
       const out = event.output || "";
       toolEvents.push({ role: "tool_result", content: JSON.stringify({ tool_id: event.tool_id, status: event.status || "success", output: out.length > 3000 ? out.slice(0, 3000) + "\n...(truncated)" : out }) });
+      // Incremental flush after every tool_result
+      const midBatch = [...toolEvents];
+      if (assistantText) midBatch.push({ role: "assistant", content: assistantText });
+      if (midBatch.length > 0) claudeChat.pushHistoryBatch(workspace, midBatch, chatSessionNum);
+      assistantText = "";
+      toolEvents.length = 0;
     } else if (event.type === "usage") {
       if (event.stats) {
         workspaceState.addTurnStats(workspace, event.stats);
@@ -1135,6 +1233,8 @@ function wireRelayEvents(workspace, handle, sessionNum) {
         const usedPct = cumStats.context_used_pct || 0;
         if (usedPct >= 75) {
           console.log(`[server] AUTO-HANDOFF triggered workspace=${workspace} usedPct=${usedPct}%`);
+          // Record handover in history so it's visible on refresh
+          claudeChat.pushHistoryBatch(workspace, [{ role: "system", content: `Context handover triggered (${usedPct}% used)` }], chatSessionNum);
           broadcastToWorkspace(workspace, { type: "context_reload", workspace, reason: "auto", usedPct });
           const proj = getProject(workspace);
           if (proj) {
