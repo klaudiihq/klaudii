@@ -3200,6 +3200,57 @@ function chatRenderThemeCard() {
   chatScrollToBottom();
 }
 
+/** Render editor preference picker card for /editor command. */
+function chatRenderEditorCard() {
+  const container = document.getElementById("chat-messages");
+  if (!container) return;
+
+  const current = localStorage.getItem("klaudii-editor") || "code";
+
+  const panel = document.createElement("div");
+  panel.className = "chat-editor-card";
+
+  const title = document.createElement("div");
+  title.className = "chat-editor-title";
+  title.textContent = "External Editor";
+  panel.appendChild(title);
+
+  const subtitle = document.createElement("div");
+  subtitle.className = "chat-editor-subtitle";
+  subtitle.textContent = `Currently: ${current}`;
+  panel.appendChild(subtitle);
+
+  const options = document.createElement("div");
+  options.className = "chat-editor-options";
+
+  const editors = [
+    { id: "code",    label: "VS Code",  cmd: "code" },
+    { id: "cursor",  label: "Cursor",   cmd: "cursor" },
+    { id: "vim",     label: "Vim",      cmd: "vim" },
+    { id: "nano",    label: "Nano",     cmd: "nano" },
+    { id: "emacs",   label: "Emacs",    cmd: "emacs" },
+    { id: "subl",    label: "Sublime",  cmd: "subl" },
+  ];
+
+  editors.forEach(e => {
+    const btn = document.createElement("button");
+    btn.className = "chat-editor-btn" + (e.id === current ? " active" : "");
+    btn.innerHTML = `<span class="chat-editor-cmd">${chatEscHtml(e.cmd)}</span><span>${chatEscHtml(e.label)}</span>`;
+    btn.addEventListener("click", () => {
+      localStorage.setItem("klaudii-editor", e.id);
+      options.querySelectorAll(".chat-editor-btn").forEach(b => b.classList.remove("active"));
+      btn.classList.add("active");
+      subtitle.textContent = `Currently: ${e.id}`;
+      chatShowToast(`Editor set to ${e.label}`);
+    });
+    options.appendChild(btn);
+  });
+
+  panel.appendChild(options);
+  container.appendChild(panel);
+  chatScrollToBottom();
+}
+
 /** Render a formatted stats panel for /stats command results. */
 function chatRenderStatsPanel(data) {
   const container = document.getElementById("chat-messages");
@@ -4677,6 +4728,7 @@ const SLASH_COMMANDS = [
   { name: "copy",       description: "Copy last response to clipboard" },
   { name: "corgi",      description: "Toggles corgi mode", hidden: true },
   { name: "docs",       description: "Open Gemini CLI documentation" },
+  { name: "editor",     description: "Set external editor preference" },
   { name: "extensions", description: "List installed extensions" },
   { name: "help",       description: "Show command reference" },
   { name: "init",       description: "Generate GEMINI.md from project" },
@@ -4778,6 +4830,13 @@ function chatSelectSlashCommand(cmd) {
   if (cmd.name === "docs") {
     window.open("https://geminicli.com/docs", "_blank", "noopener");
     chatAppendSystemNote("Opened Gemini CLI documentation");
+    return;
+  }
+
+  // Editor — frontend-only, set external editor preference
+  if (cmd.name === "editor") {
+    chatAppendSystemNote("/editor");
+    chatRenderEditorCard();
     return;
   }
 

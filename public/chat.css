@@ -2033,6 +2033,66 @@ a.chat-oauth-link-btn.hidden {
   font-size: 1.2rem;
 }
 
+/* --- Editor card (/editor command) --- */
+
+.chat-editor-card {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 1rem;
+  margin: 0.5rem 0;
+  max-width: 420px;
+}
+
+.chat-editor-title {
+  font-weight: 600;
+  margin-bottom: 0.25rem;
+}
+
+.chat-editor-subtitle {
+  font-size: 0.8rem;
+  color: var(--text-muted);
+  margin-bottom: 0.75rem;
+}
+
+.chat-editor-options {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.chat-editor-btn {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.25rem;
+  padding: 0.6rem 0.75rem;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg-btn);
+  color: var(--text);
+  cursor: pointer;
+  font-size: 0.8rem;
+  transition: border-color 0.15s, background 0.15s;
+  min-width: 70px;
+}
+
+.chat-editor-btn:hover {
+  background: var(--bg-btn-hover);
+  border-color: var(--border-active);
+}
+
+.chat-editor-btn.active {
+  border-color: var(--btn-primary);
+  background: var(--s-blue-deep);
+}
+
+.chat-editor-cmd {
+  font-family: var(--font-mono);
+  font-size: 0.75rem;
+  color: var(--text-muted);
+}
+
 /* --- Stats panel (/stats command) --- */
 
 .chat-stats-panel {
