@@ -205,8 +205,11 @@ module.exports = function createV1Router(deps) {
       const tmuxSession = claudeSessions.find((s) => s.name === tmuxName);
       const ttydInstance = ttydInstances.find((t) => t.project === project.name);
 
-      const gitStatus = git.getStatus(project.path);
-      const remoteUrl = git.getRemoteUrl(project.path);
+      const wsStatus = wsProvider && wsProvider.getStatus
+        ? wsProvider.getStatus(project.path)
+        : null;
+      const gitStatus = wsStatus || git.getStatus(project.path);
+      const remoteUrl = wsStatus ? wsStatus.remoteUrl : git.getRemoteUrl(project.path);
 
       const tracked = sessionTracker.getSessions(project.name);
       const lastActivity = Math.max(
@@ -227,9 +230,12 @@ module.exports = function createV1Router(deps) {
       const chatMode = wsState.mode || "claude-local";
       const chatActive = workspaceState ? workspaceState.isStreaming(project.name) : false;
 
+      const parsed = wsProvider && wsProvider.parseName ? wsProvider.parseName(project.name) : null;
+
       const result = {
         project: project.name,
         projectPath: project.path,
+        group: parsed ? parsed.repo : project.name,
         permissionMode: project.permissionMode || "yolo",
         running: status === "running",
         status,
@@ -237,6 +243,7 @@ module.exports = function createV1Router(deps) {
         tmux: tmuxSession || null,
         ttyd: ttydInstance || null,
         git: gitStatus,
+        workspace: wsStatus,
         remoteUrl,
         sessionCount: tracked.length,
         lastActivity,
@@ -410,13 +417,15 @@ module.exports = function createV1Router(deps) {
       return res.status(409).json({ error: "Stop the workspace before removing it" });
     }
 
-    const status = git.getStatus(proj.path);
-    if (status && (status.dirtyFiles || status.unpushed) && !force) {
+    const wsStatus = wsProvider && wsProvider.getStatus
+      ? wsProvider.getStatus(proj.path)
+      : git.getStatus(proj.path);
+    if (wsStatus && (wsStatus.dirtyFiles || wsStatus.unpushed) && !force) {
       return res.status(409).json({
         error: "Workspace has uncommitted or unpushed changes",
         dirty: true,
-        dirtyFiles: status.dirtyFiles,
-        unpushed: status.unpushed,
+        dirtyFiles: wsStatus.dirtyFiles,
+        unpushed: wsStatus.unpushed,
       });
     }
 
@@ -512,18 +521,45 @@ module.exports = function createV1Router(deps) {
     res.json({ buckets, rateLimits });
   });
 
+  // --- Workspace Provider ---
+
+  router.get("/workspace/capabilities", (_req, res) => {
+    if (!wsProvider || !wsProvider.capabilities) {
+      return res.json({ provider: "unknown", capabilities: { projects: true, branches: true } });
+    }
+    res.json({ provider: wsProvider.name || "unknown", capabilities: wsProvider.capabilities() });
+  });
+
+  router.get("/workspace/sources", (_req, res) => {
+    if (!wsProvider || !wsProvider.getSources) {
+      return res.json([]);
+    }
+    try {
+      res.json(wsProvider.getSources());
+    } catch (err) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
   // --- GitHub & Repos ---
 
+  // Backward compat alias — delegates to provider
   router.get("/github/repos", (_req, res) => {
+    if (wsProvider && wsProvider.getSources) {
+      try {
+        return res.json(wsProvider.getSources());
+      } catch (err) {
+        return res.status(500).json({ error: err.message });
+      }
+    }
+    // Fallback for providers without getSources
     try {
       const repos = github.listRepos();
       const reposDir = config.reposDir;
-
       const annotated = repos.map((r) => ({
         ...r,
         cloned: reposDir ? fs.existsSync(path.join(reposDir, r.name, ".git")) : false,
       }));
-
       res.json(annotated);
     } catch (err) {
       res.status(500).json({ error: err.message });
@@ -546,8 +582,12 @@ module.exports = function createV1Router(deps) {
     if (!git.isGitRepo(repoDir)) {
       return res.status(404).json({ error: `repo "${req.params.name}" not found locally` });
     }
-    const worktrees = wsProvider ? wsProvider.list(repoDir) : git.listWorktrees(repoDir);
-    res.json(worktrees);
+    try {
+      const worktrees = wsProvider ? wsProvider.list(repoDir) : git.listWorktrees(repoDir);
+      res.json(worktrees);
+    } catch (err) {
+      res.status(500).json({ error: err.message });
+    }
   });
 
   // --- Create new repo ---
@@ -597,51 +637,44 @@ module.exports = function createV1Router(deps) {
       return res.status(400).json({ error: "reposDir not configured" });
     }
 
-    const repoDir = path.join(config.reposDir, repo);
-    const branchName = branch || `claude-${Date.now()}`;
-    const { projectName, workspacePath: worktreeDir } = wsProvider
-      ? wsProvider.buildPath(config.reposDir, repo, branchName)
-      : { projectName: `${repo}--${branchName}`, workspacePath: path.join(config.reposDir, `${repo}--${branchName}`) };
-
     try {
-      if (!git.isGitRepo(repoDir)) {
-        let sshUrl;
-        try {
+      let projectName, worktreeDir, branchName;
+
+      if (wsProvider && wsProvider.provision) {
+        const result = wsProvider.provision({
+          reposDir: config.reposDir,
+          repo,
+          owner,
+          branch,
+        });
+        projectName = result.projectName;
+        worktreeDir = result.workspacePath;
+        branchName = result.branch;
+      } else {
+        // Legacy fallback
+        const repoDir = path.join(config.reposDir, repo);
+        branchName = branch || `claude-${Date.now()}`;
+        const built = wsProvider
+          ? wsProvider.buildPath(config.reposDir, repo, branchName)
+          : { projectName: `${repo}--${branchName}`, workspacePath: path.join(config.reposDir, `${repo}--${branchName}`) };
+        projectName = built.projectName;
+        worktreeDir = built.workspacePath;
+
+        if (!git.isGitRepo(repoDir)) {
           const repos = github.listRepos();
           const ghRepo = owner
             ? repos.find((r) => r.name === repo && r.owner === owner)
             : repos.find((r) => r.name === repo);
           if (!ghRepo) {
-            return res
-              .status(404)
-              .json({ error: `repo "${owner ? owner + "/" : ""}${repo}" not found on GitHub` });
+            return res.status(404).json({ error: `repo "${owner ? owner + "/" : ""}${repo}" not found on GitHub` });
           }
-          sshUrl = ghRepo.sshUrl;
-        } catch (err) {
-          return res
-            .status(500)
-            .json({ error: `Failed to list GitHub repos: ${err.message}` });
+          git.cloneRepo(ghRepo.sshUrl, repoDir);
         }
 
-        git.cloneRepo(sshUrl, repoDir);
-      }
-
-      if (fs.existsSync(worktreeDir)) {
-        return res
-          .status(409)
-          .json({ error: `Worktree directory already exists: ${worktreeDir}` });
-      }
-
-      if (wsProvider) {
-        wsProvider.create(repoDir, worktreeDir, branchName);
-      } else {
+        if (fs.existsSync(worktreeDir)) {
+          return res.status(409).json({ error: `Worktree directory already exists: ${worktreeDir}` });
+        }
         git.addWorktree(repoDir, worktreeDir, branchName);
-      }
-
-      // Verify clean state after worktree creation
-      const wtStatus = git.getStatus(worktreeDir);
-      if (wtStatus && wtStatus.dirtyFiles > 0) {
-        console.warn(`[sessions/new] Worktree ${worktreeDir} has ${wtStatus.dirtyFiles} dirty files after creation`);
       }
 
       try {

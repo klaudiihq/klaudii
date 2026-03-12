@@ -55,7 +55,7 @@ const setup = require("./lib/setup");
 const { mountMcp } = require("./lib/mcp");
 const scheduler = require("./lib/scheduler");
 const memory = require("./lib/memory");
-const { getProvider: getWorkspaceProvider } = require("./lib/workspace-provider");
+const { getProvider: getWorkspaceProvider, initProvider: initWorkspaceProvider } = require("./lib/workspace-provider");
 
 // ── Feature flags ──
 const KONNECT_ENABLED = false;
@@ -78,6 +78,7 @@ process.on('unhandledRejection', (reason) => {
 });
 
 let config = loadConfig();
+initWorkspaceProvider("git-worktree", { git, github, config });
 const app = express();
 app.use(express.json());
 

@@ -911,20 +911,21 @@ function renderSessions(sessions, procs, showServerBadge) {
 }
 
 function renderCard(s, proc, showServerBadge = false) {
+  const repo = s.group || s.project.split("--")[0];
   const parts = s.project.split("--");
-  const repo = parts[0];
   const branch = parts.length > 1 ? parts.slice(1).join("--") : null;
-  const g = s.git;
+  const g = s.workspace || s.git;
   const gitBranch = g ? g.branch : branch;
   const status = s.status || (s.running ? "running" : "stopped");
   const isRunning = status === "running" || status === "exited";
   const mode = s.permissionMode || "yolo";
+  const ghUrl = (g && g.remoteUrl) || s.remoteUrl || null;
 
-  const repoGitLink = s.remoteUrl
-    ? `<a class="git-link" href="${esc(s.remoteUrl)}" target="_blank" rel="noreferrer" title="Open on GitHub">${gitSvg(12)}</a>`
+  const repoGitLink = ghUrl
+    ? `<a class="git-link" href="${esc(ghUrl)}" target="_blank" rel="noreferrer" title="Open on GitHub">${gitSvg(12)}</a>`
     : "";
-  const branchGitLink = s.remoteUrl && gitBranch
-    ? `<a class="git-link" href="${esc(s.remoteUrl + "/tree/" + gitBranch)}" target="_blank" rel="noreferrer" title="View branch on GitHub">${gitSvg(10)}</a>`
+  const branchGitLink = ghUrl && gitBranch
+    ? `<a class="git-link" href="${esc(ghUrl + "/tree/" + gitBranch)}" target="_blank" rel="noreferrer" title="View branch on GitHub">${gitSvg(10)}</a>`
     : "";
 
   // Pencil edit button

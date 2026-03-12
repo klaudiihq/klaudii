@@ -9,6 +9,7 @@ let panelAutoCloseTimer = null;
 let showWorkerWorkspaces = false; // driven by server settings (workerVisibility)
 let currentProject = new URLSearchParams(window.location.search).get("project") || "";
 let allProjectsList = [];
+let wsCapabilities = { projects: true, branches: true };
 let sidebarTab = new URLSearchParams(window.location.search).get("tab") || "workspaces";
 let lastSessions = [];
 let lastProcs = [];
@@ -116,6 +117,20 @@ function getRepoName(projectName) {
   return parts[0];
 }
 
+async function loadWorkspaceCapabilities() {
+  try {
+    const data = await api("/api/workspace/capabilities");
+    wsCapabilities = data.capabilities || { projects: true, branches: true };
+  } catch {
+    // Use defaults
+  }
+  // Hide project switcher entirely if provider doesn't support projects
+  const select = document.getElementById("project-switcher");
+  if (select && !wsCapabilities.projects) {
+    select.style.display = "none";
+  }
+}
+
 async function refreshProjectSwitcher() {
   try {
     allProjectsList = await api("/api/projects");
@@ -139,8 +154,8 @@ async function refreshProjectSwitcher() {
     select.value = "";
   }
 
-  // Hide switcher if only one repo
-  select.style.display = repos.length <= 1 ? "none" : "";
+  // Hide switcher if only one repo or provider doesn't support projects
+  select.style.display = (!wsCapabilities.projects || repos.length <= 1) ? "none" : "";
 }
 
 function switchProject(repo) {
@@ -265,15 +280,15 @@ function renderSessions(sessions, procs) {
   }
 
   container.innerHTML = sessions.map((s) => {
+    const repo = s.group || s.project.split("--")[0];
     const parts = s.project.split("--");
-    const repo = parts[0];
     const branch = parts.length > 1 ? parts.slice(1).join("--") : null;
     const sessionData = esc(JSON.stringify(s).replace(/'/g, "&#39;"));
     const proc = procByProject[s.project];
     const mode = s.permissionMode || "yolo";
-    const g = s.git;
+    const g = s.workspace || s.git;
     const gitBranch = g ? g.branch : branch;
-    const ghUrl = s.remoteUrl || null;
+    const ghUrl = (g && g.remoteUrl) || s.remoteUrl || null;
     const status = s.status || (s.running ? "running" : "stopped");
     const isRunning = status === "running" || status === "exited";
     const displayStatus = (status === "stopped" && s.relayActive) ? "running" : status;
@@ -507,13 +522,12 @@ function openGitStatus(project) {
   // Find the session data from last refresh
   api("/api/sessions").then((sessions) => {
     const s = sessions.find((x) => x.project === project);
-    if (!s || !s.git) {
+    const g = s ? (s.workspace || s.git) : null;
+    if (!g) {
       body.innerHTML = '<p style="color:#666">No git info available.</p>';
       return;
     }
-    const g = s.git;
-    const parts = project.split("--");
-    const repo = parts[0];
+    const repo = (s.group || project.split("--")[0]);
 
     let html = `<div class="git-detail-header">`;
     html += `<span class="git-detail-branch">${esc(g.branch || "unknown")}</span>`;
@@ -667,11 +681,11 @@ function openGitStatusForRemoval(project) {
 
   api("/api/sessions").then((sessions) => {
     const s = sessions.find((x) => x.project === project);
-    if (!s || !s.git) {
+    const g = s ? (s.workspace || s.git) : null;
+    if (!g) {
       body.innerHTML = '<p style="color:#666">No git info available.</p>';
       return;
     }
-    const g = s.git;
 
     let html = `<div class="git-detail-header">`;
     html += `<span class="git-detail-branch">${esc(g.branch || "unknown")}</span>`;
@@ -965,9 +979,22 @@ async function openNewSessionModal() {
   showRepoSearchView();
   document.getElementById("new-session-modal").classList.remove("hidden");
 
+  // Adapt UI based on provider capabilities
+  if (!wsCapabilities.projects) {
+    // No project selection — skip repo step, just show branch/name input
+    document.getElementById("repo-search-view").classList.add("hidden");
+    document.getElementById("branch-form").classList.remove("hidden");
+    document.getElementById("branch-input").focus();
+    return;
+  }
+
+  if (!wsCapabilities.branches) {
+    document.getElementById("branch-form").classList.add("hidden");
+  }
+
   document.getElementById("repo-list").innerHTML = '<div style="padding:1rem;color:#666">Loading repos...</div>';
   try {
-    allRepos = await api("/api/github/repos");
+    allRepos = await api("/api/workspace/sources");
     renderRepoList(allRepos);
   } catch (err) {
     document.getElementById("repo-list").innerHTML = `<div style="padding:1rem;color:#f87171">Failed to load repos: ${esc(err.message)}</div>`;
@@ -1035,15 +1062,20 @@ function selectRepo(name, owner) {
     const q = document.getElementById("repo-search").value.toLowerCase();
     return r.name.toLowerCase().includes(q) || (r.description || "").toLowerCase().includes(q);
   }));
-  document.getElementById("branch-form").classList.remove("hidden");
-  document.getElementById("branch-input").focus();
+  if (wsCapabilities.branches) {
+    document.getElementById("branch-form").classList.remove("hidden");
+    document.getElementById("branch-input").focus();
+  } else {
+    // No branch support — create immediately with just the repo
+    createNewSession();
+  }
 }
 
 async function createNewSession() {
-  if (!selectedRepo) return;
+  if (!selectedRepo && wsCapabilities.projects) return;
 
   const branch = document.getElementById("branch-input").value.trim();
-  if (!branch) {
+  if (wsCapabilities.branches && !branch) {
     alert("Please enter a branch name");
     return;
   }
@@ -1055,7 +1087,7 @@ async function createNewSession() {
   try {
     const result = await api("/api/sessions/new", {
       method: "POST",
-      body: { repo: selectedRepo, owner: selectedRepoOwner, branch },
+      body: { repo: selectedRepo, owner: selectedRepoOwner, branch: branch || undefined },
     });
 
     if (result.error) {
@@ -2305,7 +2337,7 @@ function updateSidebarBadges() {
 
 function findTaskForWorker(session) {
   if (!tasksData.length) return null;
-  const branch = session.git?.branch || session.project.split("--").slice(1).join("--") || "";
+  const branch = (session.workspace || session.git)?.branch || session.project.split("--").slice(1).join("--") || "";
   return tasksData.find(b => branch.includes(b.id)) || null;
 }
 
@@ -2326,7 +2358,7 @@ function renderSidebarWorkers() {
   }
 
   container.innerHTML = workers.map(s => {
-    const branch = s.git?.branch || s.project.split("--").slice(1).join("--") || s.project;
+    const branch = (s.workspace || s.git)?.branch || s.project.split("--").slice(1).join("--") || s.project;
     const status = s.status || (s.running ? "running" : "stopped");
     const isActive = status === "running";
     const proc = procByProject[s.project];
@@ -2398,8 +2430,8 @@ function renderSidebarWorkspaces() {
   sessions = sortSessions(sessions);
 
   const workspaceHtml = sessions.map(s => {
+    const repo = s.group || s.project.split("--")[0];
     const parts = s.project.split("--");
-    const repo = parts[0];
     const branch = parts.length > 1 ? parts.slice(1).join("--") : null;
     const status = s.status || (s.running ? "running" : "stopped");
     const displayStatus = (status === "stopped" && s.relayActive) ? "running" : status;
@@ -2688,6 +2720,7 @@ if (new URLSearchParams(window.location.search).get("mode") === "chatonly") {
   const dashboardDelay = hasWorkspaceParam ? 500 : 0;
 
   setTimeout(() => {
+    loadWorkspaceCapabilities();
     refreshProjectSwitcher();
     refresh().then(() => {
       refreshCloudStatus();
