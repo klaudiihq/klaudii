@@ -1530,6 +1530,8 @@ function handleGeminiEvent(event) {
         chatRenderToolsPanel(event.data);
       } else if (event.command === "extensions") {
         chatRenderExtensionsPanel(event.data);
+      } else if (event.command === "agents" && event.data) {
+        chatRenderAgentsPanel(event.data);
       } else {
         const pre = document.createElement("pre");
         pre.style.cssText = "margin:0;white-space:pre-wrap;font-size:0.8rem;color:var(--text-muted)";
@@ -3645,6 +3647,71 @@ function chatRenderToolsPanel(tools) {
 }
 
 /** Render /extensions result as a card list with badges. */
+function chatRenderAgentsPanel(data) {
+  const container = document.getElementById("chat-messages");
+  if (!container) return;
+
+  // Empty state
+  if (!data || (Array.isArray(data) && data.length === 0)) {
+    const note = document.createElement("div");
+    note.className = "chat-system-note";
+    note.textContent = "No agents configured.";
+    container.appendChild(note);
+    chatScrollToBottom();
+    return;
+  }
+
+  const agents = Array.isArray(data) ? data : [data];
+
+  const panel = document.createElement("div");
+  panel.className = "chat-agents-card";
+
+  // Header with count badge
+  const header = document.createElement("div");
+  header.className = "chat-agents-header";
+  header.innerHTML =
+    `<span class="chat-agents-title">Agents</span>` +
+    `<span class="chat-agents-badge">${agents.length}</span>`;
+  panel.appendChild(header);
+
+  // Agent list
+  const list = document.createElement("div");
+  list.className = "chat-agents-list";
+
+  for (const agent of agents) {
+    const item = document.createElement("div");
+    item.className = "chat-agents-item";
+
+    const nameRow = document.createElement("div");
+    nameRow.className = "chat-agents-name-row";
+
+    const name = document.createElement("span");
+    name.className = "chat-agents-name";
+    name.textContent = agent.name || "Unknown";
+    nameRow.appendChild(name);
+
+    const kind = document.createElement("span");
+    kind.className = "chat-agents-kind" + (agent.kind === "remote" ? " remote" : " local");
+    kind.textContent = agent.kind === "remote" ? "Remote" : "Local";
+    nameRow.appendChild(kind);
+
+    item.appendChild(nameRow);
+
+    if (agent.description) {
+      const desc = document.createElement("div");
+      desc.className = "chat-agents-desc";
+      desc.textContent = agent.description;
+      item.appendChild(desc);
+    }
+
+    list.appendChild(item);
+  }
+
+  panel.appendChild(list);
+  container.appendChild(panel);
+  chatScrollToBottom();
+}
+
 function chatRenderExtensionsPanel(data) {
   const container = document.getElementById("chat-messages");
   if (!container) return;
@@ -4603,6 +4670,7 @@ async function clearGeminiSession() {
 
 const SLASH_COMMANDS = [
   { name: "about",      description: "Version and session info" },
+  { name: "agents",     description: "List available agents" },
   { name: "bug",        description: "Report a bug" },
   { name: "clear",      description: "Clear chat messages" },
   { name: "compress",   description: "Compress chat context" },
