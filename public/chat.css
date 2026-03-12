@@ -1064,6 +1064,77 @@ summary.chat-tool-summary::marker { display: none; }
 .chat-permission-buttons button.greyed {
   opacity: 0.4;
 }
+.chat-multiselect-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  margin-top: 0.25rem;
+}
+.chat-multiselect-row {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.35rem 0.6rem;
+  border-radius: 6px;
+  cursor: pointer;
+  user-select: none;
+  font-size: 0.92rem;
+  transition: background 0.1s;
+}
+.chat-multiselect-row:hover {
+  background: var(--bg-hover, rgba(128,128,128,0.1));
+}
+.chat-multiselect-check {
+  width: 18px;
+  height: 18px;
+  border-radius: 4px;
+  border: 2px solid var(--border, #888);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  transition: border-color 0.15s, background 0.15s;
+}
+.chat-multiselect-row.checked .chat-multiselect-check {
+  border-color: #22c55e;
+  background: #22c55e;
+}
+.chat-multiselect-row.checked .chat-multiselect-check::after {
+  content: "\2713";
+  color: #fff;
+  font-size: 13px;
+  font-weight: 700;
+  line-height: 1;
+}
+.chat-multiselect-submit {
+  margin-top: 0.5rem;
+  align-self: flex-start;
+}
+.chat-text-input-wrap {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  margin-top: 0.25rem;
+}
+.chat-text-input {
+  width: 100%;
+  padding: 0.5rem;
+  border-radius: 6px;
+  border: 1px solid var(--border, #555);
+  background: var(--bg-input, var(--bg-card, #1e1e1e));
+  color: var(--text, #eee);
+  font-size: 0.92rem;
+  font-family: inherit;
+  resize: vertical;
+  min-height: 2.5rem;
+}
+.chat-text-input:focus {
+  outline: none;
+  border-color: var(--accent, #4a9eff);
+}
+.chat-text-input:disabled {
+  opacity: 0.5;
+}
 
 /* --- Plan approval card --- */
 

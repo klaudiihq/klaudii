@@ -1727,33 +1727,105 @@ function chatShowToolQuestions(id, questions, toolInput, isPermissionRequest, on
     btns.className = "chat-permission-buttons";
     const rawOptions = q.options || q.choices || [];
     const renderOptions = rawOptions.length ? rawOptions : ["Yes", "No"];
+    const isMulti = !!q.multiSelect;
 
-    renderOptions.forEach((opt, i) => {
-      const btn = document.createElement("button");
-      btn.className = "btn" + (i === 0 ? " primary" : "");
-      const label = typeof opt === "object" ? (opt.label || String(opt)) : String(opt);
-      btn.textContent = label;
-      btn.dataset.label = label;
-      if (typeof opt === "object" && opt.description) btn.title = opt.description;
-      btn.onclick = () => {
+    if (isMulti) {
+      // Multi-select: checklist with green checkmarks + submit button
+      const selected = new Set();
+      const list = document.createElement("div");
+      list.className = "chat-multiselect-list";
+      renderOptions.forEach((opt) => {
+        const row = document.createElement("label");
+        row.className = "chat-multiselect-row";
+        const check = document.createElement("span");
+        check.className = "chat-multiselect-check";
+        const labelText = typeof opt === "object" ? (opt.label || String(opt)) : String(opt);
+        const text = document.createElement("span");
+        text.textContent = labelText;
+        if (typeof opt === "object" && opt.description) row.title = opt.description;
+        row.appendChild(check);
+        row.appendChild(text);
+        row.onclick = () => {
+          if (answers[qi] !== null) return;
+          if (selected.has(labelText)) {
+            selected.delete(labelText);
+            row.classList.remove("checked");
+          } else {
+            selected.add(labelText);
+            row.classList.add("checked");
+          }
+        };
+        list.appendChild(row);
+      });
+      section.appendChild(list);
+      const submitBtn = document.createElement("button");
+      submitBtn.className = "btn primary chat-multiselect-submit";
+      submitBtn.textContent = "Submit";
+      submitBtn.onclick = () => {
         if (answers[qi] !== null) return;
-        btns.querySelectorAll("button").forEach(b => {
-          b.disabled = true;
-          b.classList.remove("primary");
-          b.classList.add("greyed");
-        });
-        const chosen = btns.querySelector(`[data-label="${CSS.escape(label)}"]`);
-        if (chosen) {
-          chosen.textContent += " \u2713";
-          chosen.classList.remove("greyed");
-          chosen.classList.add("selected", "primary");
-        }
-        answers[qi] = label;
-        glog(`tool_question[${qi}]: selected=${label}`);
+        answers[qi] = Array.from(selected).join(", ") || "(none)";
+        list.querySelectorAll(".chat-multiselect-row").forEach(r => { r.style.pointerEvents = "none"; });
+        submitBtn.disabled = true;
+        submitBtn.classList.add("greyed");
+        glog(`tool_question[${qi}]: multi-selected=${answers[qi]}`);
         if (answers.every(a => a !== null)) sendResult();
       };
-      btns.appendChild(btn);
-    });
+      section.appendChild(submitBtn);
+    } else if (q.type === "text" || (q.type !== "yesno" && !rawOptions.length)) {
+      // Free-form text input
+      const wrap = document.createElement("div");
+      wrap.className = "chat-text-input-wrap";
+      const input = document.createElement("textarea");
+      input.className = "chat-text-input";
+      input.placeholder = q.placeholder || "Type your answer...";
+      input.rows = 2;
+      const submitBtn = document.createElement("button");
+      submitBtn.className = "btn primary chat-multiselect-submit";
+      submitBtn.textContent = "Submit";
+      submitBtn.onclick = () => {
+        if (answers[qi] !== null) return;
+        answers[qi] = input.value.trim() || "(no response)";
+        input.disabled = true;
+        submitBtn.disabled = true;
+        submitBtn.classList.add("greyed");
+        glog(`tool_question[${qi}]: text=${answers[qi]}`);
+        if (answers.every(a => a !== null)) sendResult();
+      };
+      input.addEventListener("keydown", (e) => {
+        if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); submitBtn.click(); }
+      });
+      wrap.appendChild(input);
+      wrap.appendChild(submitBtn);
+      section.appendChild(wrap);
+    } else {
+      // Single-select: click to choose and auto-submit
+      renderOptions.forEach((opt, i) => {
+        const btn = document.createElement("button");
+        btn.className = "btn";
+        const label = typeof opt === "object" ? (opt.label || String(opt)) : String(opt);
+        btn.textContent = label;
+        btn.dataset.label = label;
+        if (typeof opt === "object" && opt.description) btn.title = opt.description;
+        btn.onclick = () => {
+          if (answers[qi] !== null) return;
+          btns.querySelectorAll("button").forEach(b => {
+            b.disabled = true;
+            b.classList.remove("primary");
+            b.classList.add("greyed");
+          });
+          const chosen = btns.querySelector(`[data-label="${CSS.escape(label)}"]`);
+          if (chosen) {
+            chosen.textContent += " \u2713";
+            chosen.classList.remove("greyed");
+            chosen.classList.add("selected", "primary");
+          }
+          answers[qi] = label;
+          glog(`tool_question[${qi}]: selected=${label}`);
+          if (answers.every(a => a !== null)) sendResult();
+        };
+        btns.appendChild(btn);
+      });
+    }
 
     section.appendChild(btns);
     div.appendChild(section);
