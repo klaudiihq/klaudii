@@ -1536,6 +1536,8 @@ function handleGeminiEvent(event) {
         chatRenderPoliciesPanel(event.data);
       } else if (event.command === "permissions" && event.data) {
         chatRenderPermissionsPanel(event.data);
+      } else if (event.command === "init" && event.data) {
+        chatRenderInitPanel(event.data);
       } else {
         const pre = document.createElement("pre");
         pre.style.cssText = "margin:0;white-space:pre-wrap;font-size:0.8rem;color:var(--text-muted)";
@@ -3945,6 +3947,81 @@ function chatRenderPermissionsPanel(data) {
     empty.className = "chat-permissions-desc";
     empty.textContent = "No trusted folders configured.";
     panel.appendChild(empty);
+  }
+
+  container.appendChild(panel);
+  chatScrollToBottom();
+}
+
+/** Render /init result — GEMINI.md status card with Generate button if missing. */
+function chatRenderInitPanel(data) {
+  const container = document.getElementById("chat-messages");
+  if (!container) return;
+
+  const panel = document.createElement("div");
+  panel.className = "chat-init-card";
+
+  // Header
+  const header = document.createElement("div");
+  header.className = "chat-init-header";
+  header.innerHTML =
+    `<span class="chat-init-title">GEMINI.md</span>` +
+    `<span class="chat-init-badge ${data.exists ? "exists" : "missing"}">${data.exists ? "Found" : "Not found"}</span>`;
+  panel.appendChild(header);
+
+  if (data.exists) {
+    // File info
+    const info = document.createElement("div");
+    info.className = "chat-init-info";
+    const sizeKb = (data.size / 1024).toFixed(1);
+    const modified = new Date(data.modified).toLocaleString();
+    info.innerHTML =
+      `<span>${sizeKb} KB</span>` +
+      `<span>${data.lineCount} lines</span>` +
+      `<span>${modified}</span>`;
+    panel.appendChild(info);
+
+    // Path
+    const pathEl = document.createElement("div");
+    pathEl.className = "chat-init-path";
+    pathEl.textContent = data.path;
+    panel.appendChild(pathEl);
+
+    // Preview
+    if (data.preview) {
+      const preview = document.createElement("pre");
+      preview.className = "chat-init-preview";
+      preview.textContent = data.preview;
+      panel.appendChild(preview);
+    }
+  } else {
+    // Not found — show Generate button
+    const desc = document.createElement("div");
+    desc.className = "chat-init-desc";
+    desc.textContent = data.path
+      ? `No GEMINI.md found at ${data.path}`
+      : (data.error || "No GEMINI.md found in project directory");
+    panel.appendChild(desc);
+
+    if (data.workspacePath) {
+      const btnRow = document.createElement("div");
+      btnRow.className = "chat-init-actions";
+      const btn = document.createElement("button");
+      btn.className = "chat-init-generate";
+      btn.textContent = "Generate GEMINI.md";
+      btn.addEventListener("click", () => {
+        btn.disabled = true;
+        btn.textContent = "Generating...";
+        // Send /init as a chat prompt to let Gemini generate the file
+        const input = document.getElementById("chat-input");
+        if (input) {
+          input.value = "Please run /init to generate the GEMINI.md project context file for this repository.";
+          sendGeminiMessage();
+        }
+      });
+      btnRow.appendChild(btn);
+      panel.appendChild(btnRow);
+    }
   }
 
   container.appendChild(panel);

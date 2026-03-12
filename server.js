@@ -402,6 +402,37 @@ async function loadPermissionsData(workspace) {
   };
 }
 
+// ── /init command: check GEMINI.md existence and return file info ──
+async function loadInitData(workspace) {
+  const proj = workspace ? (config.projects || []).find((p) => p.name === workspace) : null;
+  const workspacePath = proj ? proj.path : null;
+  if (!workspacePath) {
+    return { exists: false, error: "No project path found for workspace" };
+  }
+
+  const geminiMdPath = path.join(workspacePath, "GEMINI.md");
+  try {
+    const stat = await fs.promises.stat(geminiMdPath);
+    const content = await fs.promises.readFile(geminiMdPath, "utf8");
+    const lines = content.split("\n");
+    const preview = lines.slice(0, 8).join("\n");
+    return {
+      exists: true,
+      path: geminiMdPath,
+      size: stat.size,
+      modified: stat.mtime.toISOString(),
+      lineCount: lines.length,
+      preview,
+    };
+  } catch {
+    return {
+      exists: false,
+      path: geminiMdPath,
+      workspacePath,
+    };
+  }
+}
+
 // Get current API key info (masked) for UI
 function geminiApiKeyInfo(workspace) {
   const proj = workspace ? (config.projects || []).find((p) => p.name === workspace) : null;
@@ -1098,6 +1129,15 @@ wss.on("connection", (ws) => {
       } else if (cmdName === "policies") {
         // Handle /policies locally — no A2A command exists for this
         loadPolicyData()
+          .then((data) => {
+            ws.send(JSON.stringify({ type: "command_result", workspace, command: cmdName, data, sessionNum: cmdSession }));
+          })
+          .catch((err) => {
+            ws.send(JSON.stringify({ type: "command_error", workspace, command: cmdName, message: err.message, sessionNum: cmdSession }));
+          });
+      } else if (cmdName === "init") {
+        // Handle /init locally — check GEMINI.md existence
+        loadInitData(workspace)
           .then((data) => {
             ws.send(JSON.stringify({ type: "command_result", workspace, command: cmdName, data, sessionNum: cmdSession }));
           })
